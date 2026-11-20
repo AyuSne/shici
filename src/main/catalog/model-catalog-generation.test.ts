@@ -222,6 +222,14 @@ describe('共享模型目录生成', () => {
     }
   })
 
+  it('生成脚本以 LF 保存，跨 checkout 也能被动态 import', async () => {
+    const source = readFileSync(generator, 'utf8')
+    expect(source, 'CRLF 会让 shebang 后的 ESM 解析失败').not.toContain('\r')
+
+    const module = await import(pathToFileURL(generator).href)
+    expect(typeof module.buildModelCatalog).toBe('function')
+  })
+
   it('模型清单与思考元数据来自已安装的 pi 目录', async () => {
     const { getBuiltinModels } = await import(
       '@earendil-works/pi-ai/providers/all'
