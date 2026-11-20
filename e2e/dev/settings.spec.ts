@@ -183,6 +183,7 @@ test.describe('设置与密钥', () => {
     launch,
     userDataDirectory
   }) => {
+    const stub = await createStub({ kind: 'stream', text: ['密钥可用。'] })
     const handle = await launch({ env: noEnvironmentConfig })
     const { page } = handle
     await openSettings(page)
@@ -215,6 +216,34 @@ test.describe('设置与密钥', () => {
     await expect(firstDeepSeek).toContainText('上下文 1,000,000 · 输出 384,000 · 支持思考')
     await expect(firstDeepSeek.getByRole('radio', { name: /deepseek-flash/ })).toBeChecked()
     await expect(firstDeepSeek.getByRole('radio', { name: /deepseek-v4-pro/ })).not.toBeChecked()
+
+    // 真实用这套「本机保存」的密钥聊天：先选为使用中，再把地址指到本地 stub，
+    // 验证 safeStorage 解出的是刚存的密钥。
+    await firstDeepSeek.getByRole('button', { name: '使用这个' }).click()
+    await expect(firstDeepSeek).toContainText('使用中')
+    const liveDatabase = new Database(join(userDataDirectory, 'english-learning.db'))
+    try {
+      liveDatabase
+        .prepare("UPDATE model_provider SET base_url = ? WHERE provider_key = 'deepseek'")
+        .run(stub.baseUrl)
+    } finally {
+      liveDatabase.close()
+    }
+    await page
+      .getByRole('navigation', { name: '全局导航' })
+      .getByRole('button', { name: '对话' })
+      .click()
+    await expect(page.getByRole('textbox', { name: '输入问题' })).toBeVisible()
+    await page.getByRole('textbox', { name: '输入问题' }).fill('用这套密钥回答')
+    await page.getByRole('button', { name: '发送' }).click()
+    await expect(page.getByText('密钥可用。')).toBeVisible()
+    await expect.poll(() => stub.requests.length).toBe(1)
+    expect(stub.requests[0]?.headers.authorization).toBe('Bearer sk-e2e-deepseek-1111')
+    expect(stub.requests[0]?.body.model).toBe('deepseek-flash')
+
+    // 一次真实成功之后，本机密钥的 provider 自动转已验证。
+    await openSettings(page)
+    await expect(page.locator('[data-provider-key="deepseek"]')).toContainText('已验证')
 
     // 同一厂商第二套：Provider ID 唯一且不可改，目录身份仍是 deepseek。
     await addProvider('deepseek', 'sk-e2e-deepseek-2222')
@@ -286,9 +315,14 @@ test.describe('设置与密钥', () => {
         .all() as { provider_key: string; secret_ciphertext: string; verification: string }[]
       expect(rows).toHaveLength(4)
       for (const row of rows) {
-        expect(row.verification).toBe('unverified')
         expect(row.secret_ciphertext).not.toContain('sk-e2e')
         expect(row.secret_ciphertext.startsWith('dpapi:v1:')).toBe(true)
+      }
+      const byKey = new Map(rows.map((row) => [row.provider_key, row]))
+      // 刚用过一次的那套已转已验证；其余仍是保存后的未验证。
+      expect(byKey.get('deepseek')?.verification).toBe('verified')
+      for (const key of ['deepseek-2', 'kimi', 'glm']) {
+        expect(byKey.get(key)?.verification).toBe('unverified')
       }
     } finally {
       database.close()
