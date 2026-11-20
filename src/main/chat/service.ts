@@ -4,7 +4,7 @@ import type {
   ChatStopResult,
   ChatStreamUpdate
 } from '../../shared/chat'
-import { THINKING_EFFORT, type ChatConfig } from './config'
+import { type ChatConfig } from './config'
 import { streamChatCompletion } from './pi-stream'
 
 export type ChatUpdateSender = (update: ChatStreamUpdate) => void
@@ -100,13 +100,22 @@ async function runStream(
     return
   }
 
+  if (config.missingCredential === true) {
+    send({
+      streamId: request.streamId,
+      event: {
+        type: 'error',
+        error: { code: 'not-configured', detail: '本机密钥缺失或解不开' }
+      }
+    })
+    return
+  }
+
   await streamChatCompletion({
     apiKey: config.apiKey,
-    baseUrl: config.baseUrl,
-    model: config.model,
+    descriptor: config.descriptor,
     messages: request.messages,
     systemPrompt: request.systemPrompt,
-    reasoningEffort: THINKING_EFFORT,
     signal: controller.signal,
     onEvent: (event) => send({ streamId: request.streamId, event })
   })

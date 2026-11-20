@@ -94,7 +94,16 @@ import {
 } from './pins/pins'
 import { createElectronSecretStore } from './settings/electron-secrets'
 import { readSettingsOverview } from './settings/operations'
-import { markProviderVerified } from './settings/providers'
+import {
+  addBuiltinProvider,
+  activateModelProvider,
+  deleteModelProvider,
+  setDefaultProviderModel
+} from './settings/provider-writes'
+import {
+  isProviderSelectionCleared,
+  markProviderVerified
+} from './settings/providers'
 import { saveThemePreference } from './settings/theme'
 import { applyThemePreference, createMainWindow } from './window'
 
@@ -178,7 +187,9 @@ function start(): void {
   const settingsOptions = () => ({
     secrets,
     env: process.env,
-    fallbackModel: readChatConfig(process.env)?.model ?? '',
+    fallbackModel: isProviderSelectionCleared(opened)
+      ? ''
+      : (readChatConfig(process.env)?.model ?? ''),
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron ?? '',
     dataDirectory: userDataDirectory
@@ -304,6 +315,12 @@ function start(): void {
     'pins:restore': (payload) => restorePins(opened, payload),
     'pins:source': (payload) => readPinSource(opened, payload.pinId),
     'settings:overview': () => readSettingsOverview(opened, settingsOptions()),
+    'settings:provider-add': (payload) => addBuiltinProvider(opened, secrets, payload),
+    'settings:provider-default-model': (payload) =>
+      setDefaultProviderModel(opened, payload.providerId, payload.modelRowId),
+    'settings:provider-activate': (payload) =>
+      activateModelProvider(opened, payload.providerId),
+    'settings:provider-delete': (payload) => deleteModelProvider(opened, payload.providerId),
     'settings:reading-save': (payload) => saveReadingPreferences(opened, payload.preferences),
     'settings:theme-save': (payload) => {
       const result = saveThemePreference(opened, payload.theme)

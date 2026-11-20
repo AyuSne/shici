@@ -71,6 +71,16 @@ import type {
   RestorePinsResult
 } from './pins'
 import type {
+  ActivateProviderRequest,
+  ActivateProviderResult,
+  AddBuiltinProviderRequest,
+  AddBuiltinProviderResult,
+  DeleteProviderRequest,
+  DeleteProviderResult,
+  SetDefaultProviderModelRequest,
+  SetDefaultProviderModelResult
+} from './model-providers'
+import type {
   ReadingPreferences,
   ReadingProgressRequest,
   ReadingProgressResult,
@@ -234,6 +244,22 @@ export interface IpcContract {
   'pins:restore': { payload: RestorePinsRequest; result: RestorePinsResult }
   'pins:source': { payload: { pinId: string }; result: PinSourceResult }
   'settings:overview': { payload: undefined; result: SettingsOverview }
+  'settings:provider-add': {
+    payload: AddBuiltinProviderRequest
+    result: AddBuiltinProviderResult
+  }
+  'settings:provider-default-model': {
+    payload: SetDefaultProviderModelRequest
+    result: SetDefaultProviderModelResult
+  }
+  'settings:provider-activate': {
+    payload: ActivateProviderRequest
+    result: ActivateProviderResult
+  }
+  'settings:provider-delete': {
+    payload: DeleteProviderRequest
+    result: DeleteProviderResult
+  }
   'settings:reading-save': {
     payload: { preferences: ReadingPreferences }
     result: ReadingPreferencesResult
@@ -325,6 +351,10 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'pins:restore': true,
   'pins:source': true,
   'settings:overview': true,
+  'settings:provider-add': true,
+  'settings:provider-default-model': true,
+  'settings:provider-activate': true,
+  'settings:provider-delete': true,
   'settings:reading-save': true,
   'settings:theme-save': true,
   'settings:backup-create': true,

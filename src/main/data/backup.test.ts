@@ -12,7 +12,8 @@ import {
 } from '../db/migrations'
 import { readThemePreference, writeSetting } from '../db/settings'
 import { readArticleDetail } from '../library/queries'
-import { listModelProviders } from '../settings/providers'
+import { addBuiltinProvider } from '../settings/provider-writes'
+import { listModelProviders, readProviderModels } from '../settings/providers'
 import type { SecretStore } from '../settings/secret-store'
 import {
   BackupTargetError,
@@ -230,6 +231,79 @@ describe('createBackup', () => {
     } finally {
       copy.close()
     }
+  })
+
+  it('内置 provider 的目录身份、思考元数据与容量随备份保留，密钥照旧清空；恢复后仍可用', async () => {
+    migrate(database)
+    const added = addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'deepseek',
+      apiKey: 'sk-builtin-secret-8888'
+    })
+    if (added.status !== 'saved') throw new Error('内置 provider 没存上')
+    const file = backupFile('builtin-provider.db')
+    await createBackup(database, { file, now })
+
+    const copy = openDatabase(file)
+    try {
+      const provider = listModelProviders(copy, providerOptions())[0]
+      expect(provider).toMatchObject({
+        providerKey: 'deepseek',
+        catalogProviderId: 'deepseek',
+        source: 'builtin',
+        keyState: 'missing',
+        apiKeyMask: null,
+        verification: 'unverified'
+      })
+      const models = readProviderModels(copy, added.providerId)
+      expect(models.map((model) => model.modelId)).toEqual([
+        'deepseek-flash',
+        'deepseek-v4-pro'
+      ])
+      expect(models[0]).toMatchObject({
+        contextWindow: 1000000,
+        maxTokens: 384000,
+        reasoning: true
+      })
+      expect(models[0]?.thinkingLevelMap).toMatchObject({ high: 'high', max: 'max' })
+      expect(models[0]?.compat).toMatchObject({ thinkingFormat: 'deepseek' })
+      expect(
+        copy.prepare('SELECT secret_ciphertext FROM model_provider').get()
+      ).toEqual({ secret_ciphertext: null })
+      expect(readFileSync(file).includes('sk-builtin-secret-8888')).toBe(false)
+    } finally {
+      copy.close()
+    }
+
+    const outcome = await restoreBackup(database, {
+      file,
+      snapshotDirectory: snapshots(),
+      now: later
+    })
+    expect(outcome.status).toBe('restored')
+    const restored = listModelProviders(database, providerOptions())[0]
+    expect(restored).toMatchObject({
+      catalogProviderId: 'deepseek',
+      apiKeyMask: null,
+      verification: 'unverified'
+    })
+    expect(readProviderModels(database, added.providerId)[0]?.thinkingLevelMap).toMatchObject({
+      high: 'high'
+    })
+  })
+
+  it('当前版本备份缺了 v14 新列时不会被当成可恢复的备份', async () => {
+    migrate(database)
+    const file = backupFile('missing-columns.db')
+    await createBackup(database, { file, now })
+    const copy = openDatabase(file)
+    try {
+      copy.exec('ALTER TABLE model_provider DROP COLUMN catalog_provider_id')
+      copy.exec('ALTER TABLE model_provider_model DROP COLUMN thinking_level_map')
+    } finally {
+      copy.close()
+    }
+
+    expect(inspectBackupFile(file)).toEqual({ ok: false, reason: 'not-a-library' })
   })
 
   it('记下上次备份的时间、路径与体积', async () => {

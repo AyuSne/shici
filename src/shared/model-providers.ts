@@ -72,6 +72,8 @@ export type ModelProviderSummary = {
   lastCheckedAt: string | null
   lastVerifiedAt: string | null
   source: ProviderSource
+  /** 内置目录身份（deepseek / kimi / glm）；迁移来的 custom 为 null。 */
+  catalogProviderId: string | null
   /** 切换只影响之后的调用，所以这里只标「使用中」。 */
   active: boolean
   /** 该 provider 的默认模型行 id；没有模型时为 null。 */
@@ -80,3 +82,47 @@ export type ModelProviderSummary = {
   defaultModel: string | null
   models: ModelProviderModelSummary[]
 }
+
+/* ---------- #62：从内置目录添加、选择默认模型、激活与删除 ---------- */
+
+export type AddBuiltinProviderRequest = {
+  /** 目录入口 id：deepseek / kimi / glm。 */
+  catalogProviderId: string
+  /** 写一次就加密保存，保存时不联网校验；结果里不会再回传。 */
+  apiKey: string
+}
+
+export type AddBuiltinProviderResult =
+  | { status: 'saved'; providerId: string; providerKey: string }
+  | { status: 'rejected'; reason: 'unknown-provider' | 'missing-key' }
+
+export type SetDefaultProviderModelRequest = {
+  providerId: string
+  /** 模型行的库内 id，不是请求里发送的 model id。 */
+  modelRowId: string
+}
+
+export type SetDefaultProviderModelResult =
+  | { status: 'saved'; defaultModelId: string }
+  | { status: 'rejected'; reason: 'unknown-model' }
+  | { status: 'missing' }
+
+export type ActivateProviderRequest = {
+  providerId: string
+}
+
+export type ActivateProviderResult =
+  | { status: 'activated'; activeProviderId: string }
+  | { status: 'missing' }
+
+export type DeleteProviderRequest = {
+  providerId: string
+}
+
+export type DeleteProviderResult =
+  | {
+      status: 'deleted'
+      /** 删的是使用中的那套：选择被明确清空，不会静默换成别的凭据。 */
+      activeCleared: boolean
+    }
+  | { status: 'missing' }

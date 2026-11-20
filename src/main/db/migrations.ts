@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AppDatabase } from './database'
+import { deriveProviderKey } from './provider-key'
 
 export type Migration = {
   version: number
@@ -354,6 +355,9 @@ export const migrations: readonly Migration[] = [
           last_checked_at   TEXT,
           last_verified_at  TEXT,
           source            TEXT NOT NULL,
+          -- 内置目录身份：Provider ID 可以因同厂商多套而变成 deepseek-2，
+          -- 这一列始终指向目录里的入口（如 deepseek），迁移来的 custom 为 NULL。
+          catalog_provider_id TEXT,
           default_model_id  TEXT,
           created_at        TEXT NOT NULL,
           updated_at        TEXT NOT NULL
@@ -372,6 +376,10 @@ export const migrations: readonly Migration[] = [
           max_tokens     INTEGER,
           input          TEXT NOT NULL DEFAULT 'text',
           reasoning      INTEGER NOT NULL DEFAULT 0,
+          -- 目录描述符里的思考档位映射与兼容开关：请求时要用它们决定
+          -- high 是否可用，以及思考字段按 DeepSeek / Kimi / ZAI 哪种格式发。
+          thinking_level_map TEXT,
+          compat             TEXT,
           source         TEXT NOT NULL,
           sort           INTEGER NOT NULL DEFAULT 0,
           created_at     TEXT NOT NULL,
@@ -475,52 +483,6 @@ export const migrations: readonly Migration[] = [
 
 function latestVersion(plan: readonly Migration[]): number {
   return plan.reduce((latest, migration) => Math.max(latest, migration.version), 0)
-}
-
-const PROVIDER_KEY_MAX_LENGTH = 48
-
-function slugOf(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-function hostSlugOf(baseUrl: string): string {
-  try {
-    const url = new URL(baseUrl)
-    return slugOf(url.hostname.replace(/^www\./, '').replace(/\./g, '-'))
-  } catch {
-    return ''
-  }
-}
-
-/**
- * Provider ID 的迁移规则：小写字母开头，只含小写字母、数字与连字符，同一份库里唯一。
- * 先从名字派生；名字全是中文等无法成词时退到地址；仍不合法就用 `provider`。
- */
-function deriveProviderKey(
-  name: string,
-  baseUrl: string,
-  used: ReadonlySet<string>
-): string {
-  let base = slugOf(name)
-  if (!/^[a-z]/.test(base)) {
-    base = hostSlugOf(baseUrl)
-  }
-  if (!/^[a-z]/.test(base)) {
-    base = 'provider'
-  }
-  base = base.slice(0, PROVIDER_KEY_MAX_LENGTH).replace(/-+$/g, '')
-  if (!/^[a-z]/.test(base)) {
-    base = 'provider'
-  }
-  let key = base
-  for (let suffix = 2; used.has(key); suffix += 1) {
-    key = `${base}-${suffix}`
-  }
-  return key
 }
 
 /** 迁移失败时带上目标版本：界面直接显示这句话就够说明发生了什么。 */

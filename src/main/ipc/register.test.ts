@@ -265,6 +265,23 @@ const settingsOverview: SettingsOverview = {
 function settingsHandlers() {
   return {
     'settings:overview': (): SettingsOverview => settingsOverview,
+    'settings:provider-add': () => ({
+      status: 'saved' as const,
+      providerId: 'provider-1',
+      providerKey: 'deepseek'
+    }),
+    'settings:provider-default-model': () => ({
+      status: 'saved' as const,
+      defaultModelId: 'model-1'
+    }),
+    'settings:provider-activate': () => ({
+      status: 'activated' as const,
+      activeProviderId: 'provider-1'
+    }),
+    'settings:provider-delete': () => ({
+      status: 'deleted' as const,
+      activeCleared: false
+    }),
     'settings:reading-save': () => ({
       saved: true,
       preferences: settingsOverview.reading
@@ -317,10 +334,26 @@ describe('registerIpcHandlers', () => {
     expect(events).toEqual([event])
   })
 
-  it('模型服务在迁移这一版只有只读概览，没有配置写入 channel', () => {
+  it('模型服务写入只走 provider 表，没有旧 profile 写入，也没有模型 CRUD', () => {
     expect(IPC_CHANNELS).toContain('settings:overview')
+    expect(IPC_CHANNELS).toEqual(
+      expect.arrayContaining([
+        'settings:provider-add',
+        'settings:provider-default-model',
+        'settings:provider-activate',
+        'settings:provider-delete'
+      ])
+    )
     expect(
       IPC_CHANNELS.filter((channel) => channel.startsWith('settings:profile-'))
+    ).toEqual([])
+    expect(
+      IPC_CHANNELS.filter(
+        (channel) =>
+          channel.startsWith('settings:model-') ||
+          channel.includes('discover') ||
+          channel.includes('test-connection')
+      )
     ).toEqual([])
   })
 

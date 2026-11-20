@@ -17,24 +17,35 @@ export type StubScript =
       chunkDelayMs?: number
       /** 把每条 SSE 事件拆成两次写入，模拟网络把一行拆开。 */
       fragmentChunks?: boolean
+      /** 响应头：E2E 与单测用它验证 request id 只从 header 来。 */
+      headers?: Readonly<Record<string, string>>
     }
-  | { kind: 'status'; status: number; message?: string }
+  | {
+      kind: 'status'
+      status: number
+      message?: string
+      /** 响应头：request id / Retry-After 等。 */
+      headers?: Readonly<Record<string, string>>
+    }
   | {
       kind: 'hang'
       thinking?: readonly string[]
       text?: readonly string[]
+      headers?: Readonly<Record<string, string>>
     }
   | {
       /** 已经发出 200 与部分内容，然后直接断开，模拟中途断网。 */
       kind: 'truncate'
       thinking?: readonly string[]
       text?: readonly string[]
+      headers?: Readonly<Record<string, string>>
     }
   | {
       /** 正常结束响应，但没有 finish_reason 与 [DONE]。 */
       kind: 'end-early'
       thinking?: readonly string[]
       text?: readonly string[]
+      headers?: Readonly<Record<string, string>>
     }
 
 export type StubRequest = {
@@ -134,7 +145,8 @@ function parseJson(raw: string): Record<string, unknown> {
 async function respond(response: ServerResponse, script: StubScript): Promise<void> {
   if (script.kind === 'status') {
     response.writeHead(script.status, {
-      'Content-Type': 'application/json; charset=utf-8'
+      'Content-Type': 'application/json; charset=utf-8',
+      ...(script.headers ?? {})
     })
     response.end(
       JSON.stringify({
@@ -151,7 +163,8 @@ async function respond(response: ServerResponse, script: StubScript): Promise<vo
   response.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache',
-    Connection: 'keep-alive'
+    Connection: 'keep-alive',
+    ...(script.headers ?? {})
   })
 
   const sendChunk = async (delta: Record<string, unknown>): Promise<void> => {

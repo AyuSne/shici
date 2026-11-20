@@ -8,8 +8,12 @@ import {
   formatBytes,
   formatMoment,
   keyStateText,
+  modelCapacityText,
+  modelMetaText,
+  modelThinkingText,
   protocolText,
   providerModelsText,
+  providerSourceText,
   readingDefaultsText,
   restoreRejectionText,
   themeText,
@@ -33,6 +37,7 @@ function provider(patch: Partial<ModelProviderSummary> = {}): ModelProviderSumma
     lastCheckedAt: null,
     lastVerifiedAt: null,
     source: 'custom',
+    catalogProviderId: null,
     active: false,
     defaultModelId: 'model-1',
     defaultModel: 'deepseek-flash',
@@ -159,6 +164,40 @@ describe('providerModelsText', () => {
       )
     ).toBe('deepseek-flash、deepseek-v4-pro')
     expect(providerModelsText(provider({ models: [] }))).toBe('还没有模型')
+  })
+})
+
+describe('模型元数据文案', () => {
+  const model = provider().models[0]!
+
+  it('目录给了容量就显示实际值与思考能力', () => {
+    const withMeta = {
+      ...model,
+      contextWindow: 1000000,
+      maxTokens: 384000,
+      reasoning: true
+    }
+    expect(modelCapacityText(withMeta)).toBe('上下文 1,000,000 · 输出 384,000')
+    expect(modelThinkingText(withMeta)).toBe('支持思考')
+    expect(modelMetaText(withMeta)).toBe('上下文 1,000,000 · 输出 384,000 · 支持思考')
+  })
+
+  it('迁移来的模型没有容量信息时不编造 DeepSeek 数字，说清按通用上限兜底', () => {
+    expect(modelCapacityText(model)).toBe('目录未提供容量 · 按通用上限兜底')
+    expect(modelThinkingText(model)).toBe('不支持思考')
+    expect(modelMetaText(model)).toBe('目录未提供容量 · 按通用上限兜底 · 不支持思考')
+  })
+})
+
+describe('providerSourceText', () => {
+  it('内置目录标出目录身份，迁移来的 custom 不作假', () => {
+    expect(
+      providerSourceText(provider({ source: 'builtin', catalogProviderId: 'deepseek' }))
+    ).toBe('内置目录 · deepseek')
+    expect(providerSourceText(provider())).toBe('自定义')
+    expect(
+      providerSourceText(provider({ source: 'builtin', catalogProviderId: null }))
+    ).toBe('内置目录')
   })
 })
 

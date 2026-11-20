@@ -273,12 +273,18 @@ const COLUMNS_BY_VERSION: readonly {
   {
     version: 14,
     table: 'model_provider',
-    columns: ['provider_key', 'secret_ciphertext', 'default_model_id', 'protocol']
+    columns: [
+      'provider_key',
+      'secret_ciphertext',
+      'default_model_id',
+      'protocol',
+      'catalog_provider_id'
+    ]
   },
   {
     version: 14,
     table: 'model_provider_model',
-    columns: ['provider_id', 'model_id', 'api', 'sort']
+    columns: ['provider_id', 'model_id', 'api', 'sort', 'thinking_level_map', 'compat']
   }
 ]
 

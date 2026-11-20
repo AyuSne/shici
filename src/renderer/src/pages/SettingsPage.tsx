@@ -105,7 +105,11 @@ export function SettingsPage() {
           {overview === null ? (
             <p className="empty-line">正在读取设置…</p>
           ) : section === 'model' ? (
-            <ModelSection overview={overview} />
+            <ModelSection
+              overview={overview}
+              onChange={applyOverview}
+              notify={setToast}
+            />
           ) : section === 'reading' ? (
             <ReadingDefaultsSection
               overview={overview}

@@ -11,13 +11,23 @@ import type {
   ProviderSource,
   ProviderVerification
 } from '../../shared/model-providers'
+import type { ModelThinkingLevel } from '../../shared/model-catalog'
 import { DEFAULT_RETRY_POLICY } from '../../shared/model-providers'
 import type { AppDatabase } from '../db/database'
-import { readSetting } from '../db/settings'
+import { readSetting, writeSetting } from '../db/settings'
 import type { SecretStore } from './secret-store'
 
 /** 使用中的 provider 存在 setting 表里；切换只写这一个键，不改历史。 */
 export const ACTIVE_PROVIDER_KEY = 'chat.activeProviderId'
+
+/**
+ * 用户明确删掉「使用中」的 provider 之后留的标记：这时不能静默拿环境变量里
+ * 另一套凭据顶上，下一次对话要明确提示没有使用中的提供商。
+ */
+export const PROVIDER_SELECTION_CLEARED_KEY = 'chat.providerSelectionCleared'
+
+/** thinkingLevelMap / compat 这种目录描述符存成 JSON；坏值按没有处理，不让一行配置打不开设置页。 */
+export type ModelThinkingLevelMap = Partial<Record<ModelThinkingLevel, string | null>>
 
 const MASK_DOTS = '·············'
 
@@ -37,6 +47,8 @@ export type ModelProviderRecord = {
   lastCheckedAt: string | null
   lastVerifiedAt: string | null
   source: ProviderSource
+  /** 内置目录身份（deepseek / kimi / glm）；迁移来的 custom 为 null。 */
+  catalogProviderId: string | null
   defaultModelId: string | null
   createdAt: string
   updatedAt: string
@@ -53,6 +65,8 @@ export type ModelProviderModelRecord = {
   maxTokens: number | null
   input: ModelInput
   reasoning: boolean
+  thinkingLevelMap: ModelThinkingLevelMap | null
+  compat: Record<string, unknown> | null
   source: ModelSource
   sort: number
   createdAt: string
@@ -86,6 +100,7 @@ type ProviderRow = {
   last_checked_at: string | null
   last_verified_at: string | null
   source: string
+  catalog_provider_id: string | null
   default_model_id: string | null
   created_at: string
   updated_at: string
@@ -102,6 +117,8 @@ type ModelRow = {
   max_tokens: number | null
   input: string
   reasoning: number
+  thinking_level_map: string | null
+  compat: string | null
   source: string
   sort: number
   created_at: string
@@ -110,10 +127,10 @@ type ModelRow = {
 
 const PROVIDER_COLUMNS = `id, provider_key, display_name, protocol, base_url, auth_mode, env_var,
   secret_ciphertext, retry_policy, verification, last_error, last_checked_at, last_verified_at,
-  source, default_model_id, created_at, updated_at`
+  source, catalog_provider_id, default_model_id, created_at, updated_at`
 
 const MODEL_COLUMNS = `id, provider_id, model_id, display_name, api, base_url, context_window,
-  max_tokens, input, reasoning, source, sort, created_at, updated_at`
+  max_tokens, input, reasoning, thinking_level_map, compat, source, sort, created_at, updated_at`
 
 const PROTOCOLS: readonly ProviderProtocol[] = [
   'openai-completions',
@@ -149,6 +166,34 @@ function retryPolicyOf(value: string): ProviderRetryPolicy {
   return { ...DEFAULT_RETRY_POLICY }
 }
 
+function parseJsonObject(value: string | null): Record<string, unknown> | null {
+  if (value === null || value.trim() === '') {
+    return null
+  }
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null
+  } catch {
+    return null
+  }
+}
+
+function parseThinkingLevelMap(value: string | null): ModelThinkingLevelMap | null {
+  const parsed = parseJsonObject(value)
+  if (parsed === null) {
+    return null
+  }
+  const map: ModelThinkingLevelMap = {}
+  for (const [level, mapped] of Object.entries(parsed)) {
+    if (typeof mapped === 'string' || mapped === null) {
+      map[level as ModelThinkingLevel] = mapped
+    }
+  }
+  return map
+}
+
 function toProviderRecord(row: ProviderRow): ModelProviderRecord {
   return {
     id: row.id,
@@ -165,6 +210,7 @@ function toProviderRecord(row: ProviderRow): ModelProviderRecord {
     lastCheckedAt: row.last_checked_at,
     lastVerifiedAt: row.last_verified_at,
     source: row.source === 'builtin' ? 'builtin' : 'custom',
+    catalogProviderId: row.catalog_provider_id,
     defaultModelId: row.default_model_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -183,6 +229,8 @@ function toModelRecord(row: ModelRow): ModelProviderModelRecord {
     maxTokens: row.max_tokens,
     input: row.input === 'image' ? 'image' : 'text',
     reasoning: row.reasoning === 1,
+    thinkingLevelMap: parseThinkingLevelMap(row.thinking_level_map),
+    compat: parseJsonObject(row.compat),
     source: row.source === 'catalog' || row.source === 'fetched' ? row.source : 'manual',
     sort: row.sort,
     createdAt: row.created_at,
@@ -283,16 +331,27 @@ export function readProviderModels(
   return rows.map(toModelRecord)
 }
 
-/**
- * 使用中的 provider id。指向已经不存在的配置时当作没有，
- * 不把用户留在一个不存在的选择上。
- */
+/** 使用中的 provider id。指向已经不存在的配置时当作没有，
+ * 不把用户留在一个不存在的选择上。 */
 export function readActiveProviderId(database: AppDatabase): string | null {
   const stored = readSetting(database, ACTIVE_PROVIDER_KEY)?.trim()
   if (!stored) {
     return null
   }
   return readModelProvider(database, stored) === null ? null : stored
+}
+
+/** 删掉使用中的 provider 之后，明确进入「没有使用中」的状态。 */
+export function isProviderSelectionCleared(database: AppDatabase): boolean {
+  return readSetting(database, PROVIDER_SELECTION_CLEARED_KEY) === '1'
+}
+
+export function clearProviderSelection(database: AppDatabase): void {
+  database.prepare('DELETE FROM setting WHERE key = ?').run(PROVIDER_SELECTION_CLEARED_KEY)
+}
+
+export function markProviderSelectionCleared(database: AppDatabase): void {
+  writeSetting(database, PROVIDER_SELECTION_CLEARED_KEY, '1')
 }
 
 /** provider 的默认模型：优先选中的那条，没有就退回目录里的第一条。 */
@@ -343,6 +402,7 @@ export function listModelProviders(
       lastCheckedAt: provider.lastCheckedAt,
       lastVerifiedAt: provider.lastVerifiedAt,
       source: provider.source,
+      catalogProviderId: provider.catalogProviderId,
       active: provider.id === activeId,
       defaultModelId: defaultModel?.id ?? null,
       defaultModel: defaultModel?.modelId ?? null,
