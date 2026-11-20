@@ -1,5 +1,7 @@
 # 生成产物必须逐字确定：JSON 固定 LF，避免 Windows checkout 的 CRLF 让 --check 漂移。
 src/shared/model-catalog.json text eol=lf
 src/shared/model-provider-overrides.json text eol=lf
+# 生成脚本会被测试动态 import；shebang 后跟 CRLF 会让 Vitest 解析失败。
+scripts/**/*.mjs text eol=lf
 # Vitest 快照也按 LF 保存，跨 worktree 比对不因行尾变化。
 src/shared/__snapshots__/*.snap text eol=lf
