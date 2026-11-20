@@ -169,7 +169,9 @@ describe('共享模型目录生成', () => {
     expect(second.status, second.stderr).toBe(0)
     expect(second.stdout).toBe(first.stdout)
     expect(first.stdout.endsWith('\n')).toBe(true)
-    expect(readFileSync(catalogFile, 'utf8')).toBe(first.stdout)
+    expect(readFileSync(catalogFile, 'utf8').replace(/\r\n/g, '\n')).toBe(
+      first.stdout
+    )
     expect(first.stdout).not.toMatch(
       /generatedAt|lastGenerated|\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
     )
@@ -208,7 +210,9 @@ describe('共享模型目录生成', () => {
       )
 
       expect(result.status, result.stderr).toBe(0)
-      expect(result.stdout).toBe(readFileSync(catalogFile, 'utf8'))
+      expect(result.stdout).toBe(
+        readFileSync(catalogFile, 'utf8').replace(/\r\n/g, '\n')
+      )
 
       const source = readFileSync(generator, 'utf8')
       expect(source).not.toMatch(/from ['"]node:(?:http|https|net)['"]/)

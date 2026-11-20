@@ -433,7 +433,7 @@ async function main() {
     if (!existsSync(options.output)) {
       fail(`产物不存在：${relative(ROOT, options.output)}；请先运行 npm run generate:catalog`)
     }
-    const current = readFileSync(options.output, 'utf8')
+    const current = readFileSync(options.output, 'utf8').replace(/\r\n/g, '\n')
     if (current !== text) {
       fail(`产物不是最新：${relative(ROOT, options.output)}；请重新运行 npm run generate:catalog`)
     }
