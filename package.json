@@ -11,7 +11,10 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
+    "predev": "npm run generate:catalog",
     "build": "electron-vite build",
+    "prebuild": "npm run generate:catalog",
+    "generate:catalog": "node scripts/generate-model-catalog.mjs",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:e2e",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
     "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
