@@ -98,6 +98,18 @@ async function writeCopy(
                  last_checked_at = NULL,
                  last_verified_at = NULL
         `)
+        // v14 的 provider 密文同样不进备份；环境变量模式的引用保留，
+        // 存本机的配置没了密钥就不能再自称「已验证」。
+        copy.exec(`
+          UPDATE model_provider
+             SET secret_ciphertext = NULL;
+          UPDATE model_provider
+             SET verification = 'unverified',
+                 last_error = NULL,
+                 last_checked_at = NULL,
+                 last_verified_at = NULL
+           WHERE auth_mode = 'stored';
+        `)
         copy.exec('VACUUM')
       }
       // 副本不该依赖 -wal / -shm：换成回滚日志，单文件即可打开。
@@ -243,7 +255,8 @@ const TABLES_BY_VERSION: readonly { version: number; tables: readonly string[] }
   { version: 6, tables: ['thread', 'thread_entry'] },
   { version: 7, tables: ['pin'] },
   { version: 8, tables: ['model_profile'] },
-  { version: 10, tables: ['entry_later'] }
+  { version: 10, tables: ['entry_later'] },
+  { version: 14, tables: ['model_provider', 'model_provider_model'] }
 ]
 
 /**
@@ -254,7 +267,20 @@ const COLUMNS_BY_VERSION: readonly {
   version: number
   table: string
   columns: readonly string[]
-}[] = [{ version: 11, table: 'article', columns: ['completed_at'] }]
+}[] = [
+  { version: 11, table: 'article', columns: ['completed_at'] },
+  // v14 的 provider 与模型目录缺列时，恢复进来连只读卡片都读不出来。
+  {
+    version: 14,
+    table: 'model_provider',
+    columns: ['provider_key', 'secret_ciphertext', 'default_model_id', 'protocol']
+  },
+  {
+    version: 14,
+    table: 'model_provider_model',
+    columns: ['provider_id', 'model_id', 'api', 'sort']
+  }
+]
 
 function tableColumns(database: AppDatabase, table: string): Set<string> {
   const columns = database.pragma(`table_info(${table})`) as { name: string }[]

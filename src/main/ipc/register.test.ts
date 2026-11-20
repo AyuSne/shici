@@ -242,8 +242,9 @@ function pinsHandlers() {
 }
 
 const settingsOverview: SettingsOverview = {
-  profiles: [],
-  activeId: null,
+  providers: [],
+  activeProviderId: null,
+  defaultModelId: null,
   activeModel: '',
   reading: {
     fontSize: 20,
@@ -264,23 +265,6 @@ const settingsOverview: SettingsOverview = {
 function settingsHandlers() {
   return {
     'settings:overview': (): SettingsOverview => settingsOverview,
-    'settings:profile-save': () => ({
-      status: 'saved' as const,
-      overview: settingsOverview,
-      profileId: 'profile-1'
-    }),
-    'settings:profile-activate': () => ({
-      status: 'activated' as const,
-      overview: settingsOverview
-    }),
-    'settings:profile-delete': () => ({
-      status: 'deleted' as const,
-      overview: settingsOverview
-    }),
-    'settings:profile-verify': () => ({
-      status: 'verified' as const,
-      overview: settingsOverview
-    }),
     'settings:reading-save': () => ({
       saved: true,
       preferences: settingsOverview.reading
@@ -333,8 +317,14 @@ describe('registerIpcHandlers', () => {
     expect(events).toEqual([event])
   })
 
-  it('契约里的 channel 没有处理函数时启动即报错', () => {
-    const { ipc } = fakeIpcMain()
+  it('模型服务在迁移这一版只有只读概览，没有配置写入 channel', () => {
+    expect(IPC_CHANNELS).toContain('settings:overview')
+    expect(
+      IPC_CHANNELS.filter((channel) => channel.startsWith('settings:profile-'))
+    ).toEqual([])
+  })
+
+  it('契约里的 channel 没有处理函数时启动即报错', () => {    const { ipc } = fakeIpcMain()
 
     expect(() =>
       registerIpcHandlers(ipc, { ...chatHandlers() } as unknown as IpcHandlers)

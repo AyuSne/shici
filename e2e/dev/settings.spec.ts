@@ -3,13 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fixtureArticle, writeCorpusDirectory } from '../../src/testing/corpus-fixture'
-import {
-  startSseStub,
-  unusedBaseUrl,
-  type SseStub,
-  type StubScript
-} from '../../src/testing/sse-stub'
+import { startSseStub, type SseStub, type StubScript } from '../../src/testing/sse-stub'
 import { expect, test } from '../fixtures/app'
+import { seedLegacyModelProfiles, seedModelProvider } from '../fixtures/database'
 
 const stubs: SseStub[] = []
 
@@ -23,7 +19,7 @@ async function createStub(script: StubScript): Promise<SseStub> {
   return stub
 }
 
-/** 空的 env 密钥把开发态 .env 挡住：这些用例从「还没配置」开始。 */
+/** 空的 env 密钥把开发态 .env 挡住：这些用例从「没有环境变量配置」开始。 */
 const noEnvironmentConfig = { DEEPSEEK_API_KEY: '' }
 
 function settingsNav(page: Page) {
@@ -36,18 +32,6 @@ async function openSettings(page: Page): Promise<void> {
     .getByRole('button', { name: '设置' })
     .click()
   await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible()
-}
-
-async function addProfile(
-  page: Page,
-  input: { name: string; baseUrl: string; model: string; apiKey: string }
-): Promise<void> {
-  await page.getByRole('button', { name: '新增一套' }).click()
-  await page.getByLabel('名称').fill(input.name)
-  await page.getByLabel('接口地址').fill(input.baseUrl)
-  await page.getByLabel('模型名').fill(input.model)
-  await page.getByLabel('API 密钥').fill(input.apiKey)
-  await page.getByRole('button', { name: '保存并校验' }).click()
 }
 
 const firstArticle = fixtureArticle({
@@ -84,131 +68,101 @@ test.afterAll(async () => {
 })
 
 test.describe('设置与密钥', () => {
-  test('多套模型配置：校验通过才落库，被拒保留原样，切换、编辑、删除都生效', async ({
-    launch
+  test('升级后模型服务是只读卡片：名称、协议、模型、验证与使用中都不丢，也没有编辑口', async ({
+    launch,
+    userDataDirectory
   }) => {
-    const accepted = await createStub({ kind: 'status', status: 200 })
-    const denied = await createStub({ kind: 'status', status: 401 })
-    const { page } = await launch({ env: noEnvironmentConfig })
+    seedLegacyModelProfiles(
+      join(userDataDirectory, 'english-learning.db'),
+      [
+        {
+          id: 'profile-deepseek',
+          name: 'DeepSeek 官方',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-flash',
+          apiKeySecret: null,
+          verification: 'verified'
+        },
+        {
+          id: 'profile-backup',
+          name: 'Backup API',
+          baseUrl: 'https://backup.example.com/v1',
+          model: 'deepseek-v4-pro',
+          apiKeySecret: null,
+          verification: 'unverified'
+        }
+      ],
+      'profile-deepseek'
+    )
+
+    const handle = await launch({ env: noEnvironmentConfig })
+    const { page } = handle
     await openSettings(page)
 
-    // 空状态与五个分区。
-    await expect(
-      settingsNav(page).getByRole('button', { name: '模型服务' })
-    ).toBeVisible()
-    await expect(
-      settingsNav(page).getByRole('button', { name: '阅读' })
-    ).toBeVisible()
-    await expect(
-      settingsNav(page).getByRole('button', { name: '外观' })
-    ).toBeVisible()
-    await expect(
-      settingsNav(page).getByRole('button', { name: '数据' })
-    ).toBeVisible()
-    await expect(
-      settingsNav(page).getByRole('button', { name: '关于' })
-    ).toBeVisible()
-    await expect(page.getByText('还没有配置。新增一套之后就能开始对话。')).toBeVisible()
+    // 五个分区还在。
+    for (const label of ['模型服务', '阅读', '外观', '数据', '关于']) {
+      await expect(settingsNav(page).getByRole('button', { name: label })).toBeVisible()
+    }
 
-    await addProfile(page, {
-      name: 'DeepSeek 官方',
-      baseUrl: accepted.baseUrl,
-      model: 'deepseek-flash',
-      apiKey: 'sk-e2e-0001'
-    })
+    const cards = page.locator('.profile-card')
+    await expect(cards).toHaveCount(2)
+    const first = cards.filter({ hasText: 'DeepSeek 官方' })
+    await expect(first).toContainText('使用中')
+    await expect(first).toContainText('已验证')
+    await expect(first).toContainText('OpenAI Chat Completions')
+    await expect(first).toContainText('deepseek-flash')
+    await expect(first).toContainText('deepseek')
+    await expect(first).toContainText('缺失')
 
-    const firstCard = page.locator('.profile-card').filter({ hasText: 'DeepSeek 官方' })
-    await expect(firstCard).toContainText('使用中')
-    await expect(firstCard).toContainText('已验证')
-    await expect(firstCard).toContainText('sk-·············0001')
-    await expect(firstCard).not.toContainText('sk-e2e-0001')
-    await expect(firstCard.locator('.profile-check')).toContainText('通过')
+    const second = cards.filter({ hasText: 'Backup API' })
+    await expect(second).not.toContainText('使用中')
+    await expect(second).toContainText('未验证')
+    await expect(second).toContainText('backup-api')
+    await expect(second).toContainText('deepseek-v4-pro')
 
-    // 校验请求带上了这套配置的地址、模型与密钥，且是一次最小请求。
-    expect(accepted.requests[0]?.body).toMatchObject({
-      model: 'deepseek-flash',
-      stream: false,
-      max_tokens: 1
-    })
-    expect(accepted.requests[0]?.headers.authorization).toBe('Bearer sk-e2e-0001')
-
-    // 密钥被服务端拒绝：错误显示在表单里，库里那份配置原样保留。
-    await addProfile(page, {
-      name: '坏密钥',
-      baseUrl: denied.baseUrl,
-      model: 'deepseek-flash',
-      apiKey: 'sk-wrong-key'
-    })
-    await expect(page.getByRole('alert')).toContainText('密钥无效，没有保存。')
-    await expect(page.locator('.profile-card')).toHaveCount(1)
-    await expect(firstCard).toContainText('DeepSeek 官方')
-    expect(denied.requests[0]?.headers.authorization).toBe('Bearer sk-wrong-key')
-    await page.getByRole('button', { name: '取消' }).click()
+    // 只读：没有新增、编辑、删除或表单入口。
+    await expect(page.getByRole('button', { name: '新增一套' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^编辑/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^删除/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /切换/ })).toHaveCount(0)
     await expect(page.getByLabel('名称')).toHaveCount(0)
-
-    // 第二套保存成功，但不抢走使用中的位置。
-    await addProfile(page, {
-      name: '备用',
-      baseUrl: accepted.baseUrl,
-      model: 'deepseek-v4-pro',
-      apiKey: 'sk-e2e-0002'
-    })
-    const backupCard = page.locator('.profile-card').filter({ hasText: '备用' })
-    await expect(page.locator('.profile-card')).toHaveCount(2)
-    await expect(backupCard).not.toContainText('使用中')
-    await expect(firstCard).toContainText('使用中')
-
-    await page.getByRole('button', { name: '切换到 备用' }).click()
-    await expect(page.getByRole('status')).toContainText('已切换，下一次调用起生效')
-    await expect(backupCard).toContainText('使用中')
-    await expect(firstCard).not.toContainText('使用中')
-
-    // 编辑已有配置：密钥只显示掩码，不点「重新输入」就没有密钥输入框。
-    await page.getByRole('button', { name: '编辑 备用' }).click()
     await expect(page.getByLabel('API 密钥')).toHaveCount(0)
-    await expect(page.locator('.key-mask-row code')).toHaveText('sk-·············0002')
-    await page.getByLabel('名称').fill('备用配置')
-    await page.getByRole('button', { name: '保存', exact: true }).click()
-    await expect(page.getByRole('status')).toContainText('已保存')
-    const renamedCard = page.locator('.profile-card').filter({ hasText: '备用配置' })
-    await expect(renamedCard).toContainText('已验证')
-    await expect(renamedCard).toContainText('使用中')
+    await expect(page.getByRole('button', { name: '测试当前连接' })).toHaveCount(0)
 
-    // 删除当前使用中的那套后没有别的配置顶上来；要接着用就显式切回去。
-    await page.getByRole('button', { name: '删除 备用配置' }).click()
-    await expect(page.getByRole('alert')).toContainText('删除「备用配置」？')
-    await page.getByRole('button', { name: '确认删除' }).click()
-    await expect(page.locator('.profile-card')).toHaveCount(1)
-    await expect(firstCard).not.toContainText('使用中')
-    await page.getByRole('button', { name: '切换到 DeepSeek 官方' }).click()
-    await expect(firstCard).toContainText('使用中')
+    // 重启后从迁移后的新表读回来，卡片原样还在；迁移不会重复跑。
+    await handle.close()
+    const reopened = await launch({ userDataDirectory, env: noEnvironmentConfig })
+    await openSettings(reopened.page)
+    await expect(reopened.page.locator('.profile-card')).toHaveCount(2)
+    await expect(
+      reopened.page.locator('.profile-card').filter({ hasText: 'DeepSeek 官方' })
+    ).toContainText('使用中')
   })
 
-  test('断网时存成未验证，下一次成功调用后自动转已验证', async ({ launch }) => {
+  test('真实对话成功后 provider 自动转已验证，旧表不再参与', async ({
+    launch,
+    userDataDirectory
+  }) => {
     const stream = await createStub({ kind: 'stream', text: ['答'] })
-    const offlineBaseUrl = await unusedBaseUrl()
-    const { page } = await launch({ env: noEnvironmentConfig })
+    seedModelProvider(join(userDataDirectory, 'english-learning.db'), {
+      id: 'provider-chat',
+      providerKey: 'chat-provider',
+      displayName: 'Chat Provider',
+      baseUrl: stream.baseUrl,
+      modelId: 'deepseek-flash',
+      authMode: 'env',
+      envVar: 'E2E_CHAT_KEY',
+      verification: 'unverified'
+    })
+    const { page } = await launch({
+      env: { ...noEnvironmentConfig, E2E_CHAT_KEY: 'e2e-chat-key' }
+    })
     await openSettings(page)
 
-    await addProfile(page, {
-      name: '离线配置',
-      baseUrl: offlineBaseUrl,
-      model: 'deepseek-flash',
-      apiKey: 'sk-offline-0003'
-    })
-
-    const card = page.locator('.profile-card').filter({ hasText: '离线配置' })
-    await expect(page.getByRole('status')).toContainText('已保存')
-    await expect(card).toContainText('未验证')
-    await expect(card.locator('.profile-check')).toContainText('未能完成')
-
-    // 改成能连上的地址；不重输密钥就不重新校验，状态仍是未验证。
-    await page.getByRole('button', { name: '编辑 离线配置' }).click()
-    await page.getByLabel('接口地址').fill(stream.baseUrl)
-    await page.getByRole('button', { name: '保存', exact: true }).click()
+    const card = page.locator('.profile-card').filter({ hasText: 'Chat Provider' })
     await expect(card).toContainText('未验证')
 
-    // 真发一次调用，成功后主进程自动把配置标成已验证。
+    // 真发一次调用，成功后主进程自动把 provider 标成已验证。
     await page
       .getByRole('navigation', { name: '全局导航' })
       .getByRole('button', { name: '对话' })
@@ -219,12 +173,8 @@ test.describe('设置与密钥', () => {
     await expect(page.getByText('答', { exact: true })).toBeVisible()
 
     await openSettings(page)
-    await expect(
-      page.locator('.profile-card').filter({ hasText: '离线配置' })
-    ).toContainText('已验证')
-    await expect(
-      page.locator('.profile-card').filter({ hasText: '离线配置' }).locator('.profile-check')
-    ).toContainText('通过')
+    await expect(card).toContainText('已验证')
+    await expect(card.locator('.profile-check')).toContainText('通过')
   })
 
   test('关于页列出程序版本、Electron 版本与词典版权', async ({ launch }) => {
