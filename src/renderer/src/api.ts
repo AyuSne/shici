@@ -80,6 +80,16 @@ import type {
   SettingsOverview
 } from '../../shared/settings'
 import type {
+  ActivateProviderRequest,
+  ActivateProviderResult,
+  AddBuiltinProviderRequest,
+  AddBuiltinProviderResult,
+  DeleteProviderRequest,
+  DeleteProviderResult,
+  SetDefaultProviderModelRequest,
+  SetDefaultProviderModelResult
+} from '../../shared/model-providers'
+import type {
   AskThreadRequest,
   ChatThreadView,
   CreateThreadRequest,
@@ -476,6 +486,34 @@ export function loadPinSource(pinId: string): Promise<PinSourceResult> {
 /** 设置页一次读全：只读 provider 列表、阅读默认、主题、版本与数据目录。 */
 export function loadSettingsOverview(): Promise<SettingsOverview> {
   return invoke('settings:overview')
+}
+
+/** 从内置目录添加一套提供商；保存不联网，密钥只写不读。 */
+export function addBuiltinProvider(
+  request: AddBuiltinProviderRequest
+): Promise<AddBuiltinProviderResult> {
+  return invoke('settings:provider-add', request)
+}
+
+/** 选这个 provider 的默认模型；目录本身只读，不在这里增删模型。 */
+export function setDefaultProviderModel(
+  request: SetDefaultProviderModelRequest
+): Promise<SetDefaultProviderModelResult> {
+  return invoke('settings:provider-default-model', request)
+}
+
+/** 切换使用中的提供商：只写选择，之后的调用才用它。 */
+export function activateProvider(
+  request: ActivateProviderRequest
+): Promise<ActivateProviderResult> {
+  return invoke('settings:provider-activate', request)
+}
+
+/** 删除提供商；删到使用中的那套时选择会被明确清空。 */
+export function deleteProvider(
+  request: DeleteProviderRequest
+): Promise<DeleteProviderResult> {
+  return invoke('settings:provider-delete', request)
 }
 
 /** 改全局阅读默认；单篇覆盖不受影响。 */

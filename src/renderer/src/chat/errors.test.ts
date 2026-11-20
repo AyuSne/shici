@@ -56,6 +56,12 @@ describe('describeChatError', () => {
       retryable: true
     },
     {
+      code: 'empty-response',
+      title: '模型没有返回内容',
+      detail: /空回答/,
+      retryable: true
+    },
+    {
       code: 'not-configured',
       title: '还没有配置模型服务',
       detail: /这次生成没有开始/,
@@ -91,12 +97,18 @@ describe('describeChatError', () => {
       'rate-limited',
       'server-busy',
       'network',
+      'empty-response',
       'not-configured',
       'unknown'
     ]
     const retryable = codes.filter((code) => describeChatError({ code }).retryable)
 
-    expect(retryable.sort()).toEqual(['network', 'rate-limited', 'server-busy'])
+    expect(retryable.sort()).toEqual([
+      'empty-response',
+      'network',
+      'rate-limited',
+      'server-busy'
+    ])
   })
 
   it('换密钥、余额与未配置这三类给出去设置的快捷动作', () => {
@@ -107,6 +119,7 @@ describe('describeChatError', () => {
       'rate-limited',
       'server-busy',
       'network',
+      'empty-response',
       'not-configured',
       'unknown'
     ]

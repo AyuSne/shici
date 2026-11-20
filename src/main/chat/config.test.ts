@@ -2,8 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { UNKNOWN_CONTEXT_WINDOW, UNKNOWN_MAX_TOKENS } from './model-descriptor'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate, migrations } from '../db/migrations'
+import { deleteModelProvider } from '../settings/provider-writes'
 import type { SecretStore } from '../settings/secret-store'
 import { DEFAULT_BASE_URL, DEFAULT_MODEL, readChatConfig, resolveChatConfig } from './config'
 
@@ -21,11 +23,20 @@ describe('readChatConfig', () => {
     expect(readChatConfig({ DEEPSEEK_API_KEY: '   ' })).toBeNull()
   })
 
-  it('只填密钥时用默认接口地址与模型名', () => {
-    expect(readChatConfig({ DEEPSEEK_API_KEY: 'test-key' })).toEqual({
+  it('只填密钥时用默认接口地址与模型名，并带上真实目录描述符', () => {
+    expect(readChatConfig({ DEEPSEEK_API_KEY: 'test-key' })).toMatchObject({
       apiKey: 'test-key',
       baseUrl: DEFAULT_BASE_URL,
-      model: DEFAULT_MODEL
+      model: DEFAULT_MODEL,
+      descriptor: {
+        provider: 'deepseek',
+        model: DEFAULT_MODEL,
+        api: 'openai-completions',
+        baseUrl: DEFAULT_BASE_URL,
+        contextWindow: 1000000,
+        maxTokens: 384000,
+        reasoning: true
+      }
     })
   })
 
@@ -36,10 +47,11 @@ describe('readChatConfig', () => {
         DEEPSEEK_BASE_URL: ' http://127.0.0.1:1234 ',
         DEEPSEEK_MODEL: ' deepseek-v4-pro '
       })
-    ).toEqual({
+    ).toMatchObject({
       apiKey: 'test-key',
       baseUrl: 'http://127.0.0.1:1234',
-      model: 'deepseek-v4-pro'
+      model: 'deepseek-v4-pro',
+      descriptor: { model: 'deepseek-v4-pro', baseUrl: 'http://127.0.0.1:1234' }
     })
   })
 })
@@ -107,10 +119,11 @@ describe('resolveChatConfig', () => {
         DEEPSEEK_BASE_URL: 'http://127.0.0.1:1234',
         DEEPSEEK_MODEL: 'env-model'
       })
-    ).toEqual({
+    ).toMatchObject({
       apiKey: 'env-key',
       baseUrl: 'http://127.0.0.1:1234',
-      model: 'env-model'
+      model: 'env-model',
+      descriptor: { model: 'env-model', reasoning: false }
     })
   })
 
@@ -131,13 +144,24 @@ describe('resolveChatConfig', () => {
       DEEPSEEK_MODEL: 'env-model'
     })
 
-    expect(resolved).toEqual({
+    expect(resolved).toMatchObject({
       apiKey: 'sk-profile-key',
       baseUrl: 'https://profile.example.com',
       model: 'deepseek-v4-pro',
       providerId: 'provider-deepseek',
-      modelId: expect.any(String)
+      modelId: expect.any(String),
+      descriptor: {
+        provider: 'deepseek',
+        model: 'deepseek-v4-pro',
+        api: 'openai-completions',
+        baseUrl: 'https://profile.example.com',
+        contextWindow: UNKNOWN_CONTEXT_WINDOW,
+        maxTokens: UNKNOWN_MAX_TOKENS,
+        input: ['text'],
+        reasoning: false
+      }
     })
+    expect(resolved?.descriptor.thinkingLevelMap).toBeUndefined()
   })
 
   it('切换之后的下一次调用用新的一套，未使用中的配置不参与', () => {
@@ -170,13 +194,48 @@ describe('resolveChatConfig', () => {
     migrate(database)
     activate('provider-local')
 
-    expect(resolveChatConfig(database, secrets, {})).toEqual({
+    expect(resolveChatConfig(database, secrets, {})).toMatchObject({
       apiKey: '',
       baseUrl: 'http://127.0.0.1:11434/v1',
       model: 'qwen2.5:7b',
       providerId: 'provider-local',
       modelId: expect.any(String)
     })
+    // 从来没存过密钥的本机配置（本地 Ollama）允许不带密钥发送。
+    expect(resolveChatConfig(database, secrets, {})?.missingCredential).toBeUndefined()
+  })
+
+  it('本机密文解不开或环境变量缺失时明确标缺凭据，不换源', () => {
+    seedProfiles([
+      { id: 'provider-broken', name: '坏密文', model: 'model-one', apiKey: 'sk-one' }
+    ])
+    migrate(database)
+    activate('provider-broken')
+    database
+      .prepare(`UPDATE model_provider SET secret_ciphertext = 'not-decryptable' WHERE id = ?`)
+      .run('provider-broken')
+
+    expect(resolveChatConfig(database, secrets, {})).toMatchObject({
+      apiKey: '',
+      providerId: 'provider-broken',
+      missingCredential: true
+    })
+
+    database
+      .prepare(
+        `UPDATE model_provider
+            SET auth_mode = 'env', env_var = 'MISSING_PROVIDER_KEY', secret_ciphertext = NULL
+          WHERE id = ?`
+      )
+      .run('provider-broken')
+    expect(resolveChatConfig(database, secrets, {})?.missingCredential).toBe(true)
+    expect(
+      resolveChatConfig(database, secrets, { MISSING_PROVIDER_KEY: 'env-key' })
+    ).toMatchObject({ apiKey: 'env-key' })
+    expect(
+      resolveChatConfig(database, secrets, { MISSING_PROVIDER_KEY: 'env-key' })
+        ?.missingCredential
+    ).toBeUndefined()
   })
 
   it('解析使用中的配置时不再写旧 model_profile 表', () => {
@@ -200,5 +259,21 @@ describe('resolveChatConfig', () => {
     migrate(database)
 
     expect(resolveChatConfig(database, secrets, {})).toBeNull()
+  })
+
+  it('删掉使用中的 provider 后不静默回落到环境变量里的另一套凭据', () => {
+    seedProfiles([
+      { id: 'provider-one', name: '第一套', model: 'model-one', apiKey: 'sk-one' }
+    ])
+    migrate(database)
+    activate('provider-one')
+    deleteModelProvider(database, 'provider-one')
+
+    expect(
+      resolveChatConfig(database, secrets, {
+        DEEPSEEK_API_KEY: 'env-key',
+        DEEPSEEK_MODEL: 'env-model'
+      })
+    ).toBeNull()
   })
 })

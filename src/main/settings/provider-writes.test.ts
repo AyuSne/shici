@@ -1,0 +1,367 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  addBuiltinProvider,
+  activateModelProvider,
+  deleteModelProvider,
+  setDefaultProviderModel
+} from './provider-writes'
+import {
+  isProviderSelectionCleared,
+  listModelProviders,
+  readActiveChatProvider,
+  readActiveProviderId,
+  readDefaultModel,
+  readModelProvider,
+  readProviderModels
+} from './providers'
+import type { SecretStore } from './secret-store'
+import { openDatabase, type AppDatabase } from '../db/database'
+import { migrate, migrations } from '../db/migrations'
+import { askQuestion, createThread, readThreadView, saveAnswer } from '../chat/threads'
+
+let directory: string
+let databaseFile: string
+let database: AppDatabase
+
+/** 可逆的假加密：只用来观察明文有没有进入任何列。 */
+const secrets: SecretStore = {
+  encrypt: (plain) => `sealed:${Buffer.from(plain, 'utf8').toString('base64')}`,
+  decrypt: (sealed) =>
+    sealed.startsWith('sealed:')
+      ? Buffer.from(sealed.slice('sealed:'.length), 'base64').toString('utf8')
+      : null
+}
+
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'english-learning-provider-writes-'))
+  databaseFile = join(directory, 'test.db')
+  database = openDatabase(databaseFile)
+  migrate(database)
+})
+
+afterEach(() => {
+  database.close()
+  rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+})
+
+function addDeepSeek(apiKey = 'sk-deepseek-0001'): string {
+  const result = addBuiltinProvider(database, secrets, {
+    catalogProviderId: 'deepseek',
+    apiKey
+  })
+  if (result.status !== 'saved') {
+    throw new Error(`DeepSeek 没存上：${JSON.stringify(result)}`)
+  }
+  return result.providerId
+}
+
+describe('addBuiltinProvider', () => {
+  it('保存时零网络：端点、环境变量与整个模型目录来自内置目录，状态是未验证', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const providerId = addDeepSeek()
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+
+    const provider = readModelProvider(database, providerId)
+    expect(provider).toMatchObject({
+      providerKey: 'deepseek',
+      displayName: 'DeepSeek',
+      protocol: 'openai-completions',
+      baseUrl: 'https://api.deepseek.com',
+      authMode: 'stored',
+      envVar: 'DEEPSEEK_API_KEY',
+      verification: 'unverified',
+      lastError: null,
+      lastCheckedAt: null,
+      lastVerifiedAt: null,
+      source: 'builtin',
+      catalogProviderId: 'deepseek',
+      retryPolicy: { mode: 'normal' }
+    })
+    expect(provider?.secretCiphertext).toBe(secrets.encrypt('sk-deepseek-0001'))
+
+    const models = readProviderModels(database, providerId)
+    expect(models.map((model) => model.modelId)).toEqual([
+      'deepseek-flash',
+      'deepseek-v4-pro'
+    ])
+    expect(models[0]).toMatchObject({
+      api: 'openai-completions',
+      contextWindow: 1000000,
+      maxTokens: 384000,
+      input: 'text',
+      reasoning: true,
+      source: 'catalog',
+      thinkingLevelMap: {
+        minimal: null,
+        low: 'low',
+        medium: null,
+        high: 'high',
+        max: 'max'
+      },
+      compat: {
+        thinkingFormat: 'deepseek',
+        requiresReasoningContentOnAssistantMessages: true
+      }
+    })
+    expect(readDefaultModel(database, provider!)?.modelId).toBe('deepseek-flash')
+
+    const summary = listModelProviders(database, { secrets, env: {} })[0]
+    expect(summary).toMatchObject({
+      providerKey: 'deepseek',
+      catalogProviderId: 'deepseek',
+      apiKeyMask: 'sk-·············0001',
+      keyState: 'stored',
+      defaultModel: 'deepseek-flash',
+      verification: 'unverified'
+    })
+    // 摘要与数据库里都没有明文密钥。
+    expect(JSON.stringify(summary)).not.toContain('sk-deepseek-0001')
+    database.pragma('wal_checkpoint(TRUNCATE)')
+    expect(readFileSync(databaseFile, 'utf8')).not.toContain('sk-deepseek-0001')
+  })
+
+  it('同一厂商可以保存多套：Provider ID 唯一且合法，目录身份仍是同一个', () => {
+    const first = addDeepSeek('sk-one-1111')
+    const second = addDeepSeek('sk-two-2222')
+
+    const providers = listModelProviders(database, { secrets, env: {} })
+    expect(providers.map((provider) => provider.providerKey)).toEqual([
+      'deepseek',
+      'deepseek-2'
+    ])
+    expect(providers.map((provider) => provider.catalogProviderId)).toEqual([
+      'deepseek',
+      'deepseek'
+    ])
+    expect(providers.map((provider) => provider.displayName)).toEqual([
+      'DeepSeek',
+      'DeepSeek 2'
+    ])
+    expect(providers.every((provider) => /^[a-z][a-z0-9-]*$/.test(provider.providerKey))).toBe(
+      true
+    )
+    expect(first).not.toBe(second)
+    expect(readActiveChatProvider(database, { secrets, env: {} })).toBeNull()
+    expect(
+      readActiveChatProvider(database, { secrets, env: {} })?.apiKey
+    ).toBeUndefined()
+
+    activateModelProvider(database, first)
+    expect(readActiveChatProvider(database, { secrets, env: {} })?.apiKey).toBe('sk-one-1111')
+    activateModelProvider(database, second)
+    expect(readActiveChatProvider(database, { secrets, env: {} })?.apiKey).toBe('sk-two-2222')
+  })
+
+  it('Kimi 与 GLM 各自带出目录端点与模型，不从 DeepSeek 目录克隆', () => {
+    expect(
+      addBuiltinProvider(database, secrets, { catalogProviderId: 'kimi', apiKey: 'sk-kimi' })
+    ).toMatchObject({ status: 'saved' })
+    expect(
+      addBuiltinProvider(database, secrets, { catalogProviderId: 'glm', apiKey: 'sk-glm' })
+    ).toMatchObject({ status: 'saved' })
+
+    const providers = listModelProviders(database, { secrets, env: {} })
+    const kimi = providers.find((provider) => provider.providerKey === 'kimi')
+    const glm = providers.find((provider) => provider.providerKey === 'glm')
+    expect(kimi).toMatchObject({
+      baseUrl: 'https://api.moonshot.cn/v1',
+      envVar: 'MOONSHOT_API_KEY',
+      defaultModel: 'kimi-k2.6'
+    })
+    expect(kimi?.models).toHaveLength(6)
+    expect(kimi?.models[0]).toMatchObject({ contextWindow: 262144, maxTokens: 262144 })
+    expect(glm).toMatchObject({
+      baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+      envVar: 'ZAI_API_KEY',
+      defaultModel: 'glm-4.7'
+    })
+    expect(glm?.models).toHaveLength(7)
+    expect(glm?.models[0]).toMatchObject({ contextWindow: 204800, maxTokens: 131072 })
+  })
+
+  it('拒绝目录之外的入口与空密钥，不写半条配置', () => {
+    expect(
+      addBuiltinProvider(database, secrets, {
+        catalogProviderId: 'opencode-go',
+        apiKey: 'sk-x'
+      })
+    ).toEqual({ status: 'rejected', reason: 'unknown-provider' })
+    expect(
+      addBuiltinProvider(database, secrets, {
+        catalogProviderId: 'deepseek',
+        apiKey: '   '
+      })
+    ).toEqual({ status: 'rejected', reason: 'missing-key' })
+    expect(listModelProviders(database, { secrets, env: {} })).toEqual([])
+  })
+
+  it('迁移后的 custom provider 仍可按 provider 记录选择默认模型与删除，不写旧表', () => {
+    database.close()
+    const legacyFile = join(directory, 'legacy.db')
+    const legacy = openDatabase(legacyFile)
+    try {
+      migrate(legacy, {
+        migrations: migrations.filter((migration) => migration.version <= 13)
+      })
+      legacy
+        .prepare(
+          `INSERT INTO model_profile (
+             id, name, base_url, model, api_key_secret, verification, last_error,
+             last_checked_at, last_verified_at, created_at, updated_at
+           ) VALUES ('profile-old', 'Old Backup', 'https://old.example.com/v1', 'old-model',
+                     ?, 'unverified', NULL, NULL, NULL, '2026-11-18T09:00:00.000Z',
+                     '2026-11-18T09:00:00.000Z')`
+        )
+        .run(secrets.encrypt('sk-old-key'))
+    } finally {
+      legacy.close()
+    }
+    database = openDatabase(legacyFile)
+    migrate(database)
+
+    expect(activateModelProvider(database, 'profile-old')).toMatchObject({
+      status: 'activated'
+    })
+    expect(readActiveChatProvider(database, { secrets, env: {} })).toMatchObject({
+      provider: { id: 'profile-old', source: 'custom', catalogProviderId: null },
+      model: { modelId: 'old-model' },
+      apiKey: 'sk-old-key'
+    })
+
+    const modelId = readProviderModels(database, 'profile-old')[0]!.id
+    expect(setDefaultProviderModel(database, 'profile-old', modelId)).toEqual({
+      status: 'saved',
+      defaultModelId: modelId
+    })
+
+    // 旧表迁移后只读：任何运行时写它都会撞上这个哨兵。
+    database.exec(`
+      CREATE TRIGGER model_profile_read_only
+      BEFORE UPDATE ON model_profile
+      BEGIN
+        SELECT RAISE(ABORT, 'model_profile is read-only after migration');
+      END
+    `)
+    expect(deleteModelProvider(database, 'profile-old')).toEqual({
+      status: 'deleted',
+      activeCleared: true
+    })
+    expect(readActiveProviderId(database)).toBeNull()
+  })
+})
+
+describe('setDefaultProviderModel', () => {
+  it('只接受属于这个 provider 的模型行，选中后默认模型真正换掉', () => {
+    const providerId = addDeepSeek()
+    const [flash, pro] = readProviderModels(database, providerId)
+
+    expect(
+      setDefaultProviderModel(database, providerId, pro!.id)
+    ).toEqual({ status: 'saved', defaultModelId: pro!.id })
+    expect(readDefaultModel(database, readModelProvider(database, providerId)!)?.modelId).toBe(
+      'deepseek-v4-pro'
+    )
+
+    const kimiId = addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'kimi',
+      apiKey: 'sk-kimi'
+    })
+    if (kimiId.status !== 'saved') throw new Error('Kimi 没存上')
+    const kimiModel = readProviderModels(database, kimiId.providerId)[0]!
+    expect(setDefaultProviderModel(database, providerId, kimiModel.id)).toEqual({
+      status: 'rejected',
+      reason: 'unknown-model'
+    })
+    expect(setDefaultProviderModel(database, 'missing', flash!.id)).toEqual({
+      status: 'missing'
+    })
+  })
+})
+
+describe('activateModelProvider', () => {
+  it('切换使用中只写一个设置键，并清掉「已清空」标记；历史消息一条不动', () => {
+    const providerId = addDeepSeek()
+    const thread = createThread(database, { main: { kind: 'none' } })
+    if (thread.status !== 'created') throw new Error('线程没建起来')
+    const asked = askQuestion(database, { threadId: thread.thread.id, text: '你好' })
+    if (asked.status !== 'asked') throw new Error('问题没写进去')
+    const saved = saveAnswer(database, {
+      threadId: thread.thread.id,
+      questionId: asked.questionId,
+      text: '旧回答',
+      thinking: '',
+      phase: 'done'
+    })
+    expect(saved.status).toBe('saved')
+    const before = readThreadView(database, thread.thread.id)
+
+    expect(activateModelProvider(database, providerId)).toEqual({
+      status: 'activated',
+      activeProviderId: providerId
+    })
+    expect(readActiveProviderId(database)).toBe(providerId)
+    expect(isProviderSelectionCleared(database)).toBe(false)
+    expect(readThreadView(database, thread.thread.id)).toEqual(before)
+    expect(activateModelProvider(database, 'missing')).toEqual({ status: 'missing' })
+  })
+})
+
+describe('deleteModelProvider', () => {
+  it('删除使用中的 provider：清空选择并留明确标记，历史线程与钉住都不受影响', () => {
+    const providerId = addDeepSeek()
+    activateModelProvider(database, providerId)
+
+    const thread = createThread(database, { main: { kind: 'none' } })
+    if (thread.status !== 'created') throw new Error('线程没建起来')
+    const asked = askQuestion(database, { threadId: thread.thread.id, text: '问题' })
+    if (asked.status !== 'asked') throw new Error('问题没写进去')
+    const saved = saveAnswer(database, {
+      threadId: thread.thread.id,
+      questionId: asked.questionId,
+      text: '回答',
+      thinking: '',
+      phase: 'done'
+    })
+    if (saved.status !== 'saved') throw new Error('回答没存上')
+    database
+      .prepare(
+        `INSERT INTO pin (
+           id, thread_id, thread_title, answer_id, turn_index, model, captured_text,
+           char_start, char_end, target_kind, created_at
+         ) VALUES ('pin-1', ?, '新的学习', ?, 0, 'deepseek-flash', '回答', 0, 2,
+                   'unfiled', '2026-11-21T00:00:00.000Z')`
+      )
+      .run(thread.thread.id, saved.thread.turns[0]?.answer?.id ?? '')
+
+    expect(deleteModelProvider(database, providerId)).toEqual({
+      status: 'deleted',
+      activeCleared: true
+    })
+    expect(readActiveProviderId(database)).toBeNull()
+    expect(isProviderSelectionCleared(database)).toBe(true)
+    expect(readModelProvider(database, providerId)).toBeNull()
+    expect(readProviderModels(database, providerId)).toEqual([])
+    expect(readThreadView(database, thread.thread.id)).not.toBeNull()
+    expect(database.prepare('SELECT COUNT(*) AS count FROM pin').get()).toEqual({ count: 1 })
+    expect(deleteModelProvider(database, providerId)).toEqual({ status: 'missing' })
+  })
+
+  it('删除没用中的 provider 不清空当前选择', () => {
+    const first = addDeepSeek('sk-first')
+    const second = addDeepSeek('sk-second')
+    activateModelProvider(database, first)
+
+    expect(deleteModelProvider(database, second)).toEqual({
+      status: 'deleted',
+      activeCleared: false
+    })
+    expect(readActiveProviderId(database)).toBe(first)
+    expect(isProviderSelectionCleared(database)).toBe(false)
+  })
+})

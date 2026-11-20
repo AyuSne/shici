@@ -2,6 +2,8 @@ import Database from 'better-sqlite3'
 import { join } from 'node:path'
 import { openDatabase } from '../../src/main/db/database'
 import { migrate, migrations } from '../../src/main/db/migrations'
+import { addBuiltinProvider } from '../../src/main/settings/provider-writes'
+import type { SecretStore } from '../../src/main/settings/secret-store'
 
 /**
  * 应用把本机资料库写进 userData 目录，文件名与主进程里的常量一致。
@@ -88,6 +90,86 @@ export function seedLegacyModelProfiles(
   } finally {
     database.close()
   }
+}
+
+export type BuiltinProviderSeed = {
+  /** 目录入口；E2E 只造本票开放的三家。 */
+  catalogProviderId: 'deepseek' | 'kimi' | 'glm'
+  /** 指到本地 SSE stub（含 /v1 等路径前缀）。 */
+  baseUrl: string
+  /** 环境变量模式的密钥变量名；聊天直接从 E2E 启动环境里读。 */
+  envVar?: string
+  /** 请求里真正发送的默认模型名；不传用目录第一条。 */
+  defaultModelId?: string
+  active?: boolean
+  displayName?: string
+}
+
+/**
+ * 造一份当前 schema 的内置 provider：目录身份、模型元数据与配置行都来自
+ * 真实添加路径，只把地址改到本地 stub、把密钥来源改成环境变量，
+ * 这样 E2E 不必依赖 safeStorage，也能测聊天链路。
+ */
+export function seedBuiltinProvider(
+  databaseFile: string,
+  seed: BuiltinProviderSeed
+): string {
+  const database = openDatabase(databaseFile)
+  try {
+    migrate(database)
+    const secrets: SecretStore = {
+      encrypt: (plain) => `e2e-seed:${plain}`,
+      decrypt: () => null
+    }
+    const added = addBuiltinProvider(
+      database,
+      secrets,
+      { catalogProviderId: seed.catalogProviderId, apiKey: 'e2e-seed-key' },
+      { now: '2026-11-21T00:00:00.000Z' }
+    )
+    if (added.status !== 'saved') throw new Error('内置 provider 没造出来')
+    database
+      .prepare(
+        `UPDATE model_provider
+            SET base_url = ?, auth_mode = 'env', env_var = ?, secret_ciphertext = NULL,
+                display_name = ?
+          WHERE id = ?`
+      )
+      .run(
+        seed.baseUrl,
+        seed.envVar ?? 'E2E_PROVIDER_KEY',
+        seed.displayName ?? catalogDisplayName(seed.catalogProviderId),
+        added.providerId
+      )
+    if (seed.defaultModelId !== undefined) {
+      const model = database
+        .prepare(
+          'SELECT id FROM model_provider_model WHERE provider_id = ? AND model_id = ?'
+        )
+        .get(added.providerId, seed.defaultModelId) as { id: string } | undefined
+      if (model === undefined) throw new Error(`目录里没有模型 ${seed.defaultModelId}`)
+      database
+        .prepare('UPDATE model_provider SET default_model_id = ? WHERE id = ?')
+        .run(model.id, added.providerId)
+    }
+    if (seed.active !== false) {
+      database
+        .prepare(
+          `INSERT INTO setting (key, value) VALUES ('chat.activeProviderId', ?)
+           ON CONFLICT (key) DO UPDATE SET value = excluded.value`
+        )
+        .run(added.providerId)
+      database.prepare("DELETE FROM setting WHERE key = 'chat.providerSelectionCleared'").run()
+    }
+    database.pragma('journal_mode = DELETE')
+    return added.providerId
+  } finally {
+    database.close()
+  }
+}
+
+function catalogDisplayName(id: BuiltinProviderSeed['catalogProviderId']): string {
+  return id === 'glm' ? '智谱 GLM' : id === 'kimi' ? 'Kimi' : 'DeepSeek'
 }
 
 export type ModelProviderSeed = {

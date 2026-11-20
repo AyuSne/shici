@@ -1,4 +1,8 @@
-import type { ModelProviderSummary, ProviderProtocol } from '../../../shared/model-providers'
+import type {
+  ModelProviderModelSummary,
+  ModelProviderSummary,
+  ProviderProtocol
+} from '../../../shared/model-providers'
 import type { ReadingPreferences } from '../../../shared/reading'
 import type { BackupSummary, RestoreRejection } from '../../../shared/settings'
 import type { ThemePreference } from '../../../shared/types'
@@ -64,6 +68,37 @@ export function providerModelsText(provider: ModelProviderSummary): string {
     return '还没有模型'
   }
   return provider.models.map((model) => model.modelId).join('、')
+}
+
+/** 容量按千分位显示；目录没给就不假装知道。 */
+export function modelCapacityText(
+  model: Pick<ModelProviderModelSummary, 'contextWindow' | 'maxTokens'>
+): string {
+  if (model.contextWindow === null || model.maxTokens === null) {
+    return '目录未提供容量 · 按通用上限兜底'
+  }
+  return `上下文 ${model.contextWindow.toLocaleString('en-US')} · 输出 ${model.maxTokens.toLocaleString('en-US')}`
+}
+
+export function modelThinkingText(
+  model: Pick<ModelProviderModelSummary, 'reasoning'>
+): string {
+  return model.reasoning ? '支持思考' : '不支持思考'
+}
+
+/** 模型选择器每行的元数据；目录只读，这里只负责说清。 */
+export function modelMetaText(model: ModelProviderModelSummary): string {
+  return `${modelCapacityText(model)} · ${modelThinkingText(model)}`
+}
+
+/** 卡片上的来源：内置的标出目录入口，迁移来的 custom 不冒充内置。 */
+export function providerSourceText(provider: ModelProviderSummary): string {
+  if (provider.source !== 'builtin') {
+    return '自定义'
+  }
+  return provider.catalogProviderId === null
+    ? '内置目录'
+    : `内置目录 · ${provider.catalogProviderId}`
 }
 
 /** 时间按本机时区写成 年-月-日 时:分；坏值不假装成时间。 */
