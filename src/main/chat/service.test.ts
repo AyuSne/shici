@@ -244,27 +244,27 @@ describe('createChatService', () => {
 })
 
 describe('配置回写与切换', () => {
-  it('一次成功调用后把使用中的配置标成已验证', async () => {
+  it('一次成功调用后把使用中的 provider 标成已验证', async () => {
     const target = await stub({ kind: 'stream', text: ['答'] })
     const verified: string[] = []
     const service = createChatService({
-      resolveConfig: () => ({ ...configFor(target), profileId: 'profile-1' }),
-      onVerified: (profileId) => verified.push(profileId)
+      resolveConfig: () => ({ ...configFor(target), providerId: 'provider-1' }),
+      onVerified: (providerId) => verified.push(providerId)
     })
     const { send, waitFor } = collector()
 
     service.start({ threadId: 'thread-1', streamId: 'stream-verified', messages: [userTurn] }, send)
     await waitFor((current) => current.some((event) => event.type === 'done'))
 
-    expect(verified).toEqual(['profile-1'])
+    expect(verified).toEqual(['provider-1'])
   })
 
-  it('出错时不把配置标成已验证', async () => {
+  it('出错时不把 provider 标成已验证', async () => {
     const target = await stub({ kind: 'status', status: 500 })
     const verified: string[] = []
     const service = createChatService({
-      resolveConfig: () => ({ ...configFor(target), profileId: 'profile-1' }),
-      onVerified: (profileId) => verified.push(profileId)
+      resolveConfig: () => ({ ...configFor(target), providerId: 'provider-1' }),
+      onVerified: (providerId) => verified.push(providerId)
     })
     const { send, waitFor } = collector()
 

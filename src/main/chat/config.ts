@@ -1,6 +1,6 @@
 import type { ReasoningEffort } from '../../shared/chat'
 import type { AppDatabase } from '../db/database'
-import { readActiveProfile } from '../settings/profiles'
+import { readActiveChatProvider } from '../settings/providers'
 import type { SecretStore } from '../settings/secret-store'
 
 /**
@@ -16,8 +16,9 @@ export type ChatConfig = {
   apiKey: string
   baseUrl: string
   model: string
-  /** 来自设置页的哪套配置；环境变量配置没有这个，也不参与校验回写。 */
-  profileId?: string
+  /** 来自设置里的哪个 provider 与模型；环境变量配置没有这一段，也不参与状态回写。 */
+  providerId?: string
+  modelId?: string
 }
 
 /**
@@ -37,21 +38,23 @@ export function readChatConfig(env: NodeJS.ProcessEnv): ChatConfig | null {
 }
 
 /**
- * 一次调用真正该用的配置：设置页里使用中的那套优先，没有才退回环境变量。
- * 每次调用都重新解析，所以切换配置只影响之后的调用，不动历史消息。
+ * 一次调用真正该用的配置：设置里使用中的 provider 与它的默认模型优先，
+ * 没有才退回环境变量。每次调用都重新解析，所以切换只影响之后的调用，不动历史消息。
  */
 export function resolveChatConfig(
   database: AppDatabase,
   secrets: SecretStore,
   env: NodeJS.ProcessEnv
 ): ChatConfig | null {
-  const active = readActiveProfile(database, secrets)
+  const active = readActiveChatProvider(database, { secrets, env })
   if (active !== null) {
     return {
       apiKey: active.apiKey,
-      baseUrl: active.profile.baseUrl,
-      model: active.profile.model,
-      profileId: active.profile.id
+      // 模型行可以覆盖 provider 的地址（聚合网关按模型带地址）。
+      baseUrl: active.model.baseUrl ?? active.provider.baseUrl ?? '',
+      model: active.model.modelId,
+      providerId: active.provider.id,
+      modelId: active.model.id
     }
   }
   return readChatConfig(env)

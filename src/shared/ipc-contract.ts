@@ -80,18 +80,13 @@ import type {
   ReadingView
 } from './reading'
 import type {
-  ActivateModelProfileResult,
   CreateBackupResult,
-  DeleteModelProfileResult,
   OpenDataDirectoryResult,
   PickRestoreResult,
   RestoreBackupResult,
-  SaveModelProfileRequest,
-  SaveModelProfileResult,
   SaveThemeRequest,
   SaveThemeResult,
-  SettingsOverview,
-  VerifyModelProfileResult
+  SettingsOverview
 } from './settings'
 import type {
   AskThreadRequest,
@@ -239,22 +234,6 @@ export interface IpcContract {
   'pins:restore': { payload: RestorePinsRequest; result: RestorePinsResult }
   'pins:source': { payload: { pinId: string }; result: PinSourceResult }
   'settings:overview': { payload: undefined; result: SettingsOverview }
-  'settings:profile-save': {
-    payload: SaveModelProfileRequest
-    result: SaveModelProfileResult
-  }
-  'settings:profile-activate': {
-    payload: { profileId: string }
-    result: ActivateModelProfileResult
-  }
-  'settings:profile-delete': {
-    payload: { profileId: string }
-    result: DeleteModelProfileResult
-  }
-  'settings:profile-verify': {
-    payload: { profileId: string | null }
-    result: VerifyModelProfileResult
-  }
   'settings:reading-save': {
     payload: { preferences: ReadingPreferences }
     result: ReadingPreferencesResult
@@ -346,10 +325,6 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'pins:restore': true,
   'pins:source': true,
   'settings:overview': true,
-  'settings:profile-save': true,
-  'settings:profile-activate': true,
-  'settings:profile-delete': true,
-  'settings:profile-verify': true,
   'settings:reading-save': true,
   'settings:theme-save': true,
   'settings:backup-create': true,

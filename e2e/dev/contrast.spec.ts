@@ -265,7 +265,7 @@ test.describe('收官验收 · 深色对比度', () => {
 
     // 设置页：导航、说明、提示与空态。
     await nav(page, '设置')
-    await expect(page.getByText('还没有配置。新增一套之后就能开始对话。')).toBeVisible()
+    await expect(page.getByText('还没有模型提供商')).toBeVisible()
     await expectReadableText(page, [
       { label: '设置当前分区', selector: '.settings-nav-item[aria-current="location"]' },
       { label: '设置说明', selector: '.settings-desc' },
@@ -374,19 +374,6 @@ test.describe('收官验收 · 深色对比度', () => {
         selector: '.assistant-text p.is-source-hit'
       }
     ])
-
-    // 设置页的字段错误也要看得清。
-    const denied = await startSseStub({ kind: 'status', status: 401 })
-    stubs.push(denied)
-    await nav(page, '设置')
-    await page.getByRole('button', { name: '新增一套' }).click()
-    await page.getByLabel('名称').fill('坏密钥')
-    await page.getByLabel('接口地址').fill(denied.baseUrl)
-    await page.getByLabel('模型名').fill('deepseek-flash')
-    await page.getByLabel('API 密钥').fill('sk-wrong')
-    await page.getByRole('button', { name: '保存并校验' }).click()
-    await expect(page.locator('.field-error')).toContainText('密钥无效')
-    await expectReadableText(page, [{ label: '设置字段错误', selector: '.field-error' }])
   })
 
   test('深色 token 数值与两两对比度对照 token 表', async ({ launch }) => {

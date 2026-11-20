@@ -93,16 +93,9 @@ import {
   restorePins
 } from './pins/pins'
 import { createElectronSecretStore } from './settings/electron-secrets'
-import {
-  activateProfile,
-  deleteProfile,
-  readSettingsOverview,
-  saveModelProfile,
-  verifySavedModelProfile
-} from './settings/operations'
-import { markProfileVerified } from './settings/profiles'
+import { readSettingsOverview } from './settings/operations'
+import { markProviderVerified } from './settings/providers'
 import { saveThemePreference } from './settings/theme'
-import { verifyModelProfile } from './settings/verify'
 import { applyThemePreference, createMainWindow } from './window'
 
 const DATABASE_FILE = 'english-learning.db'
@@ -184,6 +177,7 @@ function start(): void {
   const secrets = createElectronSecretStore()
   const settingsOptions = () => ({
     secrets,
+    env: process.env,
     fallbackModel: readChatConfig(process.env)?.model ?? '',
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron ?? '',
@@ -192,7 +186,7 @@ function start(): void {
   const chatConfig = resolveChatConfig(opened, secrets, process.env)
   const chat = createChatService({
     resolveConfig: () => resolveChatConfig(opened, secrets, process.env),
-    onVerified: (profileId) => markProfileVerified(opened, profileId)
+    onVerified: (providerId) => markProviderVerified(opened, providerId)
   })
   /** 启动时的模型名：给启动值保存回答用，也给钉住出处兜底。 */
   const configuredModel = chatConfig?.model ?? ''
@@ -310,20 +304,6 @@ function start(): void {
     'pins:restore': (payload) => restorePins(opened, payload),
     'pins:source': (payload) => readPinSource(opened, payload.pinId),
     'settings:overview': () => readSettingsOverview(opened, settingsOptions()),
-    'settings:profile-save': (payload) =>
-      saveModelProfile(opened, payload, {
-        ...settingsOptions(),
-        verify: verifyModelProfile
-      }),
-    'settings:profile-activate': (payload) =>
-      activateProfile(opened, payload.profileId, settingsOptions()),
-    'settings:profile-delete': (payload) =>
-      deleteProfile(opened, payload.profileId, settingsOptions()),
-    'settings:profile-verify': (payload) =>
-      verifySavedModelProfile(opened, payload.profileId, {
-        ...settingsOptions(),
-        verify: verifyModelProfile
-      }),
     'settings:reading-save': (payload) => saveReadingPreferences(opened, payload.preferences),
     'settings:theme-save': (payload) => {
       const result = saveThemePreference(opened, payload.theme)
