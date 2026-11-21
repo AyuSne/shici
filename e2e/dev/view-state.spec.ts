@@ -93,7 +93,7 @@ test('不同线程各自保留未发送的草稿', async ({ launch, userDataDire
   await expect(input).toHaveValue('')
   await input.fill('第二个问题')
 
-  const threads = page.getByRole('complementary', { name: '线程列表' })
+  const threads = page.getByRole('complementary', { name: '对话列表' })
   await threads.locator('.thread-row').filter({ hasText: 'approach' }).click()
   await expect(input).toHaveValue('第一个问题')
   await threads.locator('.thread-row').filter({ hasText: 'Context' }).click()
@@ -315,7 +315,7 @@ test('不同线程各自保留对话滚动位置与思维链展开状态', async
   await scroll.evaluate((node) => { node.scrollTop = 800 })
   await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(800)
 
-  const threads = page.getByRole('complementary', { name: '线程列表' })
+  const threads = page.getByRole('complementary', { name: '对话列表' })
   await threads.locator('.thread-row').filter({ hasText: 'approach' }).click()
   await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
   await expect(page.locator('.thinking-toggle')).toHaveAttribute('aria-expanded', 'true')

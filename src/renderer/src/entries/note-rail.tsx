@@ -390,7 +390,7 @@ export function NoteRail({
                         type="button"
                         className="entry-source-link"
                         aria-label="看原对话（来源）"
-                        title={`${pinSourceIssueText(sourcePin.sourceStatus)}，内容按快照保留`}
+                        title={`${pinSourceIssueText(sourcePin.sourceStatus)}`}
                         disabled
                       >
                         来源

@@ -36,7 +36,7 @@ import {
 import { buildMessages, lastTurn, summarizeContext, threadSystemPrompt, type GenerationMode } from './turns'
 
 /**
- * 对话页的状态：线程列表、当前线程、正在生成的一条与改口草稿。
+ * 对话页的状态：对话列表、当前对话、正在生成的一条与改口草稿。
  * 生成事件跟着整个应用走，切到别的页面再回来也不会丢；回答要到结束时才落库。
  */
 
@@ -47,7 +47,7 @@ export type ChatStoreState = {
   session: ChatSessionState
   /** 正在改上一条提问；null 表示没在改。 */
   editing: { questionId: string; text: string } | null
-  /** 打开线程与提交问题之间的空隙，避免连按两次发出两条。 */
+  /** 打开对话与提交问题之间的空隙，避免连按两次发出两条。 */
   busy: boolean
   loading: boolean
   deletingThreadId: string | null
@@ -143,7 +143,7 @@ function fail(
   set({ error: failureText(error, fallback), canRetry: retry !== null })
 }
 
-/** 页面级错误的「再试一次」：重放当时失败的那一步，而不是一律重读线程。 */
+/** 页面级错误的「再试一次」：重放当时失败的那一步，而不是一律重读对话。 */
 export function retryChat(): void {
   const action = retryAction
   if (action === null) return
@@ -184,11 +184,11 @@ export function ensureChatEvents(): void {
   })
 }
 
-/* ---------- 打开线程与列表 ---------- */
+/* ---------- 打开对话与列表 ---------- */
 
 /**
- * 切换到一条已经拿到的线程。打开新线程时清掉上一条线程的编辑态，并让还在路上的
- * 旧上下文请求失效；同一线程被再次打开时保留它自己的编辑草稿。
+ * 切换到一条已经拿到的对话。打开新对话时清掉上一条对话的编辑态，并让还在路上的
+ * 旧上下文请求失效；同一对话被再次打开时保留它自己的编辑草稿。
  */
 function activateThread(view: ChatThreadView): void {
   ++contextSequence
@@ -240,7 +240,7 @@ export function openChatThread(threadId: string | null): void {
     (error: unknown) => {
       if (state.currentId !== threadId) return
       set({ loading: false })
-      fail(error, '这条线程没有读出来。', () => openChatThread(threadId))
+      fail(error, '这条对话没有读出来。', () => openChatThread(threadId))
     }
   )
 }
@@ -291,7 +291,7 @@ export async function removeChatThread(threadId: string): Promise<boolean> {
 const openingThreads = new Map<string, Promise<string | null>>()
 type OpenThreadOptions = { forceNew?: boolean; ensureSentenceContext?: boolean; contextItem?: ThreadContextItem }
 
-/** 从词条、原句或文章打开最近线程；明确要求时新开一条。 */
+/** 从词条、原句或文章打开最近对话；明确要求时新开一条。 */
 export function openThreadForMain(
   main: CreateThreadRequest['main'],
   options: OpenThreadOptions = {}
@@ -318,8 +318,8 @@ async function openMainThread(
     const result = await openThreadForMainRequest({ main, forceNew: options.forceNew, ensureSentenceContext: options.ensureSentenceContext })
     if (result.status === 'rejected') {
       const message = result.reason === 'context-full'
-        ? '这条线程的上下文已满。请新开一条，或先到对话页移除部分上下文。'
-        : '这个对象已经不在了，没能开线程。'
+        ? '这条对话的上下文已满。请新开一条，或先到对话页移除部分上下文。'
+        : '关联的内容已删除，没能开对话。'
       fail(message, message, null)
       return null
     }
@@ -337,7 +337,7 @@ async function openMainThread(
     navigate('chat', { threadId: thread.id })
     return thread.id
   } catch (error) {
-    fail(error, '没能开线程，再试一次。', () => {
+    fail(error, '没能开对话，再试一次。', () => {
       void openThreadForMain(main, options)
     })
     return null
@@ -349,7 +349,7 @@ async function openMainThread(
 /** 提问被拒时的说法；上下文超词数与空提问不是同一件事。 */
 function questionRejectText(reason: 'empty' | 'too-many-words'): string {
   return reason === 'too-many-words'
-    ? `一条线程最多带 ${GROUP_WORD_LIMIT} 个词，先移除一个再发。`
+    ? `一条对话最多带 ${GROUP_WORD_LIMIT} 个词，先移除一个再发。`
     : '这条提问是空的。'
 }
 
@@ -367,7 +367,7 @@ function groupThreadRejectText(reason: 'empty' | 'missing-word' | 'too-many-word
 }
 
 /**
- * 「用这些词学习」：每次都新开一条无主对象的线程，绝不复用旧的空白或组词线程。
+ * 「用这些词学习」：每次都新开一条无主对象的对话，绝不复用旧的空白或组词对话。
  * 打开后跳到对话页；失败时把原因写在 store 里，由调用方就地提示。
  */
 export async function openGroupThread(
@@ -396,7 +396,7 @@ export async function openGroupThread(
     return result.thread.id
   } catch (error) {
     if (!isCurrent()) return null
-    fail(error, '没能用这些词开线程，再试一次。', () => {
+    fail(error, '没能用这些词开对话，再试一次。', () => {
       void openGroupThread(ids)
     })
     return null
@@ -443,7 +443,7 @@ async function submitQuestion(text: string): Promise<void> {
       const created = await createThread({ main: { kind: 'none' } })
       if (created.status !== 'created') {
         set({ busy: false })
-        fail('没能新建线程。', '没能新建线程，再试一次。', () => {
+        fail('没能新建对话。', '没能新建对话，再试一次。', () => {
           set({ busy: true })
           void submitQuestion(text)
         })
@@ -458,7 +458,7 @@ async function submitQuestion(text: string): Promise<void> {
     if (asked.status !== 'asked') {
       set({ busy: false })
       fail(
-        asked.status === 'rejected' ? questionRejectText(asked.reason) : '这条线程已经不在了。',
+        asked.status === 'rejected' ? questionRejectText(asked.reason) : '这条对话已经不在了。',
         '这条提问没有发出去。',
         asked.status === 'rejected'
           ? null
@@ -754,7 +754,7 @@ export function submitEdit(raw: string): boolean {
         fail(
           result.status === 'rejected'
             ? questionRejectText(result.reason)
-            : '这条线程已经不在了。',
+            : '这条对话已经不在了。',
           '这次修改没有发出去。',
           result.status === 'rejected' ? null : () => submitEdit(text)
         )
@@ -821,8 +821,8 @@ function changeContext(view: ChatThreadView, items: ThreadContextItem[]): void {
       if (result.status === 'rejected') {
         // 主进程边界拦下了超词数的上下文：把界面拉回已存下的那一份，并说清原因。
         fail(
-          `一条线程最多带 ${GROUP_WORD_LIMIT} 个词。`,
-          `一条线程最多带 ${GROUP_WORD_LIMIT} 个词，先移除一个再加。`,
+          `一条对话最多带 ${GROUP_WORD_LIMIT} 个词。`,
+          `一条对话最多带 ${GROUP_WORD_LIMIT} 个词，先移除一个再加。`,
           null
         )
         void loadThread(view.id).then(

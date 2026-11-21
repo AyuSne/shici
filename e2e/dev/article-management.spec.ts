@@ -121,7 +121,7 @@ test.describe('文章重命名与删除', () => {
       )
 
       await dialog.getByRole('button', { name: '确认删除' }).click()
-      await expect(dialog).toContainText('影响面变了，上面是最新一份。请重新确认后再删除。')
+      await expect(dialog).toContainText('关联内容有变化，请查看后重新确认。')
       await expect(dialog).toContainText('将删除 2 条原句关联。')
       // 第一次确认没有删任何东西，两篇都还在。
       await expect(second.page.locator('.library-row')).toHaveCount(2)

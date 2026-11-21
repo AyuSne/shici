@@ -795,7 +795,7 @@ export function listThreads(database: AppDatabase): ThreadListResult {
       id: row.id,
       title: row.title,
       mainKind: row.main_kind as ThreadMainKind,
-      mainLabel: main.kind === 'none' && row.main_kind !== 'none' ? '主对象已删除' : mainLabelOf(main),
+      mainLabel: main.kind === 'none' && row.main_kind !== 'none' ? '关联的内容已删除' : mainLabelOf(main),
       turnCount: row.turn_count,
       createdAt: row.created_at,
       updatedAt: row.updated_at

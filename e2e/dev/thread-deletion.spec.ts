@@ -65,7 +65,7 @@ function nav(page: Page, name: string) {
 }
 
 async function expectDeletedSnapshots(page: Page) {
-  await page.getByRole('complementary', { name: '线程列表' })
+  await page.getByRole('complementary', { name: '对话列表' })
     .getByRole('button', { name: '未归档 1', exact: true }).click()
   const card = page.getByRole('article').filter({ hasText: answer })
   await expect(card).toContainText(original)
@@ -87,15 +87,15 @@ test('取消或确认删除当前线程，保留可读快照，重新打开和�
   const app = await launch(options)
   const page = app.page
   await nav(page, '对话').click()
-  const list = page.getByRole('complementary', { name: '线程列表' })
+  const list = page.getByRole('complementary', { name: '对话列表' })
   await list.locator('.thread-row').filter({ hasText: 'approach' }).click()
   await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
   await page.getByRole('textbox', { name: '输入问题' }).fill('不会带去新学习的草稿')
 
-  const remove = list.getByRole('button', { name: '删除线程：approach' })
+  const remove = list.getByRole('button', { name: '删除对话：approach' })
   await expect(remove).toBeVisible({ timeout: 3000 })
   await remove.click()
-  const dialog = page.getByRole('dialog', { name: '删除线程' })
+  const dialog = page.getByRole('dialog', { name: '删除对话' })
   await expect(dialog).toContainText('钉住')
   await expect(dialog).toContainText('approach')
   await dialog.getByRole('button', { name: '取消' }).click()
@@ -103,7 +103,7 @@ test('取消或确认删除当前线程，保留可读快照，重新打开和�
   await expect(page.locator('.assistant-text')).toContainText(answer)
 
   await remove.click()
-  await dialog.getByRole('button', { name: '删除线程', exact: true }).click()
+  await dialog.getByRole('button', { name: '删除对话', exact: true }).click()
   await expect(remove).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '新的学习', level: 1 })).toBeVisible()
   await expect(page.getByRole('textbox', { name: '输入问题' })).toHaveValue('')
@@ -127,11 +127,11 @@ test('旧快照的线程仍在但原回答缺失，来源禁跳且丢弃前保�
   await nav(page, '对话').click()
   await page.locator('.thread-row').filter({ hasText: 'approach' }).click()
   await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
-  await page.getByRole('button', { name: '钉板 2 · 本线程' }).click()
+  await page.getByRole('button', { name: '钉板 2 · 本对话' }).click()
   const board = page.getByRole('complementary', { name: '钉板' })
   const card = board.getByRole('article').filter({ hasText: answer })
   const source = card.getByRole('button', { name: '看原对话' })
-  await expect(card).toContainText('原回答找不到 · 内容按快照保留')
+  await expect(card).toContainText('原回答找不到')
   await expect(source).toBeDisabled()
   await expect(source).toHaveAttribute('title', '原回答找不到')
 
@@ -148,7 +148,7 @@ test('旧快照的线程仍在但原回答缺失，来源禁跳且丢弃前保�
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
   await page.getByRole('button', { name: /^学习内容/ }).click()
   const note = page.getByRole('article').filter({ hasText: answer })
-  await expect(note).toContainText('原回答找不到，内容按快照保留')
+  await expect(note).toContainText('原回答找不到')
   await expect(note.getByRole('button', { name: /看原对话/ })).toBeDisabled()
 })
 
@@ -167,9 +167,9 @@ for (const leave of [false, true]) {
     await mainLink.click()
     await expect.poll(read.pending).toBe(true)
 
-    const remove = page.getByRole('button', { name: '删除线程：approach' })
+    const remove = page.getByRole('button', { name: '删除对话：approach' })
     await remove.click()
-    await page.getByRole('dialog', { name: '删除线程' }).getByRole('button', { name: '删除线程', exact: true }).click()
+    await page.getByRole('dialog', { name: '删除对话' }).getByRole('button', { name: '删除对话', exact: true }).click()
     await expect.poll(deletion.pending).toBe(true)
     if (leave) {
       await page.evaluate(() => { window.history.go(-2) })
@@ -204,20 +204,20 @@ test('正在生成的线程不能删除，停止并落库后可删除，迟到�
       DEEPSEEK_MODEL: 'fixture-model'
     } })
     await nav(page, '对话').click()
-    const list = page.getByRole('complementary', { name: '线程列表' })
+    const list = page.getByRole('complementary', { name: '对话列表' })
     await list.locator('.thread-row').filter({ hasText: 'approach' }).click()
     await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
     await page.getByRole('textbox', { name: '输入问题' }).fill('再举一例')
     await page.getByRole('button', { name: '发送' }).click()
     await expect(page.getByText('还在生成的部分内容')).toBeVisible()
-    const remove = list.getByRole('button', { name: '删除线程：approach' })
+    const remove = list.getByRole('button', { name: '删除对话：approach' })
     await expect(remove).toBeDisabled()
     // 从实际 preload 穿过主进程处理器，确保限制不是只靠按钮。
     const tryDelete = (id: string) => (window as unknown as { api: IpcBridge }).api.invoke('chat:delete', { threadId: id })
     expect(await page.evaluate(tryDelete, threadId)).toEqual({ status: 'busy' })
-    const removeInactive = list.getByRole('button', { name: '删除线程：无关的线程' })
+    const removeInactive = list.getByRole('button', { name: '删除对话：无关的线程' })
     await removeInactive.click()
-    await page.getByRole('dialog', { name: '删除线程' }).getByRole('button', { name: '删除线程', exact: true }).click()
+    await page.getByRole('dialog', { name: '删除对话' }).getByRole('button', { name: '删除对话', exact: true }).click()
     await expect(removeInactive).toHaveCount(0)
     await expect(page.getByText('还在生成的部分内容')).toBeVisible()
     await list.getByRole('button', { name: '新的学习' }).click()
@@ -227,7 +227,7 @@ test('正在生成的线程不能删除，停止并落库后可删除，迟到�
     await expect(page.getByText('已停止 · 未完成')).toBeVisible()
     await expect(remove).toBeEnabled()
     await remove.click()
-    await page.getByRole('dialog', { name: '删除线程' }).getByRole('button', { name: '删除线程', exact: true }).click()
+    await page.getByRole('dialog', { name: '删除对话' }).getByRole('button', { name: '删除对话', exact: true }).click()
     await expect(remove).toHaveCount(0)
     expect(await page.evaluate((id) => (window as unknown as { api: IpcBridge }).api.invoke('chat:start', {
       threadId: id, streamId: 'late-stream', messages: [{ role: 'user', content: '迟到的请求' }]

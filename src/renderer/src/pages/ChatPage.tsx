@@ -137,9 +137,9 @@ function restoreInputOf(pin: Pin): RestorePinInput {
 }
 
 /**
- * 对话页：左边线程列表，中间这一路的对话，底部是带上下文的输入框，右边是钉板抽屉。
+ * 对话页：左边对话列表，中间这一路的对话，底部是带上下文的输入框，右边是钉板抽屉。
  * 回答可以重新生成出新版本再切回旧的；改上一条提问会走新分支，原回答留在库里；
- * 继续生成接在同一版回答后面；选中一段就能钉住，落点默认跟着线程主对象走。
+ * 继续生成接在同一版回答后面；选中一段就能钉住，落点默认跟着对话主对象走。
  */
 export function ChatPage({
   threadId,
@@ -153,7 +153,7 @@ export function ChatPage({
   fromEntryId: string | null
 }) {
   const store = useChatStore()
-  // 空白学习的第一问会先生成线程，再以 replaceState 更新地址；此时路由 prop 仍为空。
+  // 空白学习的第一问会先生成对话，再以 replaceState 更新地址；此时路由 prop 仍为空。
   const viewThreadId = threadId ?? store.current?.id ?? null
   const [draft, setDraftState] = useState(() => threadViewState(viewThreadId).draft)
   const [thinkingOpen, setThinkingOpenState] = useState(
@@ -190,7 +190,7 @@ export function ChatPage({
   const selectionCardRef = useRef<HTMLDivElement>(null)
   const boardRequest = useRef(0)
   const sourceDone = useRef<string | null>(null)
-  /** 用户手动改过的落点，记到本次会话里的这条线程结束。 */
+  /** 用户手动改过的落点，记到本次会话里的这条对话结束。 */
   const targetOverrides = useRef(new Map<string, PinTargetView>())
 
   function setDraft(value: string): void {
@@ -354,7 +354,7 @@ export function ChatPage({
 
   const current = store.current
   const sourceAnswerId = source?.pin.provenance.answerId ?? null
-  /** 未归档的钉住也留着对话里的竖条；这条线程钉过就算。 */
+  /** 未归档的钉住也留着对话里的竖条；这条对话钉过就算。 */
   const textPins =
     current === null
       ? []
@@ -521,7 +521,7 @@ export function ChatPage({
       view !== null &&
       view.context.filter((existing) => existing.kind === 'word').length >= GROUP_WORD_LIMIT
     ) {
-      showToast(`一条线程最多带 ${GROUP_WORD_LIMIT} 个词。`)
+      showToast(`一条对话最多带 ${GROUP_WORD_LIMIT} 个词。`)
       return
     }
     addContextItem(item)
@@ -549,7 +549,7 @@ export function ChatPage({
     return targetOverrides.current.get(view.id) ?? defaultPinTarget(view.main)
   }
 
-  /** 手动改过的落点记到这条线程结束；改回默认值就不再记。 */
+  /** 手动改过的落点记到这条对话结束；改回默认值就不再记。 */
   const rememberTarget = (target: PinTargetView): void => {
     const view = store.current
     if (view === null) {
@@ -648,7 +648,7 @@ export function ChatPage({
     })
   }
 
-  /** 全部归位：有默认落点就直接执行，只在空白线程里让人挑一个。 */
+  /** 全部归位：有默认落点就直接执行，只在空白对话里让人挑一个。 */
   const openFileAllDialog = (): void => {
     const target = defaultTargetForThread()
     if (target.kind !== 'unfiled') {
@@ -802,7 +802,7 @@ export function ChatPage({
   const openPinSource = (pin: Pin): void => {
     const sourceIssue = pinSourceIssueText(pin.sourceStatus)
     if (sourceIssue !== null) {
-      showToast(`${sourceIssue}，内容按快照保留。`)
+      showToast(`${sourceIssue}。`)
       return
     }
     const fromHash = window.location.hash
@@ -817,7 +817,7 @@ export function ChatPage({
         }
         const issue = pinSourceIssueText(isDeletedChatThread(sourceThreadId) ? 'thread-deleted' : result.pin.sourceStatus)
         if (issue !== null || result.thread === null) {
-          showToast(`${issue ?? '无法打开原回答'}，内容按快照保留。`)
+          showToast(`${issue ?? '无法打开原回答'}。`)
           return
         }
         if (result.pin.provenance.threadId !== store.currentId) {
@@ -920,11 +920,11 @@ export function ChatPage({
       const refreshed = await loadThread(threadId)
       if (!canFollowLink()) return
       if (refreshed === null) {
-        setMainLinkError('这条线程已经不在了，请从线程列表选择另一条。')
+        setMainLinkError('这条对话已经不在了，请从对话列表选择另一条。')
         return
       }
       if (refreshed.missingMain || refreshed.main.kind === 'none') {
-        setMainLinkError('主对象已经不在了，请选择其他词条或文章。')
+        setMainLinkError('关联的内容已删除，请选择其他词条或文章。')
         return
       }
       const main = refreshed.main
@@ -934,11 +934,11 @@ export function ChatPage({
         entrySentenceId: main.kind === 'sentence' ? main.entrySentenceId : null
       })
     } catch (error) {
-      if (canFollowLink()) setMainLinkError(failureText(error, '主对象没有读出来，请再试一次。'))
+      if (canFollowLink()) setMainLinkError(failureText(error, '没能打开关联的内容，请再试一次。'))
     }
   }
-  /** 线程已经不在了：重试只会再失败，改成回到一条空白学习。 */
-  const threadGone = store.error === '这条线程已经不在了。'
+  /** 对话已经不在了：重试只会再失败，改成回到一条空白学习。 */
+  const threadGone = store.error === '这条对话已经不在了。'
   const canSend = draft.trim() !== '' && !store.busy && generation === null &&
     (store.deletingThreadId === null || store.deletingThreadId !== store.currentId)
   /** 生成、提交或改口时，回答上的动作一律收起，避免存到半截或旧版本。 */
@@ -964,7 +964,7 @@ export function ChatPage({
     <div className="chat-page">
       <aside
         className="chat-rail"
-        aria-label="线程列表"
+        aria-label="对话列表"
         data-open={railOpen ? 'true' : 'false'}
       >
         <div className="chat-rail-head">
@@ -990,7 +990,7 @@ export function ChatPage({
           </button>
         </div>
         {store.threads.length === 0 ? (
-          <p className="empty-line chat-rail-empty">还没有线程</p>
+          <p className="empty-line chat-rail-empty">还没有对话</p>
         ) : (
           <ul className="thread-list">
             {store.threads.map((thread) => (
@@ -1012,8 +1012,8 @@ export function ChatPage({
                 <button
                   type="button"
                   className="thread-delete-button"
-                  aria-label={`删除线程：${thread.title}`}
-                  title={canDeleteChatThread(store, thread.id) ? '删除线程' : '等操作完成后再删除'}
+                  aria-label={`删除对话：${thread.title}`}
+                  title={canDeleteChatThread(store, thread.id) ? '删除对话' : '等操作完成后再删除'}
                   disabled={!canDeleteChatThread(store, thread.id)}
                   onClick={() => setDeleteCandidate(thread)}
                 >
@@ -1045,11 +1045,11 @@ export function ChatPage({
             <button
               type="button"
               className="chat-rail-toggle chat-action"
-              aria-label="线程列表"
+              aria-label="对话列表"
               aria-expanded={railOpen}
               onClick={() => setRailOpen((open) => !open)}
             >
-              线程
+              对话
             </button>
             <div className="chat-header-row">
               <div className="chat-header-text">
@@ -1069,7 +1069,7 @@ export function ChatPage({
                 </p>
                 {missingMain || mainLinkError ? (
                   <p className="chat-main-missing" role="alert">
-                    {mainLinkError ?? '主对象已经不在了。'}{' '}
+                    {mainLinkError ?? '关联的内容已删除。'}{' '}
                     <button type="button" className="chat-main-link" onClick={() => navigate(missingArticle ? 'library' : 'entries')}>
                       {missingArticle ? '选择文章' : '选择词条'}
                     </button>
@@ -1081,7 +1081,7 @@ export function ChatPage({
                 className="button button-small chat-board-button"
                 onClick={() => openBoard('thread')}
               >
-                钉板 {threadPinCount} · 本线程
+                钉板 {threadPinCount} · 本对话
               </button>
             </div>
           </div>
@@ -1090,7 +1090,7 @@ export function ChatPage({
         {source === null ? null : (
           <div className="pin-source-banner" role="status">
             {source.thread === null ? (
-              <span>{pinSourceIssueText(source.pin.sourceStatus) ?? '无法打开原回答'} · 内容按快照保留</span>
+              <span>{pinSourceIssueText(source.pin.sourceStatus) ?? '无法打开原回答'}</span>
             ) : (
               <>
                 <span>
@@ -1150,7 +1150,7 @@ export function ChatPage({
         >
           <div className="chat-column">
             {store.loading && current === null ? (
-              <p className="empty-line">正在打开这条线程…</p>
+              <p className="empty-line">正在打开这条对话…</p>
             ) : current === null || current.turns.length === 0 ? (
               <div className="chat-empty">
                 <h2 className="chat-empty-title">
@@ -1160,8 +1160,8 @@ export function ChatPage({
                 </h2>
                 <p className="chat-empty-lede">
                   {blankMain
-                    ? '这是一条还没有挂对象的线程：聊完把满意的段落钉住，再决定它归到哪个词条。'
-                    : '上下文已经放在输入框上方，直接问就行；问完可以把满意的段落钉到这条线索上。'}
+                    ? '问一个问题，或从词条和文章开始。'
+                    : '围绕这条线索，问一个问题。'}
                 </p>
                 {blankMain ? (
                   <div className="chat-starters">
@@ -1310,7 +1310,7 @@ export function ChatPage({
             </div>
             <p className="composer-hint">
               {generatingElsewhere
-                ? '另一条线程正在生成，等它结束再发。'
+                ? '另一条对话正在生成，等它结束再发。'
                 : 'Enter 发送 · Shift+Enter 换行 · Esc 停止 · 选中一段即可钉住'}
             </p>
           </div>

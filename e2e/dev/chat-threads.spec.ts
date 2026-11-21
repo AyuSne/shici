@@ -146,7 +146,7 @@ test.describe('线程主对象与上下文', () => {
     const firstHash = await page.evaluate(() => window.location.hash)
     expect(firstHash).toMatch(/^#\/chat\/.+/)
 
-    await page.getByRole('complementary', { name: '线程列表' })
+    await page.getByRole('complementary', { name: '对话列表' })
       .getByRole('button', { name: '新的学习' }).click()
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe('#/chat')
     await expect(page.getByRole('heading', { name: '新的学习', level: 1 })).toBeVisible()
@@ -219,7 +219,7 @@ test.describe('线程主对象与上下文', () => {
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstHash)
     await expect(page.locator('.chat-scroll').getByText('原线程的问题')).toBeVisible()
     await page.locator('.chat-subtitle button').click()
-    await sentence.getByRole('button', { name: '为这句新建线程' }).click()
+    await sentence.getByRole('button', { name: '为这句新建对话' }).click()
     await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
     await expect(page.locator('.chat-scroll').getByText('原线程的问题')).toHaveCount(0)
     expect(await page.evaluate(() => window.location.hash)).not.toBe(firstHash)
@@ -292,11 +292,11 @@ test.describe('线程主对象与上下文', () => {
     await expect(sentence).toHaveCount(0)
     await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '对话' }).click()
     await page.locator('.chat-subtitle button').click()
-    await expect(page.getByRole('alert')).toContainText('主对象已经不在了')
+    await expect(page.getByRole('alert')).toContainText('关联的内容已删除')
     await expect(page.getByRole('button', { name: '选择词条' })).toBeVisible()
     await page.reload()
     await expect.poll(() => page.url()).toBe(threadUrl)
-    await expect(page.getByRole('alert')).toContainText('主对象已经不在了')
+    await expect(page.getByRole('alert')).toContainText('关联的内容已删除')
     await page.getByRole('button', { name: '选择词条' }).click()
     await expect(page.getByRole('heading', { name: '词条', level: 1 })).toBeVisible()
   })
@@ -315,7 +315,7 @@ test.describe('线程主对象与上下文', () => {
       }
     }, ids)
     await page.getByRole('button', { name: '开始对话' }).click()
-    await expect(page.getByRole('alert')).toContainText('这个对象已经不在了')
+    await expect(page.getByRole('alert')).toContainText('关联的内容已删除')
     await expect(page.getByRole('button', { name: '刷新列表' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '词条', level: 1 })).toBeVisible()
   })
@@ -388,9 +388,9 @@ test.describe('线程主对象与上下文', () => {
     await expect(page.getByTestId('context-summary')).toHaveText(/^1 条原句 · 1 个词 · 约 \d+ 字$/)
 
     // 空白：线程栏里的「新的学习」。
-    await page.getByRole('complementary', { name: '线程列表' }).getByRole('button', { name: '新的学习' }).click()
+    await page.getByRole('complementary', { name: '对话列表' }).getByRole('button', { name: '新的学习' }).click()
     await expect(page.getByRole('heading', { name: '新的学习', level: 1 })).toBeVisible()
-    await expect(page.getByText('未挂任何对象 · 从词或文章开始')).toBeVisible()
+    await expect(page.getByText('从词或文章开始')).toBeVisible()
 
     // 文章：文章库详情的「与这篇对话」。
     await page
@@ -434,7 +434,7 @@ test.describe('回答版本与分支', () => {
 
     // 重启后仍在原线程，旧版与选中的版本都保留。
     const second = await launch({ userDataDirectory, env: chatEnvironment(stub.baseUrl) })
-    await expect(second.page.getByRole('complementary', { name: '线程列表' })).toContainText(
+    await expect(second.page.getByRole('complementary', { name: '对话列表' })).toContainText(
       '给我两个例句'
     )
     await expect(second.page.getByText('第一版。')).toBeVisible()

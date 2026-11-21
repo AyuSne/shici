@@ -135,7 +135,7 @@ export function HomePage() {
           <h1 className="home-title">{display?.title}</h1>
           <p className="home-meta">{display?.meta}</p>
           {current.lastReadPoint === null ? (
-            <p className="home-position">还没读到下一句。</p>
+            <p className="home-position">刚打开，还没开始读。</p>
           ) : (
             <>
               <p className="home-position">上次停在 {readingPointText(current.lastReadPoint)}</p>

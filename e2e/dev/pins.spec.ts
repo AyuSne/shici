@@ -259,7 +259,7 @@ test.describe('钉住与钉板', () => {
     )
     await fileDialog.getByRole('button', { name: '归位' }).click()
     await expect(page.getByRole('status')).toContainText('已归到 approach')
-    await page.getByRole('tab', { name: '这条线程' }).click()
+    await page.getByRole('tab', { name: '当前对话' }).click()
     await expect(page.locator('.pin-card')).toContainText('approach')
 
     // 词条学习内容里出现来源行，点回对话后高亮那段回答。
@@ -380,6 +380,6 @@ test.describe('钉住与钉板', () => {
     await expect(page.locator('.entry-note-source')).toContainText('来自 approach · 第 1 轮')
     const source = page.getByRole('button', { name: '看原对话' })
     await expect(source).toBeDisabled()
-    await expect(source).toHaveAttribute('title', '源对话已删除，内容按快照保留')
+    await expect(source).toHaveAttribute('title', '源对话已删除')
   })
 })

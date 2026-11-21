@@ -24,7 +24,7 @@ export type GenerationMode =
   | { kind: 'continue' }
 
 /** 空线程的副标题；页头与「新的学习」共用一句。 */
-export const BLANK_THREAD_SUBTITLE = '未挂任何对象 · 从词或文章开始'
+export const BLANK_THREAD_SUBTITLE = '从词或文章开始'
 
 /** 上下文种类在芯片与 system 前言里的叫法。 */
 export const CONTEXT_KIND_LABEL: Record<ThreadContextKind, string> = {
@@ -138,7 +138,7 @@ export function canSaveAnswerAsArticle(
 
 /** 页头副标题：挂什么对象就说清是什么，空白线程给一句说明。 */
 export function threadHeaderText(view: ChatThreadView): string {
-  if (view.missingMain) return '主对象已不存在'
+  if (view.missingMain) return '关联的内容已删除'
   const main = view.main
   switch (main.kind) {
     case 'none':

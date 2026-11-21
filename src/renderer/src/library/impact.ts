@@ -16,6 +16,6 @@ export function deletionImpactLines(preview: ArticleDeletionPreview): string[] {
   const pinLine =
     preview.articlePinCount === 0
       ? '没有挂在本篇的钉住。'
-      : `${preview.articlePinCount} 条钉住会保留为未归档，快照与出处仍可读。`
+      : `${preview.articlePinCount} 条钉住会移到未归档，内容与出处仍可查看。`
   return [sentenceLine, entryLine, pinLine]
 }

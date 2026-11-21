@@ -208,7 +208,7 @@ test('线程地址刷新和重启后仍打开原线程；主动新建后导航�
   const page = second.page
   await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(threadHash)
-  await page.getByRole('complementary', { name: '线程列表' })
+  await page.getByRole('complementary', { name: '对话列表' })
     .getByRole('button', { name: '新的学习' }).click()
   await expect(page.getByRole('heading', { name: '新的学习', level: 1 })).toBeVisible()
   const nav = page.getByRole('navigation', { name: '全局导航' })

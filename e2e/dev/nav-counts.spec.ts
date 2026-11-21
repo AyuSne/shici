@@ -344,7 +344,7 @@ test('钉住/撤销/归位/移动/丢弃/批量归位后未归档数即时更新
   await expectCounts(page, { entries: 1, articles: 2, unfiled: 1 })
 
   // 换落点（移动）把这条已归位的钉住移回未归档：未归档加一。
-  await page.getByRole('tab', { name: '这条线程' }).click()
+  await page.getByRole('tab', { name: '当前对话' }).click()
   const moved = page.locator('.pin-card').first()
   await moved.getByRole('button', { name: '换落点' }).click()
   const moveDialog = page.getByRole('dialog', { name: '换落点' })
@@ -352,11 +352,11 @@ test('钉住/撤销/归位/移动/丢弃/批量归位后未归档数即时更新
   await moveDialog.getByRole('button', { name: '换到这儿' }).click()
   await expectCounts(page, { entries: 1, articles: 2, unfiled: 2 })
 
-  // 删除线程：钉住按快照保留，未归档数不误减，词条数也不变。
-  const list = page.getByRole('complementary', { name: '线程列表' })
-  await list.getByRole('button', { name: '删除线程：approach' }).click()
-  const deleteDialog = page.getByRole('dialog', { name: '删除线程' })
-  await deleteDialog.getByRole('button', { name: '删除线程', exact: true }).click()
+  // 删除对话：钉住按快照保留，未归档数不误减，词条数也不变。
+  const list = page.getByRole('complementary', { name: '对话列表' })
+  await list.getByRole('button', { name: '删除对话：approach' }).click()
+  const deleteDialog = page.getByRole('dialog', { name: '删除对话' })
+  await deleteDialog.getByRole('button', { name: '删除对话', exact: true }).click()
   await expect(page.getByRole('heading', { name: '新的学习', level: 1 })).toBeVisible()
   await expectCounts(page, { entries: 1, articles: 2, unfiled: 2 })
 
@@ -420,7 +420,7 @@ test('删除文章时文章数减一、消失的词条数减一、挂在本篇�
     const detail = page.getByRole('complementary', { name: '文章详情' })
     await detail.getByRole('button', { name: '删除文章' }).click()
     const dialog = page.getByRole('alertdialog', { name: '删除文章' })
-    await expect(dialog).toContainText('1 条钉住会保留为未归档')
+    await expect(dialog).toContainText('1 条钉住会移到未归档')
     await dialog.getByRole('button', { name: '确认删除' }).click()
     await expect(page.getByText('文章已删除。')).toBeVisible()
 

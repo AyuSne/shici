@@ -236,7 +236,7 @@ describe('版本与页头', () => {
   it('页头副标题按主对象给', () => {
     expect(threadHeaderText(view())).toBe('词条 lament · 3 条原句 · 2 篇')
     expect(threadHeaderText(view({ main: { kind: 'none' } }))).toBe(
-      '未挂任何对象 · 从词或文章开始'
+      '从词或文章开始'
     )
     expect(
       threadHeaderText(

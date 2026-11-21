@@ -208,7 +208,7 @@ test('生成文章全链路：回答完成后存为文章，AI 段阅读、选�
   await detail.getByRole('button', { name: '删除文章' }).click()
   const deleteDialog = page.getByRole('alertdialog', { name: '删除文章' })
   await expect(deleteDialog).toContainText('将删除 1 条原句关联。')
-  await expect(deleteDialog).toContainText('1 条钉住会保留为未归档，快照与出处仍可读。')
+  await expect(deleteDialog).toContainText('1 条钉住会移到未归档，内容与出处仍可查看。')
   await deleteDialog.getByRole('button', { name: '确认删除' }).click()
 
   await expect(page.getByText('文章已删除。')).toBeVisible()
@@ -216,7 +216,7 @@ test('生成文章全链路：回答完成后存为文章，AI 段阅读、选�
   await expect(aiSection.getByRole('button', { name: '去词条页选词' })).toBeVisible()
 
   await openChat(page)
-  await page.getByRole('button', { name: /^钉板 \d+ · 本线程$/ }).click()
+  await page.getByRole('button', { name: /^钉板 \d+ · 本对话$/ }).click()
   const board = page.getByRole('complementary', { name: '钉板', exact: true })
   await board.getByRole('tab', { name: '未归档 1' }).click()
   await expect(board).toContainText('Approach shapes how we read.')

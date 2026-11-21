@@ -6,7 +6,7 @@ type FileTargetKind = Exclude<PinTargetKind, 'unfiled'>
 
 /**
  * 右侧钉板抽屉。默认收成 44px 窄条并显示未归档条数，点开占 336px。
- * 「这条线程」只列已归位的钉住，「未归档」是全局暂存；两边卡片给的动作不同。
+ * 「当前对话」只列已归位的钉住，「未归档」是全局暂存；两边卡片给的动作不同。
  */
 export function PinBoardPanel({
   board,
@@ -28,7 +28,7 @@ export function PinBoardPanel({
   board: PinBoard
   open: boolean
   tab: PinTab
-  /** 这条线程挂的词条；页脚「在词条中查看」在没有钉到词条时用它。 */
+  /** 当前对话挂的词条；页脚「在词条中查看」在没有钉到词条时用它。 */
   threadEntryId: string | null
   busyPinId: string | null
   freshPinIds: readonly string[]
@@ -76,7 +76,7 @@ export function PinBoardPanel({
             aria-selected={tab === 'thread'}
             onClick={() => onSelectTab('thread')}
           >
-            这条线程 {board.threadPins.length}
+            当前对话 {board.threadPins.length}
           </button>
           <button
             type="button"
@@ -101,7 +101,7 @@ export function PinBoardPanel({
       <div className="pin-board-list" role="tabpanel">
         {pins.length === 0 ? (
           <p className="pin-board-empty">
-            {tab === 'unfiled' ? '没有未归档' : '这条线程还没有钉住'}
+            {tab === 'unfiled' ? '没有未归档' : '当前对话还没有钉住'}
           </p>
         ) : (
           pins.map((pin) => (
@@ -125,7 +125,7 @@ export function PinBoardPanel({
           {pins.length === 0 ? null : (
             <span className="pin-board-foot-text">
               {tab === 'thread'
-                ? `这条线程已钉 ${board.threadPins.length} 条`
+                ? `当前对话已钉 ${board.threadPins.length} 条`
                 : `未归档 ${board.unfiledCount} 条 · 不计入收集`}
             </span>
           )}
@@ -189,7 +189,7 @@ function PinCard({
         </p>
       )}
       {sourceIssue === null ? null : (
-        <p className="pin-card-dead">{sourceIssue} · 内容按快照保留</p>
+        <p className="pin-card-dead">{sourceIssue}</p>
       )}
       <div className="pin-card-actions">
         {tab === 'thread' ? (

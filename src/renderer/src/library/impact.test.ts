@@ -17,7 +17,7 @@ describe('deletionImpactLines', () => {
     expect(deletionImpactLines(preview)).toEqual([
       '将删除 4 条原句关联。',
       '影响 3 个词条：1 个仍有别的原句、会保留，2 个会连同 5 条学习内容一起删除。',
-      '2 条钉住会保留为未归档，快照与出处仍可读。'
+      '2 条钉住会移到未归档，内容与出处仍可查看。'
     ])
   })
 

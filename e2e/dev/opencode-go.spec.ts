@@ -245,7 +245,7 @@ test.describe('OpenCode GO 聚合入口', () => {
     await openChat(page)
     await expect(
       page
-        .getByRole('complementary', { name: '线程列表' })
+        .getByRole('complementary', { name: '对话列表' })
         .getByRole('button', { name: '未归档 1' })
     ).toBeVisible()
     await page.locator('.thread-row').filter({ hasText: '旧问题' }).click()

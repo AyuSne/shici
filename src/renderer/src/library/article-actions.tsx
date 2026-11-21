@@ -106,7 +106,7 @@ export function LibraryArticleActions({
       setPreview(value)
     } catch (error) {
       if (request === previewRequest.current) {
-        onError(failureText(error, '这次没能读到删除影响面，再试一次。'))
+        onError(failureText(error, '没能检查关联内容，请再试一次。'))
       }
     } finally {
       if (request === previewRequest.current) setPreviewLoading(false)
@@ -195,7 +195,7 @@ export function LibraryArticleActions({
           disabled={previewLoading || deleting}
           onClick={() => void requestDelete()}
         >
-          {previewLoading ? '正在核对影响面…' : '删除文章'}
+          {previewLoading ? '正在检查关联内容…' : '删除文章'}
         </button>
       </div>
 
@@ -211,7 +211,7 @@ export function LibraryArticleActions({
           </ul>
           {previewStale ? (
             <p className="library-impact-stale" role="status">
-              影响面变了，上面是最新一份。请重新确认后再删除。
+              关联内容有变化，请查看后重新确认。
             </p>
           ) : null}
           <div className="library-manage-row">

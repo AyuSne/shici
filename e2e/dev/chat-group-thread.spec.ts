@@ -141,7 +141,7 @@ test('多选两个词开一条新线程：带词与各自原句，可增删，�
   await nextButton(page).click()
   // 主对象为空：标题按选中的词起名，副标题仍是空白线程那一句。
   await expect(page.getByRole('heading', { name: 'approach 等 2 个词', level: 1 })).toBeVisible()
-  await expect(page.getByText('未挂任何对象 · 从词或文章开始')).toBeVisible()
+  await expect(page.getByText('从词或文章开始')).toBeVisible()
   await expect(contextSummary(page)).toHaveText(/^2 条原句 · 2 个词 · 约 \d+ 字$/)
   await expect(page.locator('.context-chip-label')).toHaveText([
     'approach',
@@ -193,7 +193,7 @@ test('多选两个词开一条新线程：带词与各自原句，可增删，�
   )
   await dialog.getByRole('button', { name: '钉住', exact: true }).click()
   await expect(page.getByText('已放进未归档')).toBeVisible()
-  await expect(page.getByRole('button', { name: '钉板 1 · 本线程', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '钉板 1 · 本对话', exact: true })).toBeVisible()
   const board = page.getByRole('complementary', { name: '钉板', exact: true })
   await expect(board.getByRole('button', { name: '未归档 1', exact: true })).toBeVisible()
 
@@ -363,7 +363,7 @@ test('最多 20 个不同词条：第 21 个不准选并明确提示，主进程
   const wordCandidates = picker.locator('.context-candidate[data-context-kind="word"]')
   await expect(wordCandidates).toHaveCount(1)
   await wordCandidates.first().click()
-  await expect(page.getByText('一条线程最多带 20 个词。')).toBeVisible()
+  await expect(page.getByText('一条对话最多带 20 个词。')).toBeVisible()
   await expect(contextSummary(page)).toHaveText(/^20 条原句 · 20 个词 · 约 \d+ 字$/)
 
   // IPC 边界：伪造 21 个词条的上下文改不动，界面保持 20 个词。

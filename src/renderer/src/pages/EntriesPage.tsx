@@ -279,7 +279,7 @@ export function EntriesPage({
     setSelectionHint(null)
   }
 
-  /** 「用这些词学习」：一次新开一条线程，不复用已有的空白或组词线程。 */
+  /** 「用这些词学习」：一次新开一条对话，不复用已有的空白或组词对话。 */
   async function startGroup(): Promise<void> {
     if (selectedEntryIds.length === 0 || startingGroup) return
     const controller = new AbortController()
@@ -293,7 +293,7 @@ export function EntriesPage({
     if (groupRequest.current !== controller) return
     groupRequest.current = null
     if (!controller.signal.aborted && opened === null) {
-      setSelectionHint(getChatStore().error ?? '没能用这些词开线程，再试一次。')
+      setSelectionHint(getChatStore().error ?? '没能用这些词开对话，再试一次。')
     }
     if (!controller.signal.aborted) setStartingGroup(false)
   }
@@ -408,7 +408,7 @@ export function EntriesPage({
     if (page === null) return
     setActionError(null)
     const opened = await openThreadForMain({ kind: 'entry', entryId: page.entry.id }, { forceNew })
-    if (opened === null) setActionError(getChatStore().error ?? '没能打开线程，请刷新词条后再试。')
+    if (opened === null) setActionError(getChatStore().error ?? '没能打开对话，请刷新词条后再试。')
   }
 
   async function askAboutSentence(sentence: EntrySentence, forceNew = false): Promise<void> {
@@ -417,7 +417,7 @@ export function EntriesPage({
       kind: 'sentence',
       entrySentenceId: sentence.id
     }, { forceNew })
-    if (opened === null) setActionError(getChatStore().error ?? '没能打开线程，请刷新词条后再试。')
+    if (opened === null) setActionError(getChatStore().error ?? '没能打开对话，请刷新词条后再试。')
   }
 
   const overlay = layout === 'drawer' && railOpen && page !== null

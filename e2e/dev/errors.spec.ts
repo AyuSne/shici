@@ -250,7 +250,7 @@ test.describe('收官验收 · 错误态', () => {
     await expect(page.getByRole('complementary', { name: '设置分区' })).toBeVisible()
     await expect(page.locator('.error-block')).toHaveCount(0)
 
-    // 对话：线程列表打不开时也是同一套文案 + 动作。
+    // 对话：对话列表打不开时也是同一套文案 + 动作。
     const threadList = await invoke(page, 'chat:list')
     await removeHandler(electronApp, 'chat:list')
     await nav(page, '对话')

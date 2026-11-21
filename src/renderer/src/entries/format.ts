@@ -61,7 +61,7 @@ export function noteSourceText(
       parts.push(day)
     }
     const sourceIssue = pinSourceIssueText(pin.sourceStatus)
-    if (sourceIssue !== null) parts.push(`${sourceIssue}，内容按快照保留`)
+    if (sourceIssue !== null) parts.push(sourceIssue)
     return parts.join(' · ')
   }
   const origin = note.source === 'pin' ? '来自对话' : '词条内手写'

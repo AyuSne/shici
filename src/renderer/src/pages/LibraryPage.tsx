@@ -201,7 +201,7 @@ export function LibraryPage({
     if (detail === null) return
     setLoadError(null)
     const opened = await openThreadForMain({ kind: 'article', articleId: detail.id }, { forceNew })
-    if (opened === null) setLoadError(getChatStore().error ?? '没能打开线程，请刷新文章库后再试。')
+    if (opened === null) setLoadError(getChatStore().error ?? '没能打开对话，请刷新文章库后再试。')
   }
 
   function retryLoad(): void {

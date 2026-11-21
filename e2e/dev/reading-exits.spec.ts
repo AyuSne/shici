@@ -202,7 +202,7 @@ test('就正文里点中的词提问时带上该词与那条原句', async ({ la
     await page.goBack()
     await page.locator('.reading-collected').filter({ hasText: 'approach' }).first().click()
     await page.getByRole('complementary', { name: '词条' })
-      .getByRole('button', { name: '为这句新建线程' }).click()
+      .getByRole('button', { name: '为这句新建对话' }).click()
     await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
     expect(await page.evaluate(() => window.location.hash)).not.toBe(firstThread)
     await expect(page.getByText('这句怎么理解？')).toHaveCount(0)
@@ -246,7 +246,7 @@ test('文章对话把完整正文和准确摘要带给模型', async ({ launch }
   }
 })
 
-test('旧线程上下文已满时保留原内容，提示可以新开线程', async ({ launch, userDataDirectory }) => {
+test('已有较多上下文时保留原内容并加入所选词句，也可以新建对话', async ({ launch, userDataDirectory }) => {
   seedWordEntries(userDataDirectory, corpusDirectory, {
     picks: [{ entry: article, paragraphIndex: 0, needle: 'approach' }]
   })
@@ -271,18 +271,19 @@ test('旧线程上下文已满时保留原内容，提示可以新开线程', as
   await page.locator('.reading-collected').first().click()
   const panel = page.getByRole('complementary', { name: '词条' })
   await panel.getByRole('button', { name: '就这个词提问' }).click()
-  await expect(page.getByRole('alert')).toContainText('上下文已满')
-  await expect(page.getByRole('alert')).toContainText('新开一条')
-  await expect(page.locator('[data-reading-page="true"]')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstHash)
+  await expect(page.locator('.context-chip-label').getByText('approach', { exact: true })).toBeVisible()
   const remaining = await page.evaluate(async (id) => {
     const api = (window as unknown as { api: { invoke(channel: string, payload: unknown): Promise<unknown> } }).api
     return api.invoke('chat:thread', { threadId: id }) as Promise<{ context: { id: string }[] }>
   }, threadId)
-  expect(remaining.context).toHaveLength(100)
-  expect(remaining.context.map((item) => item.id)).toEqual(
+  expect(remaining.context).toHaveLength(102)
+  expect(remaining.context.slice(0, 100).map((item) => item.id)).toEqual(
     Array.from({ length: 100 }, (_, index) => `note:${index}`)
   )
-  await panel.getByRole('button', { name: '为这句新建线程' }).click()
+  await page.goBack()
+  await page.locator('.reading-collected').first().click()
+  await page.getByRole('complementary', { name: '词条' }).getByRole('button', { name: '为这句新建对话' }).click()
   await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
   expect(await page.evaluate(() => window.location.hash)).not.toBe(firstHash)
 })
@@ -322,8 +323,8 @@ test('阅读页复用文章线程，也可以明确新开一条', async ({ launc
   await page.getByRole('button', { name: '与这篇文章对话' }).click()
   await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstThread)
   await page.goBack()
-  await expect(page.getByRole('button', { name: '新开一条文章线程' })).toBeVisible()
-  await page.getByRole('button', { name: '新开一条文章线程' }).click()
+  await expect(page.getByRole('button', { name: '新开一条文章对话' })).toBeVisible()
+  await page.getByRole('button', { name: '新开一条文章对话' }).click()
   await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/chat\//)
   expect(await page.evaluate(() => window.location.hash)).not.toBe(firstThread)
 })
@@ -339,7 +340,7 @@ test('打开文章线程失败时留在阅读页并提示', async ({ launch }) =
   await electronApp.evaluate(({ ipcMain }) => ipcMain.removeHandler('chat:open-for-main'))
   const action = page.getByRole('button', { name: '与这篇文章对话' })
   await action.click()
-  await expect(page.getByRole('alert')).toContainText('没能开线程')
+  await expect(page.getByRole('alert')).toContainText('没能开对话')
   await expect(page.locator('[data-reading-page="true"]')).toBeVisible()
   await expect(action).toBeEnabled()
 })

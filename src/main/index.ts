@@ -259,7 +259,7 @@ function start(): void {
     'library:delete-preview': (payload) =>
       readArticleDeletionPreview(opened, payload.articleId),
     'library:delete': (payload) => deleteArticle(opened, payload),
-    // 存为文章：正文与来源都由主进程从已存回答读，请求里只有线程、回答版本与可选篇名。
+    // 存为文章：正文与来源都由主进程从已存回答读，请求里只有对话、回答版本与可选篇名。
     'library:save-generated': (payload) => saveGeneratedArticle(opened, payload),
     'reading:open': (payload) => openReadingView(opened, payload.articleId),
     'reading:words': (payload) => readArticleWords(opened, payload.articleId),
@@ -305,7 +305,7 @@ function start(): void {
     'chat:create': (payload) => createThread(opened, payload),
     'chat:create-group': (payload) => createGroupThread(opened, payload),
     'chat:delete': (payload) => {
-      // 两个操作都在主进程同步判断，活跃流不得被删除，已删除的线程也不能开新流。
+      // 两个操作都在主进程同步判断，活跃流不得被删除，已删除的对话也不能开新流。
       return chat.hasActiveThread(payload.threadId) ? { status: 'busy' } : deleteThread(opened, payload)
     },
     'chat:find-for-main': (payload) => findRecentThreadForMain(opened, payload.main),
@@ -325,7 +325,7 @@ function start(): void {
         return { status: 'missing' as const }
       }
       const chosen = await dialog.showSaveDialog({
-        title: '导出线程为 JSONL',
+        title: '导出对话为 JSONL',
         defaultPath: join(
           app.getPath('downloads'),
           threadExportFileName(thread.title, new Date())

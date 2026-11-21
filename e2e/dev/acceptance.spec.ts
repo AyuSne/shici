@@ -178,7 +178,7 @@ test.describe('收官验收 · 整条学习链路', () => {
     )
     await fileDialog.getByRole('button', { name: '归位' }).click()
     await expect(page.getByRole('status')).toContainText(`已归到 ${entryName}`)
-    await page.getByRole('tab', { name: '这条线程' }).click()
+    await page.getByRole('tab', { name: '当前对话' }).click()
     await expect(page.locator('.pin-card')).toContainText(PINNED)
 
     // 9. 来源回跳：词条学习内容里出现来源行，点回对话并高亮那段回答。

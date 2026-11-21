@@ -755,7 +755,7 @@ export function ReadingPage({
       ensureSentenceContext: main.kind === 'sentence'
     })
     if (threadId === null) {
-      setCollectError(getChatStore().error ?? '没能开线程，再试一次。')
+      setCollectError(getChatStore().error ?? '没能开对话，再试一次。')
       setOpeningThread(false)
     }
   }
@@ -852,7 +852,7 @@ export function ReadingPage({
               <button
                 type="button"
                 className="reading-tool"
-                aria-label="新开一条文章线程"
+                aria-label="新开一条文章对话"
                 disabled={openingThread}
                 onClick={() =>
                   void openReadingThread({ kind: 'article', articleId: view.article.id }, true)

@@ -153,11 +153,11 @@ export function EntryPanelView({
             <button
               type="button"
               className="button"
-              aria-label="为这句新建线程"
+              aria-label="为这句新建对话"
               disabled={openingThread || panel.entrySentenceId === null}
               onClick={onAskNew}
             >
-              新建线程
+              新建对话
             </button>
             <button
               type="button"

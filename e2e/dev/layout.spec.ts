@@ -222,7 +222,7 @@ async function walkPages(handle: AppHandle, breakpoint: number): Promise<void> {
   await nav(page, '对话')
   await expect(page.getByRole('heading', { name: '新的学习' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
-  const toggle = page.getByRole('button', { name: '线程列表' })
+  const toggle = page.getByRole('button', { name: '对话列表' })
   if (actualWidth <= 900) {
     await expect(toggle).toBeVisible()
     await expect(page.locator('.chat-rail')).toBeHidden()
@@ -319,7 +319,7 @@ test.describe('收官验收 · 断点', () => {
 
     await nav(page, '对话')
     await expect(page.locator('.chat-rail')).toBeVisible()
-    await expect(page.getByRole('button', { name: '线程列表' })).toBeHidden()
+    await expect(page.getByRole('button', { name: '对话列表' })).toBeHidden()
     expect(Math.round(Number.parseFloat((await gridTracks(page, '.chat-page'))[0] ?? '0'))).toBe(
       236
     )

@@ -55,9 +55,9 @@ export function SentenceRow({
           </span>
           <span className="entry-action-label">提问</span>
         </button>
-        <button type="button" className="entry-action" aria-label="为这句新建线程" title="为这句新建线程" onClick={onAskNew}>
+        <button type="button" className="entry-action" aria-label="为这句新建对话" title="为这句新建对话" onClick={onAskNew}>
           <span className="entry-action-icon" aria-hidden="true">＋</span>
-          <span className="entry-action-label">新建线程</span>
+          <span className="entry-action-label">新建对话</span>
         </button>
         <button
           type="button"
