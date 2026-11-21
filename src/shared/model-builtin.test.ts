@@ -6,13 +6,22 @@ import {
   readBuiltinProviderSetup
 } from './model-builtin'
 
-describe('内置提供商目录', () => {
-  it('列出 DeepSeek、Kimi、智谱 GLM 与 Google Gemini，顺序固定', () => {
-    expect(BUILTIN_PROVIDER_IDS).toEqual(['deepseek', 'kimi', 'glm', 'gemini'])
+describe('内置提供商目录（批 2 + 批 3）', () => {
+  it('按固定顺序列 DeepSeek、Kimi、智谱 GLM、OpenAI、xAI 与 Google Gemini', () => {
+    expect(BUILTIN_PROVIDER_IDS).toEqual([
+      'deepseek',
+      'kimi',
+      'glm',
+      'openai',
+      'xai',
+      'gemini'
+    ])
     expect(listBuiltinProviderSetups().map((setup) => setup.id)).toEqual([
       'deepseek',
       'kimi',
       'glm',
+      'openai',
+      'xai',
       'gemini'
     ])
   })
@@ -49,6 +58,20 @@ describe('内置提供商目录', () => {
         protocol: 'openai-completions',
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
         envVar: 'ZAI_API_KEY'
+      },
+      {
+        id: 'openai',
+        displayName: 'OpenAI',
+        protocol: 'openai-responses',
+        baseUrl: 'https://api.openai.com/v1',
+        envVar: 'OPENAI_API_KEY'
+      },
+      {
+        id: 'xai',
+        displayName: 'xAI',
+        protocol: 'openai-responses',
+        baseUrl: 'https://api.x.ai/v1',
+        envVar: 'XAI_API_KEY'
       },
       {
         id: 'gemini',
@@ -127,6 +150,41 @@ describe('内置提供商目录', () => {
     })
   })
 
+  it('OpenAI 与 xAI 带出各自的 Responses 模型目录，不共用别家元数据', () => {
+    const openai = readBuiltinProviderSetup('openai')
+    const xai = readBuiltinProviderSetup('xai')
+
+    expect(openai?.models.length).toBeGreaterThan(0)
+    expect(openai?.models.map((model) => model.api)).toEqual(
+      openai?.models.map(() => 'openai-responses')
+    )
+    expect(openai?.models[0]).toMatchObject({
+      id: 'chat-latest',
+      api: 'openai-responses',
+      contextWindow: 400000,
+      maxTokens: 128000,
+      reasoning: true
+    })
+    // 普通模型没有思考能力：发送层不能替它带 reasoning。
+    expect(openai?.models.find((model) => model.id === 'gpt-4.1')).toMatchObject({
+      api: 'openai-responses',
+      reasoning: false
+    })
+
+    expect(xai?.models.map((model) => model.id)).toEqual([
+      'grok-4.3',
+      'grok-4.5',
+      'grok-4.6',
+      'grok-4.7'
+    ])
+    expect(xai?.models[0]).toMatchObject({
+      api: 'openai-responses',
+      contextWindow: 1000000,
+      maxTokens: 30000,
+      reasoning: true
+    })
+  })
+
   it('Gemini 带出官方端点、环境变量与目录模型，协议是 Gemini API', () => {
     const setup = readBuiltinProviderSetup('gemini')
 
@@ -139,12 +197,13 @@ describe('内置提供商目录', () => {
     })
   })
 
-  it('目录之外的入口（含其他协议）在本票不可从目录添加', () => {
+  it('目录之外的入口（含尚未开放的协议）在本票不可从目录添加', () => {
     expect(readBuiltinProviderSetup('opencode-go')).toBeNull()
-    expect(readBuiltinProviderSetup('openai')).toBeNull()
     expect(readBuiltinProviderSetup('anthropic')).toBeNull()
     expect(readBuiltinProviderSetup('')).toBeNull()
     expect(isBuiltinProviderId('deepseek')).toBe(true)
+    expect(isBuiltinProviderId('openai')).toBe(true)
+    expect(isBuiltinProviderId('xai')).toBe(true)
     expect(isBuiltinProviderId('gemini')).toBe(true)
     expect(isBuiltinProviderId('anthropic')).toBe(false)
     expect(isBuiltinProviderId(42)).toBe(false)

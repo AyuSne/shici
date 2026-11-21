@@ -25,6 +25,7 @@ import {
   customProviderErrorText,
   displayNameError,
   modelDirectoryHint,
+  openCustomProtocolsText,
   protocolOptionLabel,
   providerIdError
 } from './provider-editing'
@@ -54,7 +55,7 @@ type CustomProviderFormProps = {
  *
  * 表单只做即时字段提示；Provider ID 的唯一性、精确 regex、协议开放范围与
  * 「至少一个模型」仍由主进程再校验一次。协议选项由共享协议表生成，
- * 本票未开放的协议显示为「后续版本」并禁用，不在界面另抄一份协议清单。
+ * 当前未开放的协议显示为「后续版本」并禁用，不在界面另抄一份协议清单。
  */
 export function CustomProviderForm({
   existingProviderKeys,
@@ -243,7 +244,9 @@ export function CustomProviderForm({
           ))}
         </select>
       </label>
-      <p className="field-hint">本票只开放 OpenAI Chat Completions 与 Gemini API，其余协议后续开放。</p>
+      <p className="field-hint">
+        当前开放：{openCustomProtocolsText()}；其余协议后续开放。
+      </p>
 
       <label className="settings-field">
         <span>接口地址</span>
