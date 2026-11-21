@@ -142,7 +142,7 @@ test('多选两个词开一条新线程：带词与各自原句，可增删，�
   // 主对象为空：标题按选中的词起名，副标题仍是空白线程那一句。
   await expect(page.getByRole('heading', { name: 'approach 等 2 个词', level: 1 })).toBeVisible()
   await expect(page.getByText('未挂任何对象 · 从词或文章开始')).toBeVisible()
-  await expect(contextSummary(page)).toHaveText(/^2 个词 · 2 条原句 · 约 \d+ 字$/)
+  await expect(contextSummary(page)).toHaveText(/^2 条原句 · 2 个词 · 约 \d+ 字$/)
   await expect(page.locator('.context-chip-label')).toHaveText([
     'approach',
     'Approaching a new desk takes patience.',
@@ -158,18 +158,18 @@ test('多选两个词开一条新线程：带词与各自原句，可增删，�
     .locator('.context-candidate[data-context-kind="sentence"]')
     .filter({ hasText: 'Employers approach hiring differently.' })
     .click()
-  await expect(contextSummary(page)).toHaveText(/^2 个词 · 3 条原句 · 约 \d+ 字$/)
+  await expect(contextSummary(page)).toHaveText(/^3 条原句 · 2 个词 · 约 \d+ 字$/)
   await page.getByRole('button', { name: '添加上下文' }).click()
 
   // 移除与恢复：词移除后可从候选加回来，原句还在。
   await page.getByRole('button', { name: '移除上下文：approach', exact: true }).click()
-  await expect(contextSummary(page)).toHaveText(/^1 个词 · 3 条原句 · 约 \d+ 字$/)
+  await expect(contextSummary(page)).toHaveText(/^3 条原句 · 1 个词 · 约 \d+ 字$/)
   await page.getByRole('button', { name: '添加上下文' }).click()
   await picker
     .locator('.context-candidate[data-context-kind="word"]')
     .filter({ hasText: 'approach' })
     .click()
-  await expect(contextSummary(page)).toHaveText(/^2 个词 · 3 条原句 · 约 \d+ 字$/)
+  await expect(contextSummary(page)).toHaveText(/^3 条原句 · 2 个词 · 约 \d+ 字$/)
   await page.getByRole('button', { name: '添加上下文' }).click()
 
   // 提问时把组词与各自原句作为 system 前言带给模型。
@@ -354,7 +354,7 @@ test('最多 20 个不同词条：第 21 个不准选并明确提示，主进程
   await expect(
     page.getByRole('heading', { name: `${firstName} 等 20 个词`, level: 1 })
   ).toBeVisible()
-  await expect(contextSummary(page)).toHaveText(/^20 个词 · 20 条原句 · 约 \d+ 字$/)
+  await expect(contextSummary(page)).toHaveText(/^20 条原句 · 20 个词 · 约 \d+ 字$/)
   const threadId = await threadIdOf(page)
 
   // 在线程里再想加第 21 个词：候选里只剩那一个，点了也不进上下文。
@@ -364,7 +364,7 @@ test('最多 20 个不同词条：第 21 个不准选并明确提示，主进程
   await expect(wordCandidates).toHaveCount(1)
   await wordCandidates.first().click()
   await expect(page.getByText('一条线程最多带 20 个词。')).toBeVisible()
-  await expect(contextSummary(page)).toHaveText(/^20 个词 · 20 条原句 · 约 \d+ 字$/)
+  await expect(contextSummary(page)).toHaveText(/^20 条原句 · 20 个词 · 约 \d+ 字$/)
 
   // IPC 边界：伪造 21 个词条的上下文改不动，界面保持 20 个词。
   const rejectedContext = await page.evaluate(async (currentThreadId) => {
@@ -381,7 +381,7 @@ test('最多 20 个不同词条：第 21 个不准选并明确提示，主进程
     return api.invoke('chat:context', { threadId: currentThreadId, items })
   }, threadId)
   expect(rejectedContext).toEqual({ status: 'rejected', reason: 'too-many-words' })
-  await expect(contextSummary(page)).toHaveText(/^20 个词 · 20 条原句 · 约 \d+ 字$/)
+  await expect(contextSummary(page)).toHaveText(/^20 条原句 · 20 个词 · 约 \d+ 字$/)
 
   // 直接经 IPC 请求 21 个词条开线程也被拒绝。
   const rejectedGroup = await page.evaluate(async () => {

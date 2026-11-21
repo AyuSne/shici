@@ -60,6 +60,13 @@ export type ThreadContextItem = {
   source: string
 }
 
+/** 全文覆盖同篇段落；其他材料与其原有顺序保留。 */
+export function deduplicateArticleContext(items: readonly ThreadContextItem[]): ThreadContextItem[] {
+  const fullArticles = items.filter((item) => item.kind === 'article' && item.id.startsWith('article:'))
+    .map((item) => `paragraph:${item.id.slice('article:'.length)}:`)
+  return items.filter((item) => item.kind !== 'paragraph' || !fullArticles.some((prefix) => item.id.startsWith(prefix)))
+}
+
 /** `word:` 前缀只在这里解析一次；不是词或 id 为空时返回 null。 */
 export function wordContextEntryId(
   item: Pick<ThreadContextItem, 'id' | 'kind'>
@@ -76,9 +83,24 @@ export const GROUP_WORD_LIMIT = 20
 
 /** 输入框上方那行「N 个词 · M 条原句 · 约 K 字」；字数据正文的字数（码点）算。 */
 export type ThreadContextSummary = {
+  articleCount: number
+  paragraphCount: number
   wordCount: number
   sentenceCount: number
   charCount: number
+}
+
+/** 根据实际携带的正文统计材料。 */
+export function summarizeContextItems(items: readonly ThreadContextItem[]): ThreadContextSummary {
+  let articleCount = 0, paragraphCount = 0, wordCount = 0, sentenceCount = 0, charCount = 0
+  for (const item of items) {
+    if (item.kind === 'article') articleCount++
+    if (item.kind === 'paragraph') paragraphCount++
+    if (item.kind === 'word') wordCount++
+    if (item.kind === 'sentence') sentenceCount++
+    charCount += Array.from(item.text).length
+  }
+  return { articleCount, paragraphCount, wordCount, sentenceCount, charCount }
 }
 
 /** 同一位置的候选版本：重新生成的回答、改口后的提问。 */
