@@ -921,18 +921,21 @@ describe('上下文', () => {
     })
   })
 
-  it('复用历史对话时保留先前选定的全文和段落', () => {
+  it('复用旧对话时补齐标题形式的文章正文并保留其余所选材料', () => {
     const main = { kind: 'article' as const, articleId: firstArticle.id }
     const created = createThread(database, { main })
     if (created.status !== 'created') throw new Error('create failed')
     const legacy = [
-      { id: `article:${firstArticle.id}`, kind: 'article', label: '篇名', text: '篇名', source: '' },
-      { id: `paragraph:${firstArticle.id}:1`, kind: 'paragraph', label: '段 1', text: '原段', source: '' }
+      { id: `article:${firstArticle.id}`, kind: 'article', label: '旧篇名', text: '旧篇名', source: '' },
+      { id: `paragraph:${firstArticle.id}:1`, kind: 'paragraph', label: '段 1', text: '原段', source: '' },
+      { id: 'note:1', kind: 'note', label: '笔记', text: '我的选择', source: '' }
     ]
     database.prepare('UPDATE thread SET context_json = ? WHERE id = ?').run(JSON.stringify(legacy), created.thread.id)
     const reused = openThreadForMain(database, { main })
     if (reused.status !== 'reused') throw new Error('reuse failed')
-    expect(reused.thread.context).toEqual(legacy)
+    expect(reused.thread.context[0]?.text).toContain('Employers approach hiring differently.')
+    expect(reused.thread.context[0]?.text).toContain('Context keeps the skill alive.')
+    expect(reused.thread.context.slice(1)).toEqual(legacy.slice(1))
   })
 
   it('全文与同篇段落不会重复带入，其他文章段落保留', () => {

@@ -564,6 +564,15 @@ function articleItem(database: AppDatabase, articleId: string): ThreadContextIte
   }
 }
 
+/** 旧版把文章标题存作正文；只补齐仍被选中的文章，不改历史提问快照。 */
+function hydrateLegacyArticles(database: AppDatabase, items: ThreadContextItem[]): ThreadContextItem[] {
+  return items.map((item) => {
+    if (item.kind !== 'article' || !item.id.startsWith('article:') || item.text !== item.label) return item
+    const full = articleItem(database, item.id.slice('article:'.length))
+    return full && full.text.trim() !== '' ? { ...item, text: full.text } : item
+  })
+}
+
 /**
  * 挂上主对象时预填的上下文：词条带主词形与最近收的那句原句，
  * 原句带词与它自己，文章带全文；空白线程什么都不带。
@@ -745,7 +754,7 @@ export function readThreadView(database: AppDatabase, threadId: string): ChatThr
     return null
   }
   const rows = readThreadEntries(database, threadId)
-  const context = parseContextJson(thread.context_json)
+  const context = hydrateLegacyArticles(database, parseContextJson(thread.context_json))
   const main = describeMain(
     database,
     thread.main_kind as ThreadMainKind,
@@ -1087,8 +1096,8 @@ export function askQuestion(
   }
   const context =
     request.context === undefined
-      ? parseContextJson(thread.context_json)
-      : deduplicateArticleContext(sanitizeContextItems(request.context))
+      ? hydrateLegacyArticles(database, parseContextJson(thread.context_json))
+      : deduplicateArticleContext(hydrateLegacyArticles(database, sanitizeContextItems(request.context)))
   if (wordItemCount(context) > GROUP_WORD_LIMIT) {
     return { status: 'rejected', reason: 'too-many-words' }
   }
@@ -1273,8 +1282,8 @@ export function editQuestion(
   }
   const context =
     request.context === undefined
-      ? parseContextJson(thread.context_json)
-      : deduplicateArticleContext(sanitizeContextItems(request.context))
+      ? hydrateLegacyArticles(database, parseContextJson(thread.context_json))
+      : deduplicateArticleContext(hydrateLegacyArticles(database, sanitizeContextItems(request.context)))
   if (wordItemCount(context) > GROUP_WORD_LIMIT) {
     return { status: 'rejected', reason: 'too-many-words' }
   }

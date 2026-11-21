@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { articleCoversParagraph } from '../../../shared/threads'
 import type { ArticleContextMaterials, ThreadContextCandidates, ThreadContextItem, ThreadContextSummary } from '../../../shared/threads'
 import { CONTEXT_KIND_LABEL, contextSummaryText } from './turns'
 import { matchesContextSearch } from './context-picker'
@@ -52,7 +53,7 @@ export function ContextPanel({
   }, [pickerOpen, section, query, expanded, candidates, materials, loadArticle])
   const renderItems = (list: readonly ThreadContextItem[]) => (
     <ul className="context-candidates">
-      {list.filter((item) => !included.has(item.id) && !(item.kind === 'paragraph' && items.some((full) => full.kind === 'article' && item.id.startsWith(`paragraph:${full.id.slice(8)}:`))) && matchesContextSearch(item, query)).map((item) => (
+      {list.filter((item) => !included.has(item.id) && !items.some((full) => articleCoversParagraph(full, item)) && matchesContextSearch(item, query)).map((item) => (
         <li key={item.id}><button type="button" className="context-candidate"
           data-context-kind={item.kind} aria-label={`加入上下文：${item.label === '' ? item.text : item.label}`}
           onClick={() => onAdd(item)}>
@@ -123,6 +124,7 @@ export function ContextPanel({
                   data?.paragraphs.some((paragraph) => matchesContextSearch(paragraph, query))
               }).map((article) => {
                 const data = materials[article.id]
+                const titleMatches = !query.trim() || article.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
                 const isOpen = expanded === article.id
                 const fullIncluded = included.has(`article:${article.id}`)
                 return <section key={article.id} className="context-article">
@@ -130,7 +132,7 @@ export function ContextPanel({
                   {isOpen && (data ? <div>
                     <button type="button" disabled={!data.article || fullIncluded} onClick={() => { if (data.article) onAdd(data.article) }}>加入全文</button>
                     {fullIncluded && <p>已加入全文</p>}
-                    {data.paragraphs.map((paragraph) => <label key={paragraph.id} className="context-paragraph">
+                    {data.paragraphs.filter((paragraph) => titleMatches || matchesContextSearch(paragraph, query)).map((paragraph) => <label key={paragraph.id} className="context-paragraph">
                       <input type="checkbox" disabled={fullIncluded || included.has(paragraph.id)} checked={selected.includes(paragraph.id)} onChange={(event) => setSelected((previous) => event.target.checked ? [...previous, paragraph.id] : previous.filter((id) => id !== paragraph.id))} />
                       <span>{paragraph.label} · {paragraph.text}</span>
                     </label>)}

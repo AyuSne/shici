@@ -9,6 +9,9 @@ import {
   type StubScript
 } from '../../src/testing/sse-stub'
 import { CONTINUE_INSTRUCTION } from '../../src/shared/threads'
+import { openDatabase } from '../../src/main/db/database'
+import { askQuestion, createThread } from '../../src/main/chat/threads'
+import { databasePath } from '../fixtures/database'
 import { expect, test, type AppHandle, type LaunchOptions } from '../fixtures/app'
 import { seedWordEntries, type SeedPick } from '../fixtures/entries'
 
@@ -564,4 +567,55 @@ test('空白对话自由加入多段和另一篇全文并发送给模型', async
   expect(prompt).not.toContain('She approached the counter quietly.')
   expect(prompt).toContain('Another passage approaches the same idea.')
   expect(prompt).toContain('It reaches a different conclusion.')
+})
+
+
+test('搜索文章正文只展示命中段落，搜索篇名可浏览全部段落', async ({ launch }) => {
+  const page = await launchApp(launch, { env: { CORPUS_DIRECTORY: corpusDirectory } })
+  await openBlankChat(page)
+  await page.getByRole('button', { name: '添加上下文' }).click()
+  const picker = page.getByRole('group', { name: '可加入的上下文' })
+  await picker.getByRole('tab', { name: '文章与段落' }).click()
+  const search = picker.getByRole('textbox', { name: '搜索上下文' })
+  await search.fill('counter quietly')
+  const first = picker.locator('.context-article').filter({ hasText: '第1套' })
+  await first.getByRole('button', { name: /第1套/ }).click()
+  await expect(first.getByRole('checkbox')).toHaveCount(1)
+  await expect(first.locator('.context-paragraph')).toContainText(['She approached the counter quietly.'])
+  await search.fill('第1套')
+  await expect(first.getByRole('checkbox')).toHaveCount(3)
+})
+
+
+test('旧文章对话继续提问时发送全文且保留历史提问', async ({ launch, userDataDirectory }) => {
+  seed(userDataDirectory)
+  const db = openDatabase(databasePath(userDataDirectory))
+  const created = createThread(db, { main: { kind: 'article', articleId: firstArticle.id } })
+  if (created.status !== 'created') throw new Error('create failed')
+  const oldArticle = { ...created.thread.context[0]!, text: created.thread.context[0]!.label }
+  const legacy = [oldArticle, { id: 'note:legacy', kind: 'note', label: '笔记', text: '我的学习内容', source: '' }]
+  const asked = askQuestion(db, { threadId: created.thread.id, text: '旧问题' })
+  if (asked.status !== 'asked') throw new Error('ask failed')
+  const oldPayload = JSON.stringify({ text: '旧问题', context: legacy })
+  db.prepare('UPDATE thread_entry SET payload = ? WHERE id = ?').run(oldPayload, asked.questionId)
+  db.prepare('UPDATE thread SET context_json = ? WHERE id = ?').run(JSON.stringify(legacy), created.thread.id)
+  db.close()
+
+  const stub = await createStub({ kind: 'stream', text: ['读过了。'] })
+  const page = await launchApp(launch, { env: seededEnvironment(stub.baseUrl) })
+  await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '对话' }).click()
+  await page.locator('.thread-row').first().click()
+  await expect(page.getByText('旧问题')).toBeVisible()
+  await expect(page.locator('.context-chip-label').filter({ hasText: '笔记' })).toBeVisible()
+  await ask(page, '请阅读全文')
+  await expect.poll(() => stub.requests.length).toBe(1)
+  const messages = requestMessages(stub, 0)
+  const prompt = messages.map((message) => message.content).join('\n')
+  expect(prompt).toContain('Employers approach hiring differently.')
+  expect(prompt).toContain('Context keeps the skill alive.')
+  expect(prompt).toContain('我的学习内容')
+  const check = openDatabase(databasePath(userDataDirectory))
+  const historical = check.prepare('SELECT payload FROM thread_entry WHERE id = ?').get(asked.questionId) as { payload: string }
+  expect(historical.payload).toBe(oldPayload)
+  check.close()
 })

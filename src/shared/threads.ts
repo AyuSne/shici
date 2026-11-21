@@ -60,11 +60,15 @@ export type ThreadContextItem = {
   source: string
 }
 
+/** 全文是否覆盖该段落；两种 ID 都必须有规范前缀。 */
+export function articleCoversParagraph(article: ThreadContextItem, paragraph: ThreadContextItem): boolean {
+  return article.kind === 'article' && article.id.startsWith('article:') &&
+    paragraph.kind === 'paragraph' && paragraph.id.startsWith(`paragraph:${article.id.slice('article:'.length)}:`)
+}
+
 /** 全文覆盖同篇段落；其他材料与其原有顺序保留。 */
 export function deduplicateArticleContext(items: readonly ThreadContextItem[]): ThreadContextItem[] {
-  const fullArticles = items.filter((item) => item.kind === 'article' && item.id.startsWith('article:'))
-    .map((item) => `paragraph:${item.id.slice('article:'.length)}:`)
-  return items.filter((item) => item.kind !== 'paragraph' || !fullArticles.some((prefix) => item.id.startsWith(prefix)))
+  return items.filter((item) => !items.some((article) => articleCoversParagraph(article, item)))
 }
 
 /** `word:` 前缀只在这里解析一次；不是词或 id 为空时返回 null。 */
