@@ -72,18 +72,23 @@ import type {
   ReadingView
 } from '../../shared/reading'
 import type {
-  ActivateModelProfileResult,
   CreateBackupResult,
-  DeleteModelProfileResult,
   OpenDataDirectoryResult,
   PickRestoreResult,
   RestoreBackupResult,
-  SaveModelProfileRequest,
-  SaveModelProfileResult,
   SaveThemeResult,
-  SettingsOverview,
-  VerifyModelProfileResult
+  SettingsOverview
 } from '../../shared/settings'
+import type {
+  ActivateProviderRequest,
+  ActivateProviderResult,
+  AddBuiltinProviderRequest,
+  AddBuiltinProviderResult,
+  DeleteProviderRequest,
+  DeleteProviderResult,
+  SetDefaultProviderModelRequest,
+  SetDefaultProviderModelResult
+} from '../../shared/model-providers'
 import type {
   AskThreadRequest,
   ChatThreadView,
@@ -478,35 +483,37 @@ export function loadPinSource(pinId: string): Promise<PinSourceResult> {
 
 /* ---------- 设置 ---------- */
 
-/** 设置页一次读全：模型配置、阅读默认、主题、版本与数据目录。 */
+/** 设置页一次读全：只读 provider 列表、阅读默认、主题、版本与数据目录。 */
 export function loadSettingsOverview(): Promise<SettingsOverview> {
   return invoke('settings:overview')
 }
 
-/** 新增或编辑一套配置；填了新密钥时主进程会先校验再决定存不存。 */
-export function saveModelProfile(
-  request: SaveModelProfileRequest
-): Promise<SaveModelProfileResult> {
-  return invoke('settings:profile-save', request)
+/** 从内置目录添加一套提供商；保存不联网，密钥只写不读。 */
+export function addBuiltinProvider(
+  request: AddBuiltinProviderRequest
+): Promise<AddBuiltinProviderResult> {
+  return invoke('settings:provider-add', request)
 }
 
-export function activateModelProfile(
-  profileId: string
-): Promise<ActivateModelProfileResult> {
-  return invoke('settings:profile-activate', { profileId })
+/** 选这个 provider 的默认模型；目录本身只读，不在这里增删模型。 */
+export function setDefaultProviderModel(
+  request: SetDefaultProviderModelRequest
+): Promise<SetDefaultProviderModelResult> {
+  return invoke('settings:provider-default-model', request)
 }
 
-export function deleteModelProfile(
-  profileId: string
-): Promise<DeleteModelProfileResult> {
-  return invoke('settings:profile-delete', { profileId })
+/** 切换使用中的提供商：只写选择，之后的调用才用它。 */
+export function activateProvider(
+  request: ActivateProviderRequest
+): Promise<ActivateProviderResult> {
+  return invoke('settings:provider-activate', request)
 }
 
-/** 测试当前连接；不传 id 时测使用中的那套。 */
-export function verifyModelProfile(
-  profileId: string | null
-): Promise<VerifyModelProfileResult> {
-  return invoke('settings:profile-verify', { profileId })
+/** 删除提供商；删到使用中的那套时选择会被明确清空。 */
+export function deleteProvider(
+  request: DeleteProviderRequest
+): Promise<DeleteProviderResult> {
+  return invoke('settings:provider-delete', request)
 }
 
 /** 改全局阅读默认；单篇覆盖不受影响。 */

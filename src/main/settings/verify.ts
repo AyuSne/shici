@@ -1,5 +1,5 @@
 import type { ChatError } from '../../shared/chat'
-import type { ProfileCheckError } from '../../shared/settings'
+import type { ProviderCheckError } from '../../shared/model-providers'
 import { chatErrorFrom } from '../chat/errors'
 import { chatCompletionsEndpoint } from './base-url'
 
@@ -127,7 +127,7 @@ function describeError(error: unknown): string {
 /** 校验没通过时落到配置状态上的错误类别；通过时不该调用。 */
 export function failedCheckError(
   outcome: Exclude<VerifyOutcome, { status: 'verified' }>
-): ProfileCheckError {
+): ProviderCheckError {
   if (outcome.status === 'invalid-key') {
     return 'invalid-key'
   }

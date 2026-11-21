@@ -1,394 +1,393 @@
-import { useState, type FormEvent } from 'react'
-import type {
-  ModelProfileSummary,
-  SettingsOverview
-} from '../../../shared/settings'
+import { useState } from 'react'
+import type { ModelProviderSummary } from '../../../shared/model-providers'
+import { listBuiltinProviderSetups, type BuiltinProviderId } from '../../../shared/model-builtin'
+import type { SettingsOverview } from '../../../shared/settings'
 import {
-  activateModelProfile,
-  deleteModelProfile,
-  saveModelProfile,
-  verifyModelProfile
+  activateProvider,
+  addBuiltinProvider,
+  deleteProvider,
+  loadSettingsOverview,
+  setDefaultProviderModel
 } from '../api'
 import { failureText } from '../errors'
 import {
   checkText,
-  profileSaveErrorText,
-  verificationText,
-  verifyResultText
+  keyStateText,
+  modelMetaText,
+  protocolText,
+  providerModelsText,
+  providerSourceText,
+  verificationText
 } from './format'
 
-type Draft = {
-  id: string | null
-  name: string
-  baseUrl: string
-  model: string
-  apiKeyMask: string | null
-  /** 编辑已保存的配置时先只显示掩码；点「重新输入」才出现输入框。 */
-  keyEditing: boolean
-  apiKey: string
-}
-
-const NEW_DRAFT: Draft = {
-  id: null,
-  name: '',
-  baseUrl: 'https://api.deepseek.com',
-  model: 'deepseek-flash',
-  apiKeyMask: null,
-  keyEditing: true,
-  apiKey: ''
-}
-
-type FormError = { field: 'name' | 'baseUrl' | 'model' | 'apiKey' | null; message: string }
-
-/** 模型服务：多套配置的列表、切换、编辑、删除与连接测试。 */
-export function ModelSection({
-  overview,
-  onChange,
-  notify
-}: {
+type ModelSectionProps = {
   overview: SettingsOverview
   onChange: (overview: SettingsOverview) => void
   notify: (message: string) => void
-}) {
-  const [draft, setDraft] = useState<Draft | null>(null)
-  const [error, setError] = useState<FormError | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [deleting, setDeleting] = useState<string | null>(null)
+}
 
-  function beginNew(): void {
-    setError(null)
-    setDraft({ ...NEW_DRAFT })
+/**
+ * 模型服务：#62 只支持从内置目录添加 DeepSeek / Kimi / 智谱 GLM 三条
+ * OpenAI Chat Completions 入口。地址、环境变量与模型目录都由目录带出且只读，
+ * 用户要做的只是填密钥、选默认模型、切换与删除。
+ *
+ * 保存不联网：填完密钥立即落库，状态是「未验证」；真正成功生成一次后才转「已验证」。
+ * 本票没有编辑地址、模型 CRUD、发现或测试连接入口。
+ */
+export function ModelSection({ overview, onChange, notify }: ModelSectionProps) {
+  const setups = listBuiltinProviderSetups()
+  const [catalogId, setCatalogId] = useState<BuiltinProviderId>(
+    setups[0]?.id ?? 'deepseek'
+  )
+  const [apiKey, setApiKey] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  const setup = setups.find((candidate) => candidate.id === catalogId) ?? setups[0]
+  const noActiveProvider =
+    overview.providers.length > 0 && overview.activeProviderId === null
+
+  async function refresh(): Promise<void> {
+    onChange(await loadSettingsOverview())
   }
 
-  function beginEdit(profile: ModelProfileSummary): void {
-    setError(null)
-    setDeleting(null)
-    setDraft({
-      id: profile.id,
-      name: profile.name,
-      baseUrl: profile.baseUrl,
-      model: profile.model,
-      apiKeyMask: profile.apiKeyMask,
-      keyEditing: false,
-      apiKey: ''
+  async function run(action: string, work: () => Promise<void>): Promise<void> {
+    setBusy(action)
+    setFormError(null)
+    try {
+      await work()
+    } catch (error) {
+      setFormError(failureText(error, '这次操作没有完成，再试一次。'))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function onAdd(): Promise<void> {
+    return run('add', async () => {
+      if (setup === undefined) {
+        setFormError('内置目录里没有可添加的提供商。')
+        return
+      }
+      const key = apiKey.trim()
+      if (key === '') {
+        setFormError('先填 API 密钥再保存。')
+        return
+      }
+      const result = await addBuiltinProvider({
+        catalogProviderId: setup.id,
+        apiKey: key
+      })
+      if (result.status === 'rejected') {
+        setFormError(
+          result.reason === 'missing-key'
+            ? '先填 API 密钥再保存。'
+            : '这个入口不在本版的内置目录里。'
+        )
+        return
+      }
+      setApiKey('')
+      await refresh()
+      notify(`已保存 ${setup.displayName}；未验证（保存时不联网）`)
     })
   }
 
-  function closeDraft(): void {
-    if (busy) {
-      return
-    }
-    setDraft(null)
-    setError(null)
-  }
-
-  async function submit(event: FormEvent): Promise<void> {
-    event.preventDefault()
-    if (draft === null || busy) {
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const result = await saveModelProfile({
-        id: draft.id,
-        name: draft.name,
-        baseUrl: draft.baseUrl,
-        model: draft.model,
-        ...(draft.keyEditing ? { apiKey: draft.apiKey } : {})
-      })
-      onChange(result.overview)
-      const failure = profileSaveErrorText(result)
-      if (failure === null) {
-        setDraft(null)
-        notify('已保存')
+  function onActivate(provider: ModelProviderSummary): Promise<void> {
+    return run(`activate-${provider.id}`, async () => {
+      const result = await activateProvider({ providerId: provider.id })
+      if (result.status !== 'activated') {
+        setFormError('这套提供商已经不在了，刷新后再试。')
         return
       }
-      setError({ field: result.field ?? null, message: failure })
-    } catch (caught) {
-      setError({ field: null, message: failureText(caught) })
-    } finally {
-      setBusy(false)
-    }
+      await refresh()
+      notify(`之后的对话会使用「${provider.displayName}」`)
+    })
   }
 
-  async function activate(id: string): Promise<void> {
-    try {
-      const result = await activateModelProfile(id)
-      onChange(result.overview)
-      notify(result.status === 'activated' ? '已切换，下一次调用起生效' : '这套配置已经不在了')
-    } catch (caught) {
-      notify(failureText(caught))
-    }
+  function onDefaultModel(
+    provider: ModelProviderSummary,
+    modelRowId: string
+  ): Promise<void> {
+    return run(`default-${provider.id}`, async () => {
+      const result = await setDefaultProviderModel({
+        providerId: provider.id,
+        modelRowId
+      })
+      if (result.status === 'rejected') {
+        setFormError('这个模型已经不在目录里了，刷新后再选。')
+        return
+      }
+      if (result.status === 'missing') {
+        setFormError('这套提供商已经不在了，刷新后再试。')
+        return
+      }
+      await refresh()
+      notify('已换默认模型；正在生成的回答不受影响')
+    })
   }
 
-  async function remove(id: string): Promise<void> {
-    try {
-      const result = await deleteModelProfile(id)
-      setDeleting(null)
-      onChange(result.overview)
-      notify(result.status === 'deleted' ? '已删除' : '这套配置已经不在了')
-    } catch (caught) {
-      notify(failureText(caught))
-    }
-  }
-
-  async function testActive(): Promise<void> {
-    if (testing) {
-      return
-    }
-    setTesting(true)
-    try {
-      const result = await verifyModelProfile(null)
-      onChange(result.overview)
-      notify(verifyResultText(result.status))
-    } catch (caught) {
-      notify(failureText(caught))
-    } finally {
-      setTesting(false)
-    }
+  function onDelete(provider: ModelProviderSummary): Promise<void> {
+    return run(`delete-${provider.id}`, async () => {
+      const result = await deleteProvider({ providerId: provider.id })
+      setConfirmDelete(null)
+      if (result.status !== 'deleted') {
+        setFormError('这套提供商已经不在了。')
+        return
+      }
+      await refresh()
+      notify(
+        result.activeCleared
+          ? '已删除使用中的提供商；现在没有使用中的提供商，之后的对话要先选一套。'
+          : `已删除「${provider.displayName}」`
+      )
+    })
   }
 
   return (
     <section className="settings-section" aria-labelledby="settings-model-title">
       <h2 id="settings-model-title">模型服务</h2>
       <p className="settings-desc">
-        填写 OpenAI 兼容接口。可以保存多套，随时切换；切换只影响之后的调用。
+        从内置目录添加 DeepSeek、Kimi 或智谱 GLM：接口地址、环境变量名与模型目录会自动带出，
+        你只需要填密钥。保存只写本机，不联网校验；真正生成成功一次后才标「已验证」。
       </p>
 
-      {overview.profiles.length === 0 ? (
-        <p className="settings-empty">还没有配置。新增一套之后就能开始对话。</p>
+      {overview.providers.length === 0 ? (
+        <p className="settings-empty">
+          还没有模型提供商。从下面的内置目录选一家开始；也可以先用环境变量。
+        </p>
       ) : (
-        <ul className="profile-list">
-          {overview.profiles.map((profile) => (
-            <li
-              key={profile.id}
-              className={profile.active ? 'profile-card is-active' : 'profile-card'}
-            >
-              <div className="profile-head">
-                <b className="profile-name">{profile.name}</b>
-                {profile.active ? <span className="profile-chip is-current">使用中</span> : null}
-                <span
-                  className={
-                    profile.verification === 'verified'
-                      ? 'profile-chip is-verified'
-                      : 'profile-chip'
-                  }
-                >
-                  {verificationText(profile)}
-                </span>
-                <div className="profile-actions">
-                  {profile.active ? null : (
-                    <button
-                      type="button"
-                      className="link-button"
-                      aria-label={`切换到 ${profile.name}`}
-                      onClick={() => void activate(profile.id)}
-                    >
-                      切换
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="link-button"
-                    aria-label={`编辑 ${profile.name}`}
-                    onClick={() => beginEdit(profile)}
-                  >
-                    编辑
-                  </button>
-                  <button
-                    type="button"
-                    className="link-button is-danger"
-                    aria-label={`删除 ${profile.name}`}
-                    onClick={() => setDeleting(profile.id)}
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-
-              <dl className="profile-facts">
-                <div>
-                  <dt>接口地址</dt>
-                  <dd>
-                    <code>{profile.baseUrl}</code>
-                  </dd>
-                </div>
-                <div>
-                  <dt>模型名</dt>
-                  <dd>
-                    <code>{profile.model}</code>
-                  </dd>
-                </div>
-                <div>
-                  <dt>密钥</dt>
-                  <dd>
-                    <code>{profile.apiKeyMask ?? '未填写'}</code>
-                  </dd>
-                </div>
-              </dl>
-              <p className="profile-check">{checkText(profile)}</p>
-
-              {deleting === profile.id ? (
-                <div className="profile-confirm" role="alert">
-                  <span>删除「{profile.name}」？</span>
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={() => setDeleting(null)}
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    className="button button-danger"
-                    onClick={() => void remove(profile.id)}
-                  >
-                    确认删除
-                  </button>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="settings-actions">
-        <button type="button" className="button" onClick={beginNew}>
-          ＋ 新增一套
-        </button>
-        <button
-          type="button"
-          className="button"
-          onClick={() => void testActive()}
-          disabled={overview.activeId === null || testing}
-        >
-          {testing ? '正在测试…' : '测试当前连接'}
-        </button>
-      </div>
-
-      {draft === null ? null : (
-        <form className="profile-form" onSubmit={(event) => void submit(event)}>
-          <h3>{draft.id === null ? '新增一套配置' : `编辑「${draft.name || '配置'}」`}</h3>
-
-          <label className="settings-field">
-            <span>名称</span>
-            <input
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              placeholder="DeepSeek 官方"
-            />
-          </label>
-          {error?.field === 'name' ? (
-            <p className="field-error" role="alert">
-              {error.message}
+        <>
+          {noActiveProvider ? (
+            <p className="settings-hint is-warning">
+              现在没有使用中的提供商。选一套点「使用这个」，之后的对话才会用它。
             </p>
           ) : null}
-
-          <label className="settings-field">
-            <span>接口地址</span>
-            <input
-              value={draft.baseUrl}
-              onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
-              placeholder="https://api.deepseek.com"
-            />
-          </label>
-          {error?.field === 'baseUrl' ? (
-            <p className="field-error" role="alert">
-              {error.message}
-            </p>
-          ) : null}
-
-          <label className="settings-field">
-            <span>模型名</span>
-            <input
-              value={draft.model}
-              onChange={(event) => setDraft({ ...draft, model: event.target.value })}
-              placeholder="deepseek-flash"
-            />
-          </label>
-          {error?.field === 'model' ? (
-            <p className="field-error" role="alert">
-              {error.message}
-            </p>
-          ) : null}
-
-          <div className="settings-field">
-            <span>API 密钥</span>
-            {draft.keyEditing ? (
-              <>
-                <input
-                  type="password"
-                  aria-label="API 密钥"
-                  value={draft.apiKey}
-                  onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
-                  placeholder="sk-…（本地模型可以留空）"
-                  autoComplete="off"
-                />
-                <p className="field-hint">
-                  保存前会发一次最小请求校验；断网时可以先存成「未验证」，下次调用成功会自动改成「已验证」。
-                </p>
-                {draft.apiKeyMask === null ? null : (
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() =>
-                      setDraft({ ...draft, keyEditing: false, apiKey: '' })
+          <ul className="profile-list">
+            {overview.providers.map((provider) => (
+              <li
+                key={provider.id}
+                className={provider.active ? 'profile-card is-active' : 'profile-card'}
+                data-provider-key={provider.providerKey}
+              >
+                <div className="profile-head">
+                  <b className="profile-name">{provider.displayName}</b>
+                  {provider.active ? (
+                    <span className="profile-chip is-current">使用中</span>
+                  ) : null}
+                  <span
+                    className={
+                      provider.verification === 'verified'
+                        ? 'profile-chip is-verified'
+                        : 'profile-chip'
                     }
                   >
-                    取消重输
-                  </button>
-                )}
-              </>
-            ) : (
-              <div className="key-mask-row">
-                <code>{draft.apiKeyMask ?? '未填写'}</code>
-                <button
-                  type="button"
-                  className="button button-small"
-                  onClick={() => setDraft({ ...draft, keyEditing: true })}
-                >
-                  重新输入
-                </button>
-              </div>
-            )}
-            {error?.field === 'apiKey' ? (
-              <p className="field-error" role="alert">
-                {error.message}
-              </p>
-            ) : null}
-          </div>
+                    {verificationText(provider)}
+                  </span>
+                  <span className="profile-chip">{providerSourceText(provider)}</span>
+                  <div className="profile-actions">
+                    {provider.active ? null : (
+                      <button
+                        type="button"
+                        className="link-button"
+                        disabled={busy !== null}
+                        onClick={() => void onActivate(provider)}
+                      >
+                        使用这个
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="link-button is-danger"
+                      disabled={busy !== null}
+                      onClick={() => setConfirmDelete(provider.id)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
 
-          {error !== null && error.field === null ? (
-            <p className="field-error" role="alert">
-              {error.message}
-            </p>
-          ) : null}
+                <dl className="profile-facts">
+                  <div>
+                    <dt>Provider ID</dt>
+                    <dd>
+                      <code>{provider.providerKey}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>协议</dt>
+                    <dd>{protocolText(provider.protocol)}</dd>
+                  </div>
+                  <div>
+                    <dt>接口地址</dt>
+                    <dd>
+                      <code>{provider.baseUrl ?? '未填写'}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>模型</dt>
+                    <dd>
+                      <code>{providerModelsText(provider)}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>密钥</dt>
+                    <dd>
+                      <code>{keyStateText(provider)}</code>
+                    </dd>
+                  </div>
+                  {provider.envVar === null ? null : (
+                    <div>
+                      <dt>环境变量</dt>
+                      <dd>
+                        <code>{provider.envVar}</code>
+                      </dd>
+                    </div>
+                  )}
+                </dl>
 
-          <div className="settings-actions">
-            <button
-              type="submit"
-              className="button button-primary"
-              disabled={busy}
-            >
-              {busy
-                ? '正在保存…'
-                : draft.keyEditing
-                  ? '保存并校验'
-                  : '保存'}
-            </button>
-            <button
-              type="button"
-              className="button"
-              onClick={closeDraft}
-              disabled={busy}
-            >
-              取消
-            </button>
-          </div>
-        </form>
+                <div className="model-picker" role="group" aria-label="默认模型">
+                  <span className="settings-field-label">默认模型</span>
+                  {provider.models.length === 0 ? (
+                    <p className="settings-hint">这套提供商还没有模型。</p>
+                  ) : (
+                    <ul className="model-options">
+                      {provider.models.map((model) => (
+                        <li key={model.id}>
+                          <label className="model-option">
+                            <input
+                              type="radio"
+                              name={`default-model-${provider.id}`}
+                              checked={provider.defaultModelRowId === model.id}
+                              disabled={busy !== null}
+                              onChange={() => void onDefaultModel(provider, model.id)}
+                            />
+                            <code className="model-id">{model.modelId}</code>
+                            <span className="model-meta">{modelMetaText(model)}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <p className="profile-check">{checkText(provider)}</p>
+
+                {confirmDelete === provider.id ? (
+                  <div className="profile-confirm">
+                    <span>
+                      {provider.active
+                        ? '这是使用中的提供商。删除后会清空使用中选择，之后的对话要先另选一套；历史线程与钉住不受影响。'
+                        : '删除这套提供商？历史线程与钉住不受影响。'}
+                    </span>
+                    <button
+                      type="button"
+                      className="button button-danger button-small"
+                      disabled={busy !== null}
+                      onClick={() => void onDelete(provider)}
+                    >
+                      确认删除
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-small"
+                      disabled={busy !== null}
+                      onClick={() => setConfirmDelete(null)}
+                    >
+                      取消
+                    </button>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
+
+      <div className="profile-form">
+        <h3>添加内置提供商</h3>
+        <p className="settings-desc">
+          保存时不联网，断网也能存成「未验证」。密钥只以掩码显示，不会回传到界面。
+        </p>
+
+        <label className="settings-field">
+          <span>内置提供商</span>
+          <select
+            aria-label="内置提供商"
+            value={catalogId}
+            disabled={busy !== null}
+            onChange={(event) => setCatalogId(event.target.value as BuiltinProviderId)}
+          >
+            {setups.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {setup === undefined ? null : (
+          <dl className="profile-facts builtin-preview">
+            <div>
+              <dt>接口地址</dt>
+              <dd>
+                <code>{setup.baseUrl}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>环境变量</dt>
+              <dd>
+                <code>{setup.envVar}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>模型目录</dt>
+              <dd>
+                <code>{setup.models.map((model) => model.id).join('、')}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Provider ID</dt>
+              <dd>
+                <code>
+                  保存后分配：{setup.id}、{setup.id}-2 …（唯一且不可改）
+                </code>
+              </dd>
+            </div>
+          </dl>
+        )}
+
+        <label className="settings-field">
+          <span>API 密钥</span>
+          <input
+            type="password"
+            aria-label="API 密钥"
+            autoComplete="off"
+            spellCheck={false}
+            value={apiKey}
+            disabled={busy !== null}
+            onChange={(event) => setApiKey(event.target.value)}
+          />
+        </label>
+
+        {formError === null ? null : (
+          <p className="field-error" role="alert">
+            {formError}
+          </p>
+        )}
+
+        <div className="settings-actions">
+          <button
+            type="button"
+            className="button"
+            disabled={busy !== null}
+            onClick={() => void onAdd()}
+          >
+            保存提供商
+          </button>
+          <span className="settings-hint">保存后仍是未验证；成功对话一次会自动转已验证。</span>
+        </div>
+      </div>
     </section>
   )
 }

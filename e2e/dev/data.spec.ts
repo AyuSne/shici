@@ -10,6 +10,7 @@ import {
   type StubScript
 } from '../../src/testing/sse-stub'
 import { expect, test } from '../fixtures/app'
+import { seedLegacyModelProfiles } from '../fixtures/database'
 
 const stubs: SseStub[] = []
 let workspace: string
@@ -80,21 +81,33 @@ function chatEnvironment(baseUrl: string): Record<string, string> {
 }
 
 test.describe('备份、恢复与导出', () => {
-  test('一键备份落盘且不含密钥；恢复整体替换，替换前自动留快照', async ({ launch }) => {
-    const stub = await createStub({ kind: 'status', status: 200 })
+  test('一键备份落盘且不含密钥；恢复整体替换，替换前自动留快照', async ({
+    launch,
+    userDataDirectory
+  }) => {
     const backupFile = join(workspace, 'chosen', 'english-learning-backup.db')
+    // 升级前的旧库：模型配置躺在 model_profile 里，密钥是密文。
+    seedLegacyModelProfiles(
+      join(userDataDirectory, 'english-learning.db'),
+      [
+        {
+          id: 'profile-deepseek',
+          name: 'DeepSeek 官方',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-flash',
+          apiKeySecret: 'e2e-secret-ciphertext-0001',
+          verification: 'verified'
+        }
+      ],
+      'profile-deepseek'
+    )
     const handle = await launch({ env: noEnvironmentConfig })
     const { page, electronApp } = handle
     if (electronApp === null) throw new Error('开发态用例拿不到主进程句柄')
 
-    // 先存一套带密钥的配置，用来确认备份里没有密钥。
+    // 升级后就地迁移成 provider，设置页能看到只读卡片。
     await openSettings(page)
-    await page.getByRole('button', { name: '新增一套' }).click()
-    await page.getByLabel('名称').fill('DeepSeek 官方')
-    await page.getByLabel('接口地址').fill(stub.baseUrl)
-    await page.getByLabel('模型名').fill('deepseek-flash')
-    await page.getByLabel('API 密钥').fill('sk-e2e-backup-0001')
-    await page.getByRole('button', { name: '保存并校验' }).click()
+    await expect(page.locator('.profile-card')).toContainText('DeepSeek 官方')
     await expect(page.locator('.profile-card')).toContainText('已验证')
 
     await openData(page)
@@ -111,14 +124,25 @@ test.describe('备份、恢复与导出', () => {
 
     const copy = new Database(backupFile, { readonly: true, fileMustExist: true })
     try {
-      const row = copy
+      const provider = copy
+        .prepare('SELECT secret_ciphertext, verification FROM model_provider')
+        .get() as { secret_ciphertext: string | null; verification: string }
+      expect(provider.secret_ciphertext).toBeNull()
+      expect(provider.verification).toBe('unverified')
+      const legacy = copy
         .prepare('SELECT api_key_secret, verification FROM model_profile')
         .get() as { api_key_secret: string | null; verification: string }
-      expect(row.api_key_secret).toBeNull()
-      expect(row.verification).toBe('unverified')
+      expect(legacy.api_key_secret).toBeNull()
+      expect(legacy.verification).toBe('unverified')
+      // 模型目录随 provider 一起进备份。
+      expect(copy.prepare('SELECT COUNT(*) AS count FROM model_provider_model').get()).toEqual({
+        count: 1
+      })
     } finally {
       copy.close()
     }
+    // 连密文字节都不该留在副本里（否则从空闲页里还能捞出来）。
+    expect(readFileSync(backupFile).includes('e2e-secret-ciphertext-0001')).toBe(false)
 
     // 备份之后改成深色主题；恢复应当退回备份时的浅色。
     await settingsNav(page).getByRole('button', { name: '外观' }).click()
@@ -145,11 +169,11 @@ test.describe('备份、恢复与导出', () => {
     expect(snapshots).toHaveLength(1)
     expect(snapshots[0]?.endsWith('.db')).toBe(true)
 
-    // 恢复后配置还在，但密钥回到「未填写」。
+    // 恢复后配置还在，但密钥回到「缺失」。
     await openSettings(page)
     const card = page.locator('.profile-card').filter({ hasText: 'DeepSeek 官方' })
     await expect(card).toContainText('未验证')
-    await expect(card).toContainText('未填写')
+    await expect(card).toContainText('缺失')
 
     // 数据区也记得这次恢复留下的快照，以及刚用过的这份备份。
     await openData(page)

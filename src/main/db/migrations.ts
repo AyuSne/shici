@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto'
 import type { AppDatabase } from './database'
+import { deriveProviderKey } from './provider-key'
 
 export type Migration = {
   version: number
@@ -329,11 +331,169 @@ export const migrations: readonly Migration[] = [
         ALTER TABLE article ADD COLUMN source_entry_ids TEXT;
       `)
     }
+  },
+  {
+    version: 14,
+    up: (database) => {
+      // 模型服务 v2：provider 与它的模型目录分开存，一个 provider 可以有多个模型。
+      // 旧的 model_profile 不删：它是回滚副本，迁移后只读，运行时不再写入。
+      // 每条旧配置复制成一个 custom + openai-completions provider，密钥密文原样保留，
+      // 使用中的旧配置换成使用中的 provider（键写进 chat.activeProviderId）。
+      database.exec(`
+        CREATE TABLE model_provider (
+          id                TEXT PRIMARY KEY,
+          provider_key      TEXT NOT NULL UNIQUE,
+          display_name      TEXT NOT NULL,
+          protocol          TEXT NOT NULL,
+          base_url          TEXT,
+          auth_mode         TEXT NOT NULL,
+          env_var           TEXT,
+          secret_ciphertext TEXT,
+          retry_policy      TEXT NOT NULL DEFAULT '{"mode":"normal"}',
+          verification      TEXT NOT NULL DEFAULT 'unverified',
+          last_error        TEXT,
+          last_checked_at   TEXT,
+          last_verified_at  TEXT,
+          source            TEXT NOT NULL,
+          -- 内置目录身份：Provider ID 可以因同厂商多套而变成 deepseek-2，
+          -- 这一列始终指向目录里的入口（如 deepseek），迁移来的 custom 为 NULL。
+          catalog_provider_id TEXT,
+          default_model_id  TEXT,
+          created_at        TEXT NOT NULL,
+          updated_at        TEXT NOT NULL
+        );
+
+        CREATE INDEX model_provider_created ON model_provider (created_at);
+
+        CREATE TABLE model_provider_model (
+          id             TEXT PRIMARY KEY,
+          provider_id    TEXT NOT NULL REFERENCES model_provider(id) ON DELETE CASCADE,
+          model_id       TEXT NOT NULL,
+          display_name   TEXT NOT NULL,
+          api            TEXT NOT NULL,
+          base_url       TEXT,
+          context_window INTEGER,
+          max_tokens     INTEGER,
+          input          TEXT NOT NULL DEFAULT 'text',
+          reasoning      INTEGER NOT NULL DEFAULT 0,
+          -- 目录描述符里的思考档位映射与兼容开关：请求时要用它们决定
+          -- high 是否可用，以及思考字段按 DeepSeek / Kimi / ZAI 哪种格式发。
+          thinking_level_map TEXT,
+          compat             TEXT,
+          source         TEXT NOT NULL,
+          sort           INTEGER NOT NULL DEFAULT 0,
+          created_at     TEXT NOT NULL,
+          updated_at     TEXT NOT NULL,
+          UNIQUE (provider_id, model_id)
+        );
+
+        CREATE INDEX model_provider_model_order
+          ON model_provider_model (provider_id, sort);
+      `)
+
+      const profiles = database
+        .prepare(
+          `SELECT id, name, base_url, model, api_key_secret, verification, last_error,
+                  last_checked_at, last_verified_at, created_at, updated_at
+             FROM model_profile ORDER BY created_at, rowid`
+        )
+        .all() as {
+        id: string
+        name: string
+        base_url: string
+        model: string
+        api_key_secret: string | null
+        verification: string
+        last_error: string | null
+        last_checked_at: string | null
+        last_verified_at: string | null
+        created_at: string
+        updated_at: string
+      }[]
+
+      const usedKeys = new Set<string>()
+      const insertProvider = database.prepare(
+        `INSERT INTO model_provider (
+           id, provider_key, display_name, protocol, base_url, auth_mode, env_var,
+           secret_ciphertext, retry_policy, verification, last_error, last_checked_at,
+           last_verified_at, source, default_model_id, created_at, updated_at
+         ) VALUES (?, ?, ?, 'openai-completions', ?, 'stored', NULL, ?, ?, ?, ?, ?, ?,
+                   'custom', ?, ?, ?)`
+      )
+      const insertModel = database.prepare(
+        `INSERT INTO model_provider_model (
+           id, provider_id, model_id, display_name, api, base_url, context_window, max_tokens,
+           input, reasoning, source, sort, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, 'openai-completions', NULL, NULL, NULL, 'text', 0, 'manual', 0,
+                   ?, ?)`
+      )
+
+      for (const profile of profiles) {
+        try {
+          const providerKey = deriveProviderKey(profile.name, profile.base_url, usedKeys)
+          usedKeys.add(providerKey)
+          const modelId = randomUUID()
+          insertProvider.run(
+            profile.id,
+            providerKey,
+            profile.name,
+            profile.base_url,
+            profile.api_key_secret,
+            '{"mode":"normal"}',
+            profile.verification === 'verified' ? 'verified' : 'unverified',
+            profile.last_error,
+            profile.last_checked_at,
+            profile.last_verified_at,
+            modelId,
+            profile.created_at,
+            profile.updated_at
+          )
+          insertModel.run(
+            modelId,
+            profile.id,
+            profile.model,
+            profile.model,
+            profile.created_at,
+            profile.updated_at
+          )
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error)
+          throw new Error(`迁移模型配置「${profile.name}」（${profile.id}）失败：${detail}`)
+        }
+      }
+
+      // 原使用中的 profile 继续是使用中的 provider；旧键只迁这一次，之后不再读写。
+      const legacyActive = database
+        .prepare(`SELECT value FROM setting WHERE key = 'chat.activeProfileId'`)
+        .get() as { value: string } | undefined
+      const activeId = legacyActive?.value.trim() ?? ''
+      if (activeId !== '' && profiles.some((profile) => profile.id === activeId)) {
+        database
+          .prepare(
+            `INSERT INTO setting (key, value, updated_at)
+             VALUES ('chat.activeProviderId', ?, datetime('now'))
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+          )
+          .run(activeId)
+      }
+      database.prepare(`DELETE FROM setting WHERE key = 'chat.activeProfileId'`).run()
+    }
   }
 ]
 
 function latestVersion(plan: readonly Migration[]): number {
   return plan.reduce((latest, migration) => Math.max(latest, migration.version), 0)
+}
+
+/** 迁移失败时带上目标版本：界面直接显示这句话就够说明发生了什么。 */
+export class MigrationFailedError extends Error {
+  readonly version: number
+
+  constructor(version: number, detail: string) {
+    super(`数据库升级到版本 ${version} 失败：${detail}`)
+    this.name = 'MigrationFailedError'
+    this.version = version
+  }
 }
 
 export const LATEST_SCHEMA_VERSION = latestVersion(migrations)
@@ -384,7 +544,12 @@ export function migrate(
 
   const applyPending = database.transaction(() => {
     for (const migration of pending) {
-      migration.up(database)
+      try {
+        migration.up(database)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new MigrationFailedError(migration.version, detail)
+      }
       database.pragma(`user_version = ${migration.version}`)
     }
   })

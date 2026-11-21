@@ -144,8 +144,8 @@ describe('migrate', () => {
 
     expect(outcome.from).toBe(8)
     // 后缀按实际排在 position→ordinal 之后的迁移逐条写出来，不靠「迁到最新」一句带过：
-    // 10 是稍后看表，11 是完成时间列，12 是学习指令表。
-    expect(outcome.applied).toEqual([9, 10, 11, 12, 13])
+    // 10 是稍后看表，11 是完成时间列，12 是学习指令表，13 是生成文章来源，14 是模型提供商。
+    expect(outcome.applied).toEqual([9, 10, 11, 12, 13, 14])
     const columns = (database.pragma('table_info(article)') as { name: string }[]).map(
       (column) => column.name
     )
@@ -197,7 +197,7 @@ describe('migrate', () => {
 
     expect(outcome.from).toBe(9)
     // 10 先建稍后看表，11 再给文章补完成时间，12 最后建学习指令表；三笔都只增不改。
-    expect(outcome.applied).toEqual([10, 11, 12, 13])
+    expect(outcome.applied).toEqual([10, 11, 12, 13, 14])
     // 稍后看表跟着建起来，已有的词条数据不受影响。
     expect(
       database
@@ -248,7 +248,7 @@ describe('migrate', () => {
 
     const outcome = migrate(database)
 
-    expect(outcome.applied).toEqual([10, 11, 12, 13])
+    expect(outcome.applied).toEqual([10, 11, 12, 13, 14])
     expect(readSchemaVersion(database)).toBe(LATEST_SCHEMA_VERSION)
     expect(
       (database.pragma('table_info(article)') as { name: string }[]).map((column) => column.name)
@@ -301,8 +301,8 @@ describe('migrate', () => {
     const outcome = migrate(database)
 
     expect(outcome.from).toBe(11)
-    expect(outcome.applied).toEqual([12, 13])
-    expect(readSchemaVersion(database)).toBe(13)
+    expect(outcome.applied).toEqual([12, 13, 14])
+    expect(readSchemaVersion(database)).toBe(LATEST_SCHEMA_VERSION)
     expect(
       database
         .prepare(
@@ -377,8 +377,8 @@ describe('migrate', () => {
     const outcome = migrate(database)
 
     expect(outcome.from).toBe(12)
-    expect(outcome.applied).toEqual([13])
-    expect(readSchemaVersion(database)).toBe(13)
+    expect(outcome.applied).toEqual([13, 14])
+    expect(readSchemaVersion(database)).toBe(LATEST_SCHEMA_VERSION)
     const columns = (database.pragma('table_info(article)') as { name: string }[]).map(
       (column) => column.name
     )
@@ -405,10 +405,288 @@ describe('migrate', () => {
     ).toEqual({ name: '旧指令' })
     // 重复迁移无操作。
     expect(migrate(database).applied).toEqual([])
-    expect(readSchemaVersion(database)).toBe(13)
+    expect(readSchemaVersion(database)).toBe(LATEST_SCHEMA_VERSION)
   })
 
-  it('11 版的旧库直接升到 13：学习内容、完成状态、稍后看与文章都在', () => {
+  it('14 版把多套旧模型配置迁成 custom provider 与模型，密文、状态、使用中与历史都保留', () => {
+    migrate(database, {
+      migrations: migrations.filter((migration) => migration.version <= 13)
+    })
+    const insertProfile = database.prepare(
+      `INSERT INTO model_profile (
+         id, name, base_url, model, api_key_secret, verification, last_error,
+         last_checked_at, last_verified_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    insertProfile.run(
+      'profile-deepseek',
+      'DeepSeek 官方',
+      'https://api.deepseek.com',
+      'deepseek-flash',
+      'sealed:key-one',
+      'verified',
+      null,
+      '2026-11-18T09:30:00.000Z',
+      '2026-11-18T09:30:00.000Z',
+      '2026-11-18T09:00:00.000Z',
+      '2026-11-18T09:30:00.000Z'
+    )
+    insertProfile.run(
+      'profile-backup',
+      '备用',
+      'https://backup.example.com/v1',
+      'backup-model',
+      'sealed:key-two',
+      'unverified',
+      'network',
+      '2026-11-18T09:10:00.000Z',
+      null,
+      '2026-11-18T09:05:00.000Z',
+      '2026-11-18T09:10:00.000Z'
+    )
+    insertProfile.run(
+      'profile-third',
+      'DeepSeek 官方',
+      'https://third.example.com',
+      'third-model',
+      null,
+      'unverified',
+      null,
+      null,
+      null,
+      '2026-11-18T09:06:00.000Z',
+      '2026-11-18T09:06:00.000Z'
+    )
+    database
+      .prepare(`INSERT INTO setting (key, value) VALUES ('chat.activeProfileId', ?)`)
+      .run('profile-backup')
+    database
+      .prepare(
+        `INSERT INTO thread (id, title, main_kind, main_id, context_json, leaf_entry_id, created_at, updated_at)
+         VALUES ('thread-old', '旧线程', 'none', NULL, '[]', NULL,
+                 '2026-11-18T08:00:00.000Z', '2026-11-18T08:00:00.000Z')`
+      )
+      .run()
+    database
+      .prepare(
+        `INSERT INTO pin (
+           id, thread_id, thread_title, answer_id, turn_index, model, captured_text,
+           char_start, char_end, source_sentence_id, source_sentence_text, target_kind,
+           target_id, created_at
+         ) VALUES ('pin-old', 'thread-old', '旧线程', 'answer-old', 0, 'deepseek-flash',
+                   '钉住的一段', 0, 5, NULL, NULL, 'unfiled', NULL,
+                   '2026-11-18T08:10:00.000Z')`
+      )
+      .run()
+    database
+      .prepare(
+        `INSERT INTO word_entry (id, main_form, normalized_key, created_at, last_collected_at)
+         VALUES ('entry-old', 'approach', 'approach', '2026-11-18T08:00:00.000Z',
+                 '2026-11-18T08:00:00.000Z')`
+      )
+      .run()
+    database
+      .prepare(
+        `INSERT INTO learning_note (id, entry_id, body, pinned, created_at, updated_at)
+         VALUES ('note-old', 'entry-old', '旧的学习内容', 0, '2026-11-18T08:00:00.000Z',
+                 '2026-11-18T08:00:00.000Z')`
+      )
+      .run()
+    expect(readSchemaVersion(database)).toBe(13)
+
+    const outcome = migrate(database)
+
+    expect(outcome.from).toBe(13)
+    expect(outcome.applied).toEqual([14])
+    expect(readSchemaVersion(database)).toBe(LATEST_SCHEMA_VERSION)
+
+    const providers = database
+      .prepare(
+        `SELECT id, provider_key, display_name, protocol, base_url, auth_mode, env_var,
+                secret_ciphertext, retry_policy, verification, last_error, last_checked_at,
+                last_verified_at, source, default_model_id
+           FROM model_provider ORDER BY created_at, rowid`
+      )
+      .all() as {
+      id: string
+      provider_key: string
+      display_name: string
+      protocol: string
+      base_url: string
+      auth_mode: string
+      env_var: string | null
+      secret_ciphertext: string | null
+      retry_policy: string
+      verification: string
+      last_error: string | null
+      last_checked_at: string | null
+      last_verified_at: string | null
+      source: string
+      default_model_id: string | null
+    }[]
+    expect(providers).toHaveLength(3)
+    expect(providers.map((provider) => provider.id)).toEqual([
+      'profile-deepseek',
+      'profile-backup',
+      'profile-third'
+    ])
+    expect(providers.map((provider) => [provider.provider_key, provider.display_name])).toEqual([
+      ['deepseek', 'DeepSeek 官方'],
+      // 名称没有可用的拉丁字母时从地址派生，仍以小写字母开头。
+      ['backup-example-com', '备用'],
+      // 重名时加后缀，不让 provider_key 撞车。
+      ['deepseek-2', 'DeepSeek 官方']
+    ])
+    for (const provider of providers) {
+      expect(provider.provider_key).toMatch(/^[a-z][a-z0-9-]*$/)
+      expect(provider.protocol).toBe('openai-completions')
+      expect(provider.auth_mode).toBe('stored')
+      expect(provider.env_var).toBeNull()
+      expect(provider.retry_policy).toBe('{"mode":"normal"}')
+      expect(provider.source).toBe('custom')
+    }
+    expect(providers[0]).toMatchObject({
+      base_url: 'https://api.deepseek.com',
+      secret_ciphertext: 'sealed:key-one',
+      verification: 'verified',
+      last_checked_at: '2026-11-18T09:30:00.000Z',
+      last_verified_at: '2026-11-18T09:30:00.000Z'
+    })
+    expect(providers[1]).toMatchObject({
+      secret_ciphertext: 'sealed:key-two',
+      verification: 'unverified',
+      last_error: 'network',
+      last_checked_at: '2026-11-18T09:10:00.000Z',
+      last_verified_at: null
+    })
+    expect(providers[2]?.secret_ciphertext).toBeNull()
+
+    const models = database
+      .prepare(
+        `SELECT provider_id, model_id, display_name, api, base_url, context_window, max_tokens,
+                input, reasoning, source, sort, id
+           FROM model_provider_model ORDER BY rowid`
+      )
+      .all() as {
+      id: string
+      provider_id: string
+      model_id: string
+      display_name: string
+      api: string
+      base_url: string | null
+      context_window: number | null
+      max_tokens: number | null
+      input: string
+      reasoning: number
+      source: string
+      sort: number
+    }[]
+    expect(models).toHaveLength(3)
+    expect(models.map((model) => [model.provider_id, model.model_id])).toEqual([
+      ['profile-deepseek', 'deepseek-flash'],
+      ['profile-backup', 'backup-model'],
+      ['profile-third', 'third-model']
+    ])
+    expect(models[0]).toMatchObject({
+      display_name: 'deepseek-flash',
+      api: 'openai-completions',
+      base_url: null,
+      context_window: null,
+      max_tokens: null,
+      input: 'text',
+      reasoning: 0,
+      source: 'manual',
+      sort: 0
+    })
+    for (const provider of providers) {
+      const model = models.find((candidate) => candidate.provider_id === provider.id)
+      expect(provider.default_model_id).toBe(model?.id)
+    }
+
+    // 使用中的旧配置变成使用中的 provider；旧键迁走后不再留着。
+    expect(
+      database.prepare(`SELECT value FROM setting WHERE key = 'chat.activeProviderId'`).get()
+    ).toEqual({ value: 'profile-backup' })
+    expect(
+      database.prepare(`SELECT value FROM setting WHERE key = 'chat.activeProfileId'`).get()
+    ).toBeUndefined()
+
+    // 历史记录原样保留。
+    expect(database.prepare(`SELECT title FROM thread WHERE id = 'thread-old'`).get()).toEqual({
+      title: '旧线程'
+    })
+    expect(database.prepare(`SELECT captured_text FROM pin WHERE id = 'pin-old'`).get()).toEqual({
+      captured_text: '钉住的一段'
+    })
+    expect(database.prepare(`SELECT body FROM learning_note WHERE id = 'note-old'`).get()).toEqual({
+      body: '旧的学习内容'
+    })
+    // 旧表只留作回滚，不再由迁移删掉。
+    expect(database.prepare('SELECT COUNT(*) AS count FROM model_profile').get()).toEqual({
+      count: 3
+    })
+    // 重复迁移无操作。
+    expect(migrate(database).applied).toEqual([])
+  })
+
+  it('provider_key 始终以小写字母开头：数字开头或全中文的名字退到地址', () => {
+    migrate(database, {
+      migrations: migrations.filter((migration) => migration.version <= 13)
+    })
+    const insert = database.prepare(
+      `INSERT INTO model_profile (
+         id, name, base_url, model, api_key_secret, verification, last_error,
+         last_checked_at, last_verified_at, created_at, updated_at
+       ) VALUES (?, ?, ?, 'm', NULL, 'unverified', NULL, NULL, NULL, ?, ?)`
+    )
+    insert.run('p-numeric', '3rd Party', 'https://api.example.com/v1', '2026-11-18T09:00:00.000Z', '2026-11-18T09:00:00.000Z')
+    insert.run('p-chinese', '第一套', 'https://gateway.example.org', '2026-11-18T09:00:00.000Z', '2026-11-18T09:00:00.000Z')
+
+    migrate(database)
+
+    expect(
+      database
+        .prepare(`SELECT id, provider_key FROM model_provider ORDER BY id`)
+        .all()
+    ).toEqual([
+      { id: 'p-chinese', provider_key: 'gateway-example-org' },
+      { id: 'p-numeric', provider_key: 'api-example-com' }
+    ])
+  })
+
+  it('14 版迁移中途失败时整笔回滚，并给出带版本与对象的可读错误', () => {
+    migrate(database, {
+      migrations: migrations.filter((migration) => migration.version <= 13)
+    })
+    database
+      .prepare(
+        `INSERT INTO model_profile (
+           id, name, base_url, model, api_key_secret, verification, last_error,
+           last_checked_at, last_verified_at, created_at, updated_at
+         ) VALUES ('profile-old', '旧配置', 'https://api.deepseek.com', 'deepseek-flash',
+                   'sealed:keep', 'verified', NULL, NULL, NULL,
+                   '2026-11-18T09:00:00.000Z', '2026-11-18T09:00:00.000Z')`
+      )
+      .run()
+    // 制造一次「建到一半才失败」：provider 表能建，模型表被同名旧对象占住。
+    database.exec('CREATE TABLE model_provider_model (id TEXT PRIMARY KEY)')
+
+    expect(() => migrate(database)).toThrow(/版本 14/)
+    expect(readSchemaVersion(database)).toBe(13)
+    expect(
+      database
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_provider'")
+        .get()
+    ).toBeUndefined()
+    expect(database.prepare('SELECT COUNT(*) AS count FROM model_profile').get()).toEqual({
+      count: 1
+    })
+    expect(database.prepare('SELECT api_key_secret FROM model_profile').get()).toEqual({
+      api_key_secret: 'sealed:keep'
+    })
+  })
+
+  it('11 版的旧库直接升到最新：学习内容、完成状态、稍后看与文章都在', () => {
     migrate(database, {
       migrations: migrations.filter((migration) => migration.version <= 11)
     })
@@ -445,8 +723,8 @@ describe('migrate', () => {
     const outcome = migrate(database)
 
     expect(outcome.from).toBe(11)
-    expect(outcome.applied).toEqual([12, 13])
-    expect(readSchemaVersion(database)).toBe(13)
+    expect(outcome.applied).toEqual([12, 13, 14])
+    expect(readSchemaVersion(database)).toBe(LATEST_SCHEMA_VERSION)
     expect(
       (database.pragma('table_info(article)') as { name: string }[]).map((column) => column.name)
     ).toEqual(expect.arrayContaining(['completed_at', 'source_type', 'source_entry_ids']))

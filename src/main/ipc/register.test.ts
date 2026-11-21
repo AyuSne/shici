@@ -242,8 +242,9 @@ function pinsHandlers() {
 }
 
 const settingsOverview: SettingsOverview = {
-  profiles: [],
-  activeId: null,
+  providers: [],
+  activeProviderId: null,
+  defaultModelRowId: null,
   activeModel: '',
   reading: {
     fontSize: 20,
@@ -264,22 +265,22 @@ const settingsOverview: SettingsOverview = {
 function settingsHandlers() {
   return {
     'settings:overview': (): SettingsOverview => settingsOverview,
-    'settings:profile-save': () => ({
+    'settings:provider-add': () => ({
       status: 'saved' as const,
-      overview: settingsOverview,
-      profileId: 'profile-1'
+      providerId: 'provider-1',
+      providerKey: 'deepseek'
     }),
-    'settings:profile-activate': () => ({
+    'settings:provider-default-model': () => ({
+      status: 'saved' as const,
+      defaultModelRowId: 'model-1'
+    }),
+    'settings:provider-activate': () => ({
       status: 'activated' as const,
-      overview: settingsOverview
+      activeProviderId: 'provider-1'
     }),
-    'settings:profile-delete': () => ({
+    'settings:provider-delete': () => ({
       status: 'deleted' as const,
-      overview: settingsOverview
-    }),
-    'settings:profile-verify': () => ({
-      status: 'verified' as const,
-      overview: settingsOverview
+      activeCleared: false
     }),
     'settings:reading-save': () => ({
       saved: true,
@@ -333,8 +334,30 @@ describe('registerIpcHandlers', () => {
     expect(events).toEqual([event])
   })
 
-  it('契约里的 channel 没有处理函数时启动即报错', () => {
-    const { ipc } = fakeIpcMain()
+  it('模型服务写入只走 provider 表，没有旧 profile 写入，也没有模型 CRUD', () => {
+    expect(IPC_CHANNELS).toContain('settings:overview')
+    expect(IPC_CHANNELS).toEqual(
+      expect.arrayContaining([
+        'settings:provider-add',
+        'settings:provider-default-model',
+        'settings:provider-activate',
+        'settings:provider-delete'
+      ])
+    )
+    expect(
+      IPC_CHANNELS.filter((channel) => channel.startsWith('settings:profile-'))
+    ).toEqual([])
+    expect(
+      IPC_CHANNELS.filter(
+        (channel) =>
+          channel.startsWith('settings:model-') ||
+          channel.includes('discover') ||
+          channel.includes('test-connection')
+      )
+    ).toEqual([])
+  })
+
+  it('契约里的 channel 没有处理函数时启动即报错', () => {    const { ipc } = fakeIpcMain()
 
     expect(() =>
       registerIpcHandlers(ipc, { ...chatHandlers() } as unknown as IpcHandlers)

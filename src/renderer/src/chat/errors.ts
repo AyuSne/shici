@@ -53,11 +53,17 @@ export function describeChatError(error: ChatError): ChatErrorPresentation {
         detail: '没连上模型服务，或连接在生成中断了。',
         retryable: true
       }
+    case 'empty-response':
+      return {
+        title: '模型没有返回内容',
+        detail: '服务这次返回了空回答。已输出的内容会留在本条里。',
+        retryable: true
+      }
     case 'not-configured':
       return {
         title: '还没有配置模型服务',
         detail: '这次生成没有开始。',
-        action: '到设置 → 模型服务里新增一套配置，填上接口地址、模型名与密钥。',
+        action: '到设置 → 模型服务里查看提供商配置；也可以先用 DEEPSEEK_API_KEY 环境变量。',
         retryable: false
       }
     case 'unknown':

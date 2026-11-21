@@ -1,93 +1,107 @@
-import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import type { ChatError, ChatStreamEvent, ChatTurn, ReasoningEffort } from '../../shared/chat'
-import { chatErrorFrom, requestIdFromDetail } from './errors'
+import type {
+  AssistantMessage,
+  Context,
+  ProviderAuth,
+  SimpleStreamOptions
+} from '@earendil-works/pi-ai'
+import type { ChatError, ChatStreamEvent, ChatTurn, ProviderErrorCode } from '../../shared/chat'
+import { chatErrorFromFailure, requestIdFromDetail } from './errors'
+import { classifyStatus, createRequestCapture, type CapturedRequest } from './http-capture'
+import type { ChatModelDescriptor } from './model-descriptor'
+import { loadPi } from './pi-modules'
+import { piModelOf } from './pi-model'
+import { loadProtocolApi } from './protocols'
+import { resolveThinkingLevel } from './thinking'
 
 export type StreamChatOptions = {
-  baseUrl: string
+  /** 这次调用冻结下来的 provider/模型描述符；切换配置不影响已经在跑的流。 */
+  descriptor: ChatModelDescriptor
   apiKey: string
-  model: string
   messages: readonly ChatTurn[]
   /** 学习上下文以 system 消息打头；没有上下文时不传。 */
   systemPrompt?: string
-  /** 必填：漏传就发不出去，避免服务端静默关闭思考。 */
-  reasoningEffort: ReasoningEffort
   signal: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
 }
 
+/** `resolve` 只声明“密钥从调用处来”；请求级的 apiKey 优先，不会去环境里找别的凭据。 */
+const REQUEST_KEY_AUTH: ProviderAuth = {
+  apiKey: {
+    name: 'API key',
+    resolve: async () => ({ auth: {} })
+  }
+}
+
 /**
  * 把 pi-ai 的事件归一成 thinking / text / done / error 四种事件。
- * 渲染层不需要知道 pi-ai、SSE 或状态码。
+ * 渲染层不需要知道 pi-ai、SSE、协议或状态码。
  *
- * pi-ai 1.5.2 只导出 ESM（`exports` 没有 require 条件），而主进程产物是 CJS，
- * 所以这里用动态 import 加载；`dynamicImportInCjs` 保持 CJS 里的 import()。
+ * 协议实现按描述符的 `api` 从注册表懒加载；请求级 fetch 捕获 HTTP 状态、
+ * request id 与 Retry-After，pi 之后怎么拍平异常都不影响稳定分类。
+ * `maxRetries: 0` 表示一次调用只发一次请求：本批没有重试层，失败交给界面决定。
  */
 export async function streamChatCompletion(options: StreamChatOptions): Promise<void> {
-  if (!options.reasoningEffort) {
-    throw new Error('思考强度必须显式传入，否则模型服务会关闭思考')
-  }
-
-  let status: number | undefined
-  let requested = false
+  const capture = createRequestCapture()
+  let hasContent = false
 
   try {
     const pi = await loadPi()
-    const catalog = pi.DEEPSEEK_MODELS as unknown as Record<
-      string,
-      Model<'openai-completions'>
-    >
-    const catalogModel = catalog[options.model] ?? catalog['deepseek-flash']
-    if (!catalogModel) {
-      throw new Error('pi-ai 的 DeepSeek 模型目录里找不到 deepseek-flash')
-    }
-    const model: Model<'openai-completions'> = {
-      ...catalogModel,
-      id: options.model,
-      name: options.model,
-      baseUrl: options.baseUrl
-    }
-
+    const protocolApi = await loadProtocolApi(options.descriptor.api)
+    const model = piModelOf(options.descriptor)
     const provider = pi.createProvider({
-      id: 'deepseek',
-      name: 'DeepSeek',
-      baseUrl: options.baseUrl,
-      // 必需，但请求级的 apiKey 会优先；这里只声明“密钥从调用处来”。
-      auth: {
-        apiKey: {
-          name: 'DeepSeek API key',
-          resolve: async () => ({ auth: {} })
-        }
-      },
+      id: options.descriptor.provider,
+      name: options.descriptor.provider,
+      baseUrl: options.descriptor.baseUrl,
+      auth: REQUEST_KEY_AUTH,
       models: [model],
-      api: pi.openAICompletionsApi()
+      api: protocolApi
     })
-
     const models = pi.createModels()
     models.setProvider(provider)
 
-    const stream = models.stream(model, toContext(options.messages, options.model, options.systemPrompt), {
+    const reasoning = await resolveThinkingLevel(options.descriptor)
+    const requestOptions: SimpleStreamOptions = {
       apiKey: options.apiKey,
-      reasoningEffort: options.reasoningEffort,
+      ...(reasoning === undefined ? {} : { reasoning }),
       signal: options.signal,
-      // 重试由界面决定，模型层不自动重试。
+      // 一次调用一次尝试；重试属于后续批次，绝不在模型层偷偷叠加。
       maxRetries: 0,
-      fetch: async (input, init) => {
-        requested = true
-        const response = await fetch(input, init)
-        status = response.status
-        return response
-      }
-    })
+      fetch: capture.fetch
+    }
+    const stream = models.streamSimple(
+      model,
+      toContext(options.messages, options.descriptor, options.systemPrompt),
+      requestOptions
+    )
 
     for await (const event of stream) {
       switch (event.type) {
         case 'thinking_delta':
-          options.onEvent({ type: 'thinking', text: event.delta })
+          if (event.delta !== '') {
+            hasContent = true
+            options.onEvent({ type: 'thinking', text: event.delta })
+          }
           break
         case 'text_delta':
-          options.onEvent({ type: 'text', text: event.delta })
+          if (event.delta !== '') {
+            hasContent = true
+            options.onEvent({ type: 'text', text: event.delta })
+          }
           break
         case 'done':
+          if (!hasContent) {
+            // 空回答同样走失败构造器：200 状态、request id 与 Retry-After 都已捕获，
+            // 只把稳定分类固定成 EMPTY_RESPONSE，不丢排障信息。
+            options.onEvent({
+              type: 'error',
+              error: failureError(
+                capture.snapshot(),
+                '模型服务返回了空回答',
+                'EMPTY_RESPONSE'
+              )
+            })
+            return
+          }
           options.onEvent({ type: 'done' })
           return
         case 'error':
@@ -97,8 +111,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
           options.onEvent({
             type: 'error',
             error: failureError(
-              status,
-              requested,
+              capture.snapshot(),
               event.error.errorMessage ?? '模型服务中断了这次生成'
             )
           })
@@ -108,55 +121,25 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
       }
     }
 
-    options.onEvent({ type: 'done' })
+    // 没有 done / error 就结束：不假装生成完成，按连接中断处理。
+    options.onEvent({
+      type: 'error',
+      error: failureError(capture.snapshot(), '模型服务在生成结束前断开了连接')
+    })
   } catch (error) {
     if (options.signal.aborted) {
       return
     }
     options.onEvent({
       type: 'error',
-      error: failureError(status, requested, describeError(error))
+      error: failureError(capture.snapshot(), describeError(error))
     })
   }
-}
-
-type PiModules = {
-  createModels: typeof import('@earendil-works/pi-ai').createModels
-  createProvider: typeof import('@earendil-works/pi-ai').createProvider
-  openAICompletionsApi: typeof import(
-    '@earendil-works/pi-ai/api/openai-completions.lazy'
-  ).openAICompletionsApi
-  DEEPSEEK_MODELS: typeof import(
-    '@earendil-works/pi-ai/providers/deepseek.models'
-  ).DEEPSEEK_MODELS
-}
-
-let modules: Promise<PiModules> | null = null
-
-function loadPi(): Promise<PiModules> {
-  if (!modules) {
-    modules = Promise.all([
-      import('@earendil-works/pi-ai'),
-      import('@earendil-works/pi-ai/api/openai-completions.lazy'),
-      import('@earendil-works/pi-ai/providers/deepseek.models')
-    ]).then(([pi, api, catalog]) => ({
-      createModels: pi.createModels,
-      createProvider: pi.createProvider,
-      openAICompletionsApi: api.openAICompletionsApi,
-      DEEPSEEK_MODELS: catalog.DEEPSEEK_MODELS
-    }))
-    modules = modules.catch((error: unknown) => {
-      // 加载失败不要留下永远 reject 的缓存，下一次发送还能再试。
-      modules = null
-      throw error
-    })
-  }
-  return modules
 }
 
 function toContext(
   messages: readonly ChatTurn[],
-  model: string,
+  descriptor: ChatModelDescriptor,
   systemPrompt: string | undefined
 ): Context {
   return {
@@ -164,18 +147,21 @@ function toContext(
     messages: messages.map((turn) =>
       turn.role === 'user'
         ? { role: 'user', content: turn.content, timestamp: Date.now() }
-        : assistantMessage(turn.content, model)
+        : assistantMessage(turn.content, descriptor)
     )
   }
 }
 
-function assistantMessage(text: string, model: string): AssistantMessage {
+function assistantMessage(
+  text: string,
+  descriptor: ChatModelDescriptor
+): AssistantMessage {
   return {
     role: 'assistant',
     content: [{ type: 'text', text }],
-    api: 'openai-completions',
-    provider: 'deepseek',
-    model,
+    api: descriptor.api,
+    provider: descriptor.provider,
+    model: descriptor.model,
     usage: {
       input: 0,
       output: 0,
@@ -190,22 +176,43 @@ function assistantMessage(text: string, model: string): AssistantMessage {
 }
 
 /**
- * 分类只看 HTTP 状态码。响应已经 2xx 之后断流算网络异常；请求还没发出去
- * 就失败（例如适配层自身出错）算未知错误，不误导成“检查网络”。
+ * 分类优先级：HTTP 状态 > fetch 层超时/传输失败 > 拿到响应后断流按传输失败。
+ * 请求还没发出去就失败（例如加载协议实现出错）算未知错误，不误导成“检查网络”。
+ * request id 只认响应头；没有头时才从报文的 DeepSeek 括号格式兜底。
+ *
+ * `kindOverride` 给「没有 HTTP 失败但也不是成功」的空回答用：分类固定成
+ * EMPTY_RESPONSE，其余捕获信息照常带出。
  */
 function failureError(
-  status: number | undefined,
-  requested: boolean,
-  detail: string
+  captured: CapturedRequest,
+  detail: string,
+  kindOverride?: ProviderErrorCode
 ): ChatError {
-  const requestId = requestIdFromDetail(detail)
-  if (!requested) {
-    return { code: 'unknown', detail, ...(requestId ? { requestId } : {}) }
+  const requestId = captured.requestId ?? requestIdFromDetail(detail)
+  const kind = kindOverride ?? failureKind(captured)
+  return chatErrorFromFailure({
+    kind,
+    ...(captured.status === undefined ? {} : { status: captured.status }),
+    detail,
+    ...(requestId === undefined ? {} : { requestId }),
+    ...(captured.retryAfterMs === undefined
+      ? {}
+      : { retryAfterMs: captured.retryAfterMs })
+  })
+}
+
+function failureKind(captured: CapturedRequest): ProviderErrorCode {
+  const statusKind = classifyStatus(captured.status)
+  if (statusKind !== null) {
+    return statusKind
   }
-  if (status === undefined || (status >= 200 && status < 300)) {
-    return { code: 'network', detail, ...(requestId ? { requestId } : {}) }
+  if (captured.transport !== undefined) {
+    return captured.transport
   }
-  return chatErrorFrom(status, detail)
+  if (captured.status !== undefined) {
+    return 'TRANSPORT'
+  }
+  return 'UNKNOWN'
 }
 
 function describeError(error: unknown): string {

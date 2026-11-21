@@ -22,6 +22,7 @@ const secrets: SecretStore = {
 function options() {
   return {
     secrets,
+    env: {},
     fallbackModel: '',
     appVersion: '0.1.0',
     electronVersion: '45.0.0',

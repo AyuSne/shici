@@ -4,7 +4,7 @@ import type {
   ChatStopResult,
   ChatStreamUpdate
 } from '../../shared/chat'
-import { THINKING_EFFORT, type ChatConfig } from './config'
+import { type ChatConfig } from './config'
 import { streamChatCompletion } from './pi-stream'
 
 export type ChatUpdateSender = (update: ChatStreamUpdate) => void
@@ -18,8 +18,8 @@ export type ChatService = {
 export type ChatServiceOptions = {
   /** 每次 start 时重新解析：设置页切换配置只影响之后的调用。 */
   resolveConfig: () => ChatConfig | null
-  /** 一次完整成功的调用之后把对应配置标成已验证。 */
-  onVerified?: (profileId: string) => void
+  /** 一次完整成功的调用之后把对应 provider 标成已验证。 */
+  onVerified?: (providerId: string) => void
 }
 
 /**
@@ -46,9 +46,9 @@ export function createChatService(options: ChatServiceOptions): ChatService {
         } catch {
           // 接收方已不在。
         }
-        if (update.event.type === 'done' && config?.profileId !== undefined) {
+        if (update.event.type === 'done' && config?.providerId !== undefined) {
           try {
-            options.onVerified?.(config.profileId)
+            options.onVerified?.(config.providerId)
           } catch {
             // 回写状态失败不影响这次回答。
           }
@@ -100,13 +100,22 @@ async function runStream(
     return
   }
 
+  if (config.missingCredential === true) {
+    send({
+      streamId: request.streamId,
+      event: {
+        type: 'error',
+        error: { code: 'not-configured', detail: '本机密钥缺失或解不开' }
+      }
+    })
+    return
+  }
+
   await streamChatCompletion({
     apiKey: config.apiKey,
-    baseUrl: config.baseUrl,
-    model: config.model,
+    descriptor: config.descriptor,
     messages: request.messages,
     systemPrompt: request.systemPrompt,
-    reasoningEffort: THINKING_EFFORT,
     signal: controller.signal,
     onEvent: (event) => send({ streamId: request.streamId, event })
   })
