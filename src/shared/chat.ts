@@ -9,6 +9,16 @@ export type ChatTurn = {
 }
 
 /**
+ * 凭据不可用的原因：与主进程 `ProviderCredentialProblem` 同构，
+ * 渲染层只认这套，不问来源细节。
+ */
+export type ChatCredentialProblem =
+  | { kind: 'stored-decrypt-failed' }
+  | { kind: 'stored-missing' }
+  | { kind: 'env-missing'; envVar: string }
+  | { kind: 'env-var-unset' }
+
+/**
  * 思考强度必须显式传给模型服务：不传时服务端会回到“关闭思考”，
  * 界面上的思维链永远不会出现（已实测）。首版固定 high，唯一来源在
  * `src/main/chat/thinking.ts` 的 `DESIRED_THINKING_LEVEL`。
@@ -44,6 +54,11 @@ export type ProviderErrorCode =
 
 export type ChatError = {
   code: ChatErrorCode
+  /**
+   * 发送前就发现凭据不可用时的结构化原因。界面据此点名缺失的环境变量，
+   * 或明确说「本机密钥解不开」——不把两种情况混成一句「没配置」。
+   */
+  credential?: ChatCredentialProblem
   /** 稳定的失败分类；只用于后续重试策略与排障，不直接展示。 */
   kind?: ProviderErrorCode
   /** 服务端返回的 HTTP 状态码；网络异常等没有响应时为空。 */

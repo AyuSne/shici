@@ -89,6 +89,40 @@ describe('describeChatError', () => {
     expect(presentation.retryable).toBe(retryable)
   })
 
+  it('环境变量缺失时点名变量，并给出去设置或补变量的下一步', () => {
+    const presentation = describeChatError({
+      code: 'not-configured',
+      credential: { kind: 'env-missing', envVar: 'MISSING_PROVIDER_KEY' }
+    })
+
+    expect(presentation.title).toBe('环境变量没有设置')
+    expect(presentation.detail).toContain('MISSING_PROVIDER_KEY')
+    expect(presentation.action).toMatch(/设置 → 模型服务/)
+    expect(presentation.retryable).toBe(false)
+  })
+
+  it('本机密钥解不开时明说要重填，不暗示改用环境变量', () => {
+    const presentation = describeChatError({
+      code: 'not-configured',
+      credential: { kind: 'stored-decrypt-failed' }
+    })
+
+    expect(presentation.title).toBe('本机密钥解不开')
+    expect(presentation.detail).toMatch(/不会改用环境变量/)
+    expect(presentation.action).toMatch(/重新填/)
+    expect(presentation.retryable).toBe(false)
+  })
+
+  it('本机没有保存密钥时给出「先填一个」的动作', () => {
+    const presentation = describeChatError({
+      code: 'not-configured',
+      credential: { kind: 'stored-missing' }
+    })
+
+    expect(presentation.title).toBe('这套提供商还没有密钥')
+    expect(presentation.action).toMatch(/设置 → 模型服务/)
+  })
+
   it('只有可重试的三类会显示重试按钮', () => {
     const codes: ChatErrorCode[] = [
       'invalid-key',

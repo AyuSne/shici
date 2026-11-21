@@ -60,6 +60,39 @@ export function describeChatError(error: ChatError): ChatErrorPresentation {
         retryable: true
       }
     case 'not-configured':
+      if (error.credential?.kind === 'env-missing') {
+        return {
+          title: '环境变量没有设置',
+          detail: `这套提供商要读环境变量 ${error.credential.envVar}，但这次运行时它没有值；生成没有开始。`,
+          action: `在系统环境里补上 ${error.credential.envVar}，或到设置 → 模型服务里改用本机保存的密钥。`,
+          retryable: false
+        }
+      }
+      if (error.credential?.kind === 'env-var-unset') {
+        return {
+          title: '环境变量名没有填',
+          detail: '这套提供商使用环境变量，但变量名是空的；生成没有开始。',
+          action: '到设置 → 模型服务 → 编辑凭据里填上环境变量名。',
+          retryable: false
+        }
+      }
+      if (error.credential?.kind === 'stored-decrypt-failed') {
+        return {
+          title: '本机密钥解不开',
+          detail:
+            '本机保存的密钥解不开（可能换过电脑或系统账户）；生成没有开始，也不会改用环境变量。',
+          action: '到设置 → 模型服务 → 编辑凭据里重新填一个密钥。',
+          retryable: false
+        }
+      }
+      if (error.credential?.kind === 'stored-missing') {
+        return {
+          title: '这套提供商还没有密钥',
+          detail: '本机没有保存这套提供商的密钥；生成没有开始。',
+          action: '到设置 → 模型服务 → 编辑凭据里填一个密钥。',
+          retryable: false
+        }
+      }
       return {
         title: '还没有配置模型服务',
         detail: '这次生成没有开始。',

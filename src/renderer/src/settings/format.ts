@@ -50,6 +50,9 @@ export function protocolText(protocol: ProviderProtocol | null): string {
 /** 密钥三态：本机（带掩码）、环境（带变量名）、缺失（带变量名）。 */
 export function keyStateText(provider: ModelProviderSummary): string {
   if (provider.keyState === 'stored') {
+    if (provider.credentialError === 'stored-decrypt-failed') {
+      return '本机 · 解不开'
+    }
     return provider.apiKeyMask === null
       ? '本机'
       : `本机 · ${provider.apiKeyMask}`
@@ -61,6 +64,19 @@ export function keyStateText(provider: ModelProviderSummary): string {
     return variable === '' ? '环境' : `环境 · ${variable}`
   }
   return variable === '' ? '缺失' : `缺失 · ${variable}`
+}
+
+/**
+ * 本机密文解不开时的动作提示。只针对这一种情况：环境变量缺失时界面已经
+ * 在密钥一栏写了变量名，不需要再叠一段。
+ */
+export function credentialIssueText(
+  provider: Pick<ModelProviderSummary, 'credentialError'>
+): string | null {
+  if (provider.credentialError !== 'stored-decrypt-failed') {
+    return null
+  }
+  return '本机保存的密钥解不开（可能换了电脑或系统账户）。点「编辑凭据」重填，或改用环境变量；发送不会自动改用环境变量。'
 }
 
 /** 目录里的模型请求名，按保存顺序列出。 */

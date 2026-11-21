@@ -1,4 +1,5 @@
 import type { AppDatabase } from '../db/database'
+import type { ChatCredentialProblem } from '../../shared/chat'
 import {
   isProviderSelectionCleared,
   readActiveChatProvider,
@@ -29,6 +30,8 @@ export type ChatConfig = {
    * 发送前就明确报配置错误，不拿空密钥去撞服务端，也不换源。
    */
   missingCredential?: boolean
+  /** 缺失的具体原因：环境模式点名变量，本机模式明说解不开。 */
+  credentialProblem?: ChatCredentialProblem
 }
 
 /**
@@ -65,23 +68,27 @@ export function resolveChatConfig(
     // 配置写着「用本机密钥」或「读环境变量」，但凭据确实拿不到：明确报「还没有配置」，
     // 不拿空密钥去撞服务端，也不换源。
     //
-    // 内置目录添加的 provider 一定存过密钥：备份会把密文抹成 NULL，恢复后再发送
-    // 必须当成缺失，而不是像本地 Ollama 那样允许无密钥。保留无密钥发送的只有
-    // 迁移来的 custom/本地配置（本批没有自定义编辑器，将来由显式 auth_mode 表达）。
-    const missingCredential =
-      active.apiKey.trim() === '' &&
-      (active.provider.authMode === 'env' ||
-        active.provider.secretCiphertext !== null ||
-        active.provider.source === 'builtin')
+    // 从来没存过密钥的 custom 配置（迁移来的本地 Ollama）仍允许无密钥发送；其余缺失
+    // 都明确报错：环境模式点名变量，坏密文说解不开，绝不悄悄改用另一套凭据。
+    const keylessEndpoint =
+      active.credential.state === 'missing' &&
+      active.credential.problem.kind === 'stored-missing' &&
+      active.provider.source === 'custom'
+    const credentialProblem =
+      active.credential.state === 'missing' && !keylessEndpoint
+        ? active.credential.problem
+        : undefined
     return {
-      apiKey: active.apiKey,
+      apiKey: active.credential.state === 'missing' ? '' : active.credential.apiKey,
       // 模型行可以覆盖 provider 的地址（聚合网关按模型带地址）。
       baseUrl: descriptor.baseUrl,
       model: descriptor.model,
       providerId: active.provider.id,
       modelId: active.model.id,
       descriptor,
-      ...(missingCredential ? { missingCredential: true } : {})
+      ...(credentialProblem === undefined
+        ? {}
+        : { missingCredential: true, credentialProblem })
     }
   }
   if (isProviderSelectionCleared(database)) {

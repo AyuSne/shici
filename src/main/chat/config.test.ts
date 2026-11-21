@@ -238,6 +238,69 @@ describe('resolveChatConfig', () => {
     ).toBeUndefined()
   })
 
+  it('环境变量缺失时报错并点名变量，环境退路里的另一套密钥也不顶上', () => {
+    seedProfiles([
+      { id: 'provider-env', name: '环境配置', model: 'model-one', apiKey: 'sk-stored' }
+    ])
+    migrate(database)
+    activate('provider-env')
+    database
+      .prepare(
+        `UPDATE model_provider
+            SET auth_mode = 'env', env_var = 'MISSING_PROVIDER_KEY',
+                secret_ciphertext = 'sealed:stale-ciphertext'
+          WHERE id = 'provider-env'`
+      )
+      .run()
+
+    const resolved = resolveChatConfig(database, secrets, {
+      MISSING_PROVIDER_KEY: '',
+      DEEPSEEK_API_KEY: 'sk-fallback-must-not-be-used'
+    })
+
+    expect(resolved).toMatchObject({
+      apiKey: '',
+      providerId: 'provider-env',
+      missingCredential: true,
+      credentialProblem: { kind: 'env-missing', envVar: 'MISSING_PROVIDER_KEY' }
+    })
+  })
+
+  it('本机密文解不开时报解不开，环境变量即使可用也不换源', () => {
+    seedProfiles([
+      { id: 'provider-broken', name: '坏密文', model: 'model-one', apiKey: 'sk-one' }
+    ])
+    migrate(database)
+    activate('provider-broken')
+    database
+      .prepare(`UPDATE model_provider SET secret_ciphertext = 'not-decryptable' WHERE id = ?`)
+      .run('provider-broken')
+
+    const resolved = resolveChatConfig(database, secrets, {
+      DEEPSEEK_API_KEY: 'sk-env-must-not-be-used'
+    })
+
+    expect(resolved).toMatchObject({
+      apiKey: '',
+      missingCredential: true,
+      credentialProblem: { kind: 'stored-decrypt-failed' }
+    })
+  })
+
+  it('本机密钥可用时没有任何凭据问题', () => {
+    seedProfiles([
+      { id: 'provider-ok', name: '正常配置', model: 'model-one', apiKey: 'sk-ok' }
+    ])
+    migrate(database)
+    activate('provider-ok')
+
+    const resolved = resolveChatConfig(database, secrets, {})
+
+    expect(resolved).toMatchObject({ apiKey: 'sk-ok' })
+    expect(resolved?.missingCredential).toBeUndefined()
+    expect(resolved?.credentialProblem).toBeUndefined()
+  })
+
   it('解析使用中的配置时不再写旧 model_profile 表', () => {
     seedProfiles([
       { id: 'provider-one', name: '第一套', model: 'model-one', apiKey: 'sk-one' }

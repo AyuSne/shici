@@ -351,6 +351,31 @@
   line-height: 16px;
 }
 
+/* ---------- 凭据编辑 ---------- */
+
+.credential-editor-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--sunken);
+}
+
+.credential-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.credential-mode .model-option {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
 /* ---------- 配置表单 ---------- */
 
 .profile-form {

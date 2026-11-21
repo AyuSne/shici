@@ -127,6 +127,70 @@ describe('addBuiltinProvider', () => {
     expect(readFileSync(databaseFile, 'utf8')).not.toContain('sk-deepseek-0001')
   })
 
+  it('内置目录可以只用环境变量添加：不加密、不落密文，变量名可改且默认带出目录值', () => {
+    const encrypt = vi.fn(secrets.encrypt)
+    const result = addBuiltinProvider(
+      database,
+      { encrypt, decrypt: secrets.decrypt },
+      {
+        catalogProviderId: 'deepseek',
+        authMode: 'env',
+        envVar: ' MY_DEEPSEEK_KEY ',
+        apiKey: 'sk-must-be-ignored'
+      }
+    )
+    if (result.status !== 'saved') throw new Error('环境模式没存上')
+
+    expect(encrypt).not.toHaveBeenCalled()
+    const provider = readModelProvider(database, result.providerId)
+    expect(provider).toMatchObject({
+      authMode: 'env',
+      envVar: 'MY_DEEPSEEK_KEY',
+      secretCiphertext: null,
+      source: 'builtin'
+    })
+    expect(listModelProviders(database, { secrets, env: {} })[0]).toMatchObject({
+      keyState: 'missing',
+      apiKeyMask: null,
+      hasStoredCiphertext: false,
+      credentialError: null
+    })
+    expect(
+      listModelProviders(database, { secrets, env: { MY_DEEPSEEK_KEY: 'env-key-1' } })[0]
+    ).toMatchObject({ keyState: 'env', apiKeyMask: null })
+
+    // 不传变量名时用目录里的默认值。
+    const defaulted = addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'kimi',
+      authMode: 'env'
+    })
+    if (defaulted.status !== 'saved') throw new Error('Kimi 环境模式没存上')
+    expect(readModelProvider(database, defaulted.providerId)).toMatchObject({
+      authMode: 'env',
+      envVar: 'MOONSHOT_API_KEY',
+      secretCiphertext: null
+    })
+  })
+
+  it('环境模式拒绝非法变量名；本机模式仍要求密钥', () => {
+    expect(
+      addBuiltinProvider(database, secrets, {
+        catalogProviderId: 'deepseek',
+        authMode: 'env',
+        envVar: '2-bad-name'
+      })
+    ).toEqual({ status: 'rejected', reason: 'invalid-env-var' })
+    expect(
+      addBuiltinProvider(database, secrets, {
+        catalogProviderId: 'deepseek',
+        authMode: 'stored',
+        envVar: 'OK_NAME',
+        apiKey: '   '
+      })
+    ).toEqual({ status: 'rejected', reason: 'missing-key' })
+    expect(listModelProviders(database, { secrets, env: {} })).toEqual([])
+  })
+
   it('同一厂商可以保存多套：Provider ID 唯一且合法，目录身份仍是同一个', () => {
     const first = addDeepSeek('sk-one-1111')
     const second = addDeepSeek('sk-two-2222')

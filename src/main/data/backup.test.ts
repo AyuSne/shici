@@ -175,7 +175,7 @@ describe('createBackup', () => {
     expect(bytes.includes('sealed:sk-secret-9999')).toBe(false)
   })
 
-  it('环境变量引用进备份，密钥密文不进', async () => {
+  it('环境变量引用进备份，环境模式遗留的密文也一条不留', async () => {
     migrate(database)
     database
       .prepare(
@@ -184,8 +184,9 @@ describe('createBackup', () => {
            secret_ciphertext, retry_policy, verification, last_error, last_checked_at,
            last_verified_at, source, default_model_id, created_at, updated_at
          ) VALUES ('provider-env', 'env-provider', '环境配置', 'anthropic-messages',
-                   'https://env.example.com', 'env', 'MY_PROVIDER_KEY', NULL,
-                   '{"mode":"always"}', 'verified', NULL, NULL, NULL, 'builtin', NULL, ?, ?)`
+                   'https://env.example.com', 'env', 'MY_PROVIDER_KEY',
+                   'sealed:stale-env-ciphertext', '{"mode":"always"}', 'verified', NULL, NULL,
+                   NULL, 'builtin', NULL, ?, ?)`
       )
       .run(now, now)
     database
@@ -228,6 +229,8 @@ describe('createBackup', () => {
       expect(
         copy.prepare('SELECT secret_ciphertext FROM model_provider').get()
       ).toEqual({ secret_ciphertext: null })
+      expect(readFileSync(file).includes('sealed:stale-env-ciphertext')).toBe(false)
+      expect(readFileSync(file).includes('env-secret')).toBe(false)
     } finally {
       copy.close()
     }

@@ -4,6 +4,7 @@ import type { ModelProviderSummary } from '../../../shared/model-providers'
 import {
   backupSummaryText,
   checkText,
+  credentialIssueText,
   fileNameOf,
   formatBytes,
   formatMoment,
@@ -31,6 +32,8 @@ function provider(patch: Partial<ModelProviderSummary> = {}): ModelProviderSumma
     envVar: null,
     apiKeyMask: 'sk-·············0001',
     keyState: 'stored',
+    hasStoredCiphertext: true,
+    credentialError: null,
     retryPolicy: { mode: 'normal' },
     verification: 'unverified',
     lastError: null,
@@ -150,6 +153,43 @@ describe('keyStateText', () => {
     expect(
       keyStateText(provider({ keyState: 'missing', apiKeyMask: null }))
     ).toBe('缺失')
+  })
+
+  it('本机密文解不开时仍算本机，但明确说解不开', () => {
+    expect(
+      keyStateText(
+        provider({
+          keyState: 'stored',
+          apiKeyMask: null,
+          credentialError: 'stored-decrypt-failed'
+        })
+      )
+    ).toBe('本机 · 解不开')
+  })
+})
+
+describe('credentialIssueText', () => {
+  it('解不开时给动作提示，并明说不会自动改用环境变量', () => {
+    const text = credentialIssueText(
+      provider({
+        keyState: 'stored',
+        apiKeyMask: null,
+        credentialError: 'stored-decrypt-failed'
+      })
+    )
+
+    expect(text).toMatch(/编辑凭据/)
+    expect(text).toMatch(/不会自动改用环境变量/)
+  })
+
+  it('正常、缺失与环境模式都不额外报警', () => {
+    expect(credentialIssueText(provider())).toBeNull()
+    expect(credentialIssueText(provider({ keyState: 'missing', apiKeyMask: null }))).toBeNull()
+    expect(
+      credentialIssueText(
+        provider({ authMode: 'env', keyState: 'env', envVar: 'KEY', apiKeyMask: null })
+      )
+    ).toBeNull()
   })
 })
 

@@ -165,7 +165,7 @@ describe('createBridge', () => {
     ])
   })
 
-  it('提供商新增、默认模型、激活与删除都走同一份白名单', async () => {
+  it('提供商新增、默认模型、激活、删除与凭据编辑都走同一份白名单', async () => {
     const { ipc, invocations } = fakeRenderer()
     const bridge = createBridge(ipc)
 
@@ -179,6 +179,13 @@ describe('createBridge', () => {
     })
     await bridge.invoke('settings:provider-activate', { providerId: 'provider-1' })
     await bridge.invoke('settings:provider-delete', { providerId: 'provider-1' })
+    await bridge.invoke('settings:provider-credential', {
+      providerId: 'provider-1',
+      authMode: 'env',
+      envVar: 'MY_PROVIDER_KEY',
+      apiKey: '',
+      confirmClearStored: true
+    })
 
     expect(JSON.parse(JSON.stringify(invocations))).toEqual([
       {
@@ -190,7 +197,17 @@ describe('createBridge', () => {
         payload: { providerId: 'provider-1', modelRowId: 'model-1' }
       },
       { channel: 'settings:provider-activate', payload: { providerId: 'provider-1' } },
-      { channel: 'settings:provider-delete', payload: { providerId: 'provider-1' } }
+      { channel: 'settings:provider-delete', payload: { providerId: 'provider-1' } },
+      {
+        channel: 'settings:provider-credential',
+        payload: {
+          providerId: 'provider-1',
+          authMode: 'env',
+          envVar: 'MY_PROVIDER_KEY',
+          apiKey: '',
+          confirmClearStored: true
+        }
+      }
     ])
   })
 

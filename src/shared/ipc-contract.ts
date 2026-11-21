@@ -81,6 +81,10 @@ import type {
   SetDefaultProviderModelResult
 } from './model-providers'
 import type {
+  UpdateProviderCredentialRequest,
+  UpdateProviderCredentialResult
+} from './provider-credentials'
+import type {
   ReadingPreferences,
   ReadingProgressRequest,
   ReadingProgressResult,
@@ -260,6 +264,10 @@ export interface IpcContract {
     payload: DeleteProviderRequest
     result: DeleteProviderResult
   }
+  'settings:provider-credential': {
+    payload: UpdateProviderCredentialRequest
+    result: UpdateProviderCredentialResult
+  }
   'settings:reading-save': {
     payload: { preferences: ReadingPreferences }
     result: ReadingPreferencesResult
@@ -355,6 +363,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'settings:provider-default-model': true,
   'settings:provider-activate': true,
   'settings:provider-delete': true,
+  'settings:provider-credential': true,
   'settings:reading-save': true,
   'settings:theme-save': true,
   'settings:backup-create': true,
