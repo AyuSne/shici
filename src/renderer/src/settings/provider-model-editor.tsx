@@ -321,6 +321,9 @@ export function ProviderModelEditor({
                       <span className="model-display">{model.displayName}</span>
                     )}
                     <span className="model-meta">{modelMetaText(model)}</span>
+                    {model.source === 'fetched' ? (
+                      <span className="model-chip is-fetched">获取</span>
+                    ) : null}
                     {modelInDirectory(provider, model.modelId) ? null : (
                       <span className="model-chip is-unknown">不在目录</span>
                     )}

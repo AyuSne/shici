@@ -159,10 +159,15 @@ export function isValidProviderId(value: string): boolean {
   return PROVIDER_ID_PATTERN.test(value)
 }
 
-/** 自定义 provider 保存时至少要带一个模型；本票先只收模型 ID。 */
+/** 自定义 provider 保存时至少要带一个模型；模型行可带容量等已解析元数据。 */
 export type CustomProviderModelDraft = {
   modelId: string
   displayName?: string
+  contextWindow?: number | null
+  maxTokens?: number | null
+  reasoning?: boolean
+  /** 获取可用模型勾选进来的行记 fetched；手填默认 manual。 */
+  source?: 'manual' | 'fetched'
 }
 
 export type CreateCustomProviderRequest = {
@@ -183,6 +188,11 @@ export type CreateCustomProviderRequest = {
   apiKey?: string
   /** 自定义 provider 至少要有一个模型才能保存。 */
   model: CustomProviderModelDraft
+  /**
+   * 「获取可用模型」勾选后、保存时才一起入库的其它模型。
+   * 与 `model` 同属一次事务：任一行非法就整笔拒绝，不会先建 provider 再逐条补。
+   */
+  additionalModels?: CustomProviderModelDraft[]
 }
 
 export type CustomProviderRejection =
@@ -193,6 +203,8 @@ export type CustomProviderRejection =
   | 'missing-base-url'
   | 'invalid-base-url'
   | 'missing-model'
+  | 'duplicate-model-id'
+  | 'invalid-capacity'
   | 'missing-key'
   | 'invalid-env-var'
 
@@ -224,11 +236,18 @@ export type ProviderModelDraft = {
   contextWindow?: number | null
   maxTokens?: number | null
   reasoning?: boolean
+  /**
+   * 保存后的来源：手动加入或「获取可用模型」勾选。只在新增时使用；
+   * 目录内置行仍由目录写入路径标 catalog。
+   */
+  source?: 'manual' | 'fetched'
 }
 
 export type AddProviderModelRequest = {
   providerId: string
   model: ProviderModelDraft
+  /** 与 `model` 同一事务加入的其它候选；用于「加入所选模型」一次提交。 */
+  additionalModels?: ProviderModelDraft[]
 }
 
 export type UpdateProviderModelRequest = {

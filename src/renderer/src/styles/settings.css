@@ -420,6 +420,58 @@
   border-top: 1px dashed var(--rule);
 }
 
+/* 获取可用模型（#64）：候选只活在这里，勾选后由显式动作/保存写入。 */
+
+.model-discovery {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--rule);
+  min-width: 0;
+}
+
+.model-discovery-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.discovery-candidates {
+  max-height: 280px;
+  margin-top: 8px;
+  padding: 4px 0;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.discovery-candidates > li {
+  min-width: 0;
+}
+
+.discovery-candidates .model-option {
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.discovery-candidates .model-option > code,
+.discovery-candidates .model-display,
+.discovery-candidates .model-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.model-chip.is-fetched {
+  border-color: var(--line-pin);
+  color: var(--amber);
+  background: var(--bed-pin);
+}
+
+.model-discovery .credential-editor {
+  margin-top: 8px;
+}
+
 .builtin-provider-form,
 .custom-provider-form {
   margin-top: 16px;

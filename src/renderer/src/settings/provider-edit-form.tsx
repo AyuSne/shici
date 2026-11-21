@@ -1,9 +1,20 @@
 import { useState } from 'react'
+import type { FetchedModelCandidate } from '../../../shared/model-discovery'
 import type { ModelProviderSummary } from '../../../shared/model-providers'
-import { updateProvider } from '../api'
+import type { ProviderCredentialDraft } from '../../../shared/provider-credentials'
+import { addProviderModel, updateProvider } from '../api'
 import { failureText } from '../errors'
+import { emptyCredentialDraft } from './credential-editor'
 import { protocolText } from './format'
-import { baseUrlError, displayNameError, providerUpdateErrorText } from './provider-editing'
+import { providerModelDraftOf } from './model-discovery'
+import { ModelDiscoveryPanel } from './model-discovery-panel'
+import {
+  baseUrlError,
+  displayNameError,
+  modelDirectoryReadOnly,
+  modelWriteErrorText,
+  providerUpdateErrorText
+} from './provider-editing'
 
 type ProviderEditFormProps = {
   provider: ModelProviderSummary
@@ -24,10 +35,50 @@ export function ProviderEditForm({
 }: ProviderEditFormProps) {
   const [displayName, setDisplayName] = useState(provider.displayName)
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? '')
+  // 获取可用模型用的凭据草稿：与「编辑凭据」分开展示，只用于这次获取，不写库。
+  const [credential, setCredential] = useState<ProviderCredentialDraft>(
+    emptyCredentialDraft({
+      authMode: provider.authMode,
+      envVar: provider.envVar ?? ''
+    })
+  )
+  const [discoveryReset, setDiscoveryReset] = useState(0)
   const [nameError, setNameError] = useState<string | null>(null)
   const [urlError, setUrlError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  /**
+   * 勾选候选后显式加入：一次事务追加所有选中行，已有模型、默认模型与顺序都不动。
+   * 这里不保存上面正在编辑的地址——「保存修改」才是改地址的动作。
+   */
+  async function applyDiscovered(candidates: readonly FetchedModelCandidate[]): Promise<void> {
+    const drafts = candidates.map(providerModelDraftOf)
+    const first = drafts[0]
+    if (first === undefined) {
+      return
+    }
+    setBusy(true)
+    setFormError(null)
+    try {
+      const result = await addProviderModel({
+        providerId: provider.id,
+        model: first,
+        ...(drafts.length > 1 ? { additionalModels: drafts.slice(1) } : {})
+      })
+      if (result.status === 'missing') {
+        throw new Error('这套提供商已经不在了，刷新后再试。')
+      }
+      if (result.status === 'rejected') {
+        throw new Error(modelWriteErrorText(result.reason))
+      }
+      await refresh()
+      setDiscoveryReset((current) => current + 1)
+      notify(`已加入 ${drafts.length} 个获取到的模型；已有目录、默认模型与顺序不变`)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function onSave(): Promise<void> {
     const nextNameError = displayNameError(displayName)
@@ -120,6 +171,25 @@ export function ProviderEditForm({
           {urlError}
         </p>
       )}
+
+      <ModelDiscoveryPanel
+        source={provider.source === 'builtin' ? 'builtin' : 'custom'}
+        catalogProviderId={provider.catalogProviderId}
+        providerId={provider.source === 'custom' ? provider.id : null}
+        protocol={provider.protocol}
+        baseUrl={baseUrl}
+        credential={credential}
+        onCredentialChange={setCredential}
+        showCredentialFields={provider.source === 'custom'}
+        defaultEnvVar={provider.envVar ?? ''}
+        hasStoredKey={provider.authMode === 'stored' && provider.hasStoredCiphertext}
+        storedKeyUnreadable={provider.credentialError === 'stored-decrypt-failed'}
+        knownModelIds={provider.models.map((model) => model.modelId)}
+        onApply={applyDiscovered}
+        readOnly={modelDirectoryReadOnly(provider)}
+        resetToken={discoveryReset}
+        disabled={busy}
+      />
 
       {formError === null ? null : (
         <p className="field-error" role="alert">

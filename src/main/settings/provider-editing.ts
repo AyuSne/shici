@@ -6,6 +6,7 @@ import {
   isModelProtocol
 } from '../../shared/model-protocols'
 import type {
+  AddProviderModelRequest,
   CreateCustomProviderRequest,
   CreateCustomProviderResult,
   ModelInput,
@@ -152,7 +153,8 @@ function insertModelRow(
   providerId: string,
   draft: ProviderModelDraft,
   sort: number,
-  now: string
+  now: string,
+  source: 'manual' | 'fetched' = 'manual'
 ): string {
   const provider = readModelProvider(database, providerId)
   if (provider === null || provider.protocol === null) {
@@ -165,7 +167,7 @@ function insertModelRow(
       `INSERT INTO model_provider_model (
          id, provider_id, model_id, display_name, api, base_url, context_window, max_tokens,
          input, reasoning, thinking_level_map, compat, source, sort, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       rowId,
@@ -179,11 +181,56 @@ function insertModelRow(
       metadata.reasoning ? 1 : 0,
       metadata.thinkingLevelMap,
       metadata.compat,
+      source,
       sort,
       now,
       now
     )
   return rowId
+}
+
+/** 请求里的模型行来源只认两种；其余一律按手填，不冒充目录行。 */
+function sourceOf(draft: Pick<ProviderModelDraft, 'source'>): 'manual' | 'fetched' {
+  return draft.source === 'fetched' ? 'fetched' : 'manual'
+}
+
+/**
+ * 把「首个模型 + 勾选的候选」收成一次事务的完整草稿。
+ * 任何一行非法都整笔拒绝；重复 ID 用精确字符串比较（请求里两侧都 trim）。
+ */
+function customModelDraftsOf(
+  request: CreateCustomProviderRequest
+):
+  | { ok: true; drafts: Array<ProviderModelDraft & { source: 'manual' | 'fetched' }> }
+  | {
+      ok: false
+      reason: 'missing-model' | 'duplicate-model-id' | 'invalid-capacity'
+    } {
+  const raw = [request.model, ...(request.additionalModels ?? [])]
+  if (raw.length === 0) {
+    return { ok: false, reason: 'missing-model' }
+  }
+
+  const seen = new Set<string>()
+  const drafts: Array<ProviderModelDraft & { source: 'manual' | 'fetched' }> = []
+  for (const draft of raw) {
+    if (typeof draft !== 'object' || draft === null) {
+      return { ok: false, reason: 'missing-model' }
+    }
+    const modelId = typeof draft.modelId === 'string' ? draft.modelId.trim() : ''
+    if (modelId === '') {
+      return { ok: false, reason: 'missing-model' }
+    }
+    if (!capacitiesValid(draft)) {
+      return { ok: false, reason: 'invalid-capacity' }
+    }
+    if (seen.has(modelId)) {
+      return { ok: false, reason: 'duplicate-model-id' }
+    }
+    seen.add(modelId)
+    drafts.push({ ...draft, modelId, source: sourceOf(draft) })
+  }
+  return { ok: true, drafts }
 }
 
 /** 从「自定义 API」入口创建一套 provider；至少要有一个模型，密钥只写密文。 */
@@ -214,10 +261,13 @@ export function createCustomProvider(
   if (parseHttpUrl(baseUrl) === null) {
     return { status: 'rejected', reason: 'invalid-base-url' }
   }
-  const modelDraft: ProviderModelDraft = { modelId: request.model.modelId }
-  if (modelDraft.modelId.trim() === '') {
-    return { status: 'rejected', reason: 'missing-model' }
+  // 首个模型与「获取可用模型」勾选的候选在同一次事务里一起判定：任一行非法
+  // 就整笔拒绝，不会出现 provider 已建、模型只写了一半的状态。
+  const modelDrafts = customModelDraftsOf(request)
+  if (!modelDrafts.ok) {
+    return { status: 'rejected', reason: modelDrafts.reason }
   }
+  const drafts = modelDrafts.drafts
 
   // 先校验/加密凭据再开事务：加密不可用时连 provider 行都不写。
   const credential = prepareProviderCredential(secrets, {
@@ -233,7 +283,7 @@ export function createCustomProvider(
 
   const now = nowOf(options)
   const providerId = randomUUID()
-  const modelRowId = randomUUID()
+  const modelRowIds = drafts.map(() => randomUUID())
 
   const insert = database.transaction(() => {
     database
@@ -255,39 +305,47 @@ export function createCustomProvider(
         credential.authMode,
         credential.envVar,
         credential.secretCiphertext,
-        modelRowId,
+        modelRowIds[0] ?? null,
         now,
         now
       )
 
-    // 首个模型与 provider 同一笔事务写入；目录里查不到时保留未知 ID。
     const provider = readModelProvider(database, providerId)
     if (provider === null) {
       throw new Error('provider 写入后读不回来')
     }
-    const metadata = metadataOf(provider, modelDraft)
-    database
-      .prepare(
-        `INSERT INTO model_provider_model (
-           id, provider_id, model_id, display_name, api, base_url, context_window, max_tokens,
-           input, reasoning, thinking_level_map, compat, source, sort, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'manual', 0, ?, ?)`
-      )
-      .run(
-        modelRowId,
-        providerId,
-        modelDraft.modelId.trim(),
-        metadata.displayName,
-        request.protocol,
-        metadata.contextWindow,
-        metadata.maxTokens,
-        metadata.input,
-        metadata.reasoning ? 1 : 0,
-        metadata.thinkingLevelMap,
-        metadata.compat,
-        now,
-        now
-      )
+
+    drafts.forEach((draft, index) => {
+      const rowId = modelRowIds[index]
+      if (rowId === undefined) {
+        throw new Error('模型行 id 缺失')
+      }
+      const metadata = metadataOf(provider, draft)
+      database
+        .prepare(
+          `INSERT INTO model_provider_model (
+             id, provider_id, model_id, display_name, api, base_url, context_window, max_tokens,
+             input, reasoning, thinking_level_map, compat, source, sort, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          rowId,
+          providerId,
+          draft.modelId,
+          metadata.displayName,
+          request.protocol,
+          metadata.contextWindow,
+          metadata.maxTokens,
+          metadata.input,
+          metadata.reasoning ? 1 : 0,
+          metadata.thinkingLevelMap,
+          metadata.compat,
+          draft.source,
+          index,
+          now,
+          now
+        )
+    })
   })
   insert()
 
@@ -343,10 +401,14 @@ export function updateModelProvider(
   return { status: 'saved' }
 }
 
-/** 手加一条模型行；目录外的 ID 也允许，缺元数据时留给发送层兜底。 */
+/**
+ * 手加一条或多条模型行；目录外的 ID 也允许，缺元数据时留给发送层兜底。
+ * 批量（获取可用模型后「加入所选模型」）在同一事务里完成：任一行非法或重复
+ * 就整批拒绝，不会出现只加进去一半的目录。
+ */
 export function addProviderModel(
   database: AppDatabase,
-  request: { providerId: string; model: ProviderModelDraft },
+  request: AddProviderModelRequest,
   options?: ProviderEditingOptions
 ): ProviderModelWriteResult {
   const provider = readModelProvider(database, request.providerId)
@@ -359,32 +421,52 @@ export function addProviderModel(
   if (provider.protocol === null) {
     return { status: 'rejected', reason: 'unknown-protocol' }
   }
-  const modelId = request.model.modelId.trim()
-  if (modelId === '') {
+
+  const raw = [request.model, ...(request.additionalModels ?? [])]
+  if (raw.length === 0) {
     return { status: 'rejected', reason: 'missing-model-id' }
   }
-  if (!capacitiesValid(request.model)) {
-    return { status: 'rejected', reason: 'invalid-capacity' }
-  }
-  if (modelIdExists(database, provider.id, modelId)) {
-    return { status: 'rejected', reason: 'duplicate-model-id' }
+
+  const existingIds = new Set(
+    readProviderModels(database, provider.id).map((model) => model.modelId)
+  )
+  const drafts: Array<ProviderModelDraft & { modelId: string }> = []
+  for (const draft of raw) {
+    if (typeof draft !== 'object' || draft === null) {
+      return { status: 'rejected', reason: 'missing-model-id' }
+    }
+    const modelId = typeof draft.modelId === 'string' ? draft.modelId.trim() : ''
+    if (modelId === '') {
+      return { status: 'rejected', reason: 'missing-model-id' }
+    }
+    if (!capacitiesValid(draft)) {
+      return { status: 'rejected', reason: 'invalid-capacity' }
+    }
+    if (existingIds.has(modelId)) {
+      return { status: 'rejected', reason: 'duplicate-model-id' }
+    }
+    existingIds.add(modelId)
+    drafts.push({ ...draft, modelId })
   }
 
   const now = nowOf(options)
   const models = readProviderModels(database, provider.id)
-  const sort = (models.at(-1)?.sort ?? -1) + 1
+  const baseSort = (models.at(-1)?.sort ?? -1) + 1
   const insert = database.transaction(() => {
-    const modelRowId = insertModelRow(
-      database,
-      provider.id,
-      { ...request.model, modelId },
-      sort,
-      now
+    const rowIds = drafts.map((draft, index) =>
+      insertModelRow(
+        database,
+        provider.id,
+        draft,
+        baseSort + index,
+        now,
+        sourceOf(draft)
+      )
     )
     if (models.length === 0) {
       database
         .prepare('UPDATE model_provider SET default_model_id = ?, updated_at = ? WHERE id = ?')
-        .run(modelRowId, now, provider.id)
+        .run(rowIds[0] ?? null, now, provider.id)
     } else {
       database
         .prepare('UPDATE model_provider SET updated_at = ? WHERE id = ?')

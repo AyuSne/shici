@@ -221,7 +221,18 @@ describe('createBridge', () => {
       protocol: 'openai-completions',
       baseUrl: 'https://relay.example.com/v1',
       apiKey: 'sk-write-only',
-      model: { modelId: 'relay-model' }
+      model: { modelId: 'relay-model', source: 'fetched' },
+      additionalModels: [{ modelId: 'deepseek-v4-pro', source: 'fetched' }]
+    })
+    await bridge.invoke('settings:provider-models-fetch', {
+      source: 'custom',
+      catalogProviderId: null,
+      providerId: null,
+      protocol: 'openai-completions',
+      baseUrl: 'https://relay.example.com/v1',
+      authMode: 'stored',
+      apiKey: 'sk-write-only',
+      knownModelIds: ['relay-model']
     })
     await bridge.invoke('settings:provider-update', {
       providerId: 'provider-1',
@@ -255,7 +266,21 @@ describe('createBridge', () => {
           protocol: 'openai-completions',
           baseUrl: 'https://relay.example.com/v1',
           apiKey: 'sk-write-only',
-          model: { modelId: 'relay-model' }
+          model: { modelId: 'relay-model', source: 'fetched' },
+          additionalModels: [{ modelId: 'deepseek-v4-pro', source: 'fetched' }]
+        }
+      },
+      {
+        channel: 'settings:provider-models-fetch',
+        payload: {
+          source: 'custom',
+          catalogProviderId: null,
+          providerId: null,
+          protocol: 'openai-completions',
+          baseUrl: 'https://relay.example.com/v1',
+          authMode: 'stored',
+          apiKey: 'sk-write-only',
+          knownModelIds: ['relay-model']
         }
       },
       {

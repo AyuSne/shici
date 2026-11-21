@@ -701,3 +701,185 @@ describe('reorderProviderModels', () => {
     ).toEqual({ status: 'missing' })
   })
 })
+
+describe('createCustomProvider 一次事务保存多个候选模型', () => {
+  it('首个模型 + 显式选中的候选按顺序一起入库，保留 fetched 来源与目录/表单元数据', () => {
+    const result = createCustomProvider(
+      database,
+      secrets,
+      relayRequest({
+        model: { modelId: 'relay-first', source: 'fetched' },
+        additionalModels: [
+          { modelId: 'deepseek-v4-pro', source: 'fetched' },
+          {
+            modelId: 'relay-third',
+            displayName: 'Relay Third',
+            contextWindow: 500_000,
+            maxTokens: 100_000,
+            reasoning: true
+          }
+        ]
+      })
+    )
+    expect(result.status).toBe('saved')
+    if (result.status !== 'saved') return
+
+    const provider = readModelProvider(database, result.providerId)
+    const models = readProviderModels(database, result.providerId)
+    expect(models.map((model) => model.modelId)).toEqual([
+      'relay-first',
+      'deepseek-v4-pro',
+      'relay-third'
+    ])
+    expect(models.map((model) => model.sort)).toEqual([0, 1, 2])
+    expect(models.map((model) => model.source)).toEqual(['fetched', 'fetched', 'manual'])
+    expect(models[0]).toMatchObject({ displayName: 'relay-first', sort: 0 })
+    // 候选里常见的目录 ID 仍带出目录元数据，但来源保持 fetched。
+    expect(models[1]).toMatchObject({
+      displayName: 'DeepSeek V4 Pro',
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+      reasoning: true,
+      input: 'text',
+      source: 'fetched',
+      sort: 1
+    })
+    expect(models[2]).toMatchObject({
+      displayName: 'Relay Third',
+      contextWindow: 500_000,
+      maxTokens: 100_000,
+      reasoning: true,
+      source: 'manual',
+      sort: 2
+    })
+    // 默认模型仍是第一条；其它模型不抢默认。
+    expect(provider?.defaultModelRowId).toBe(models[0]?.id)
+  })
+
+  it('环境模式也能一次保存多个候选：不落密文，模型来源与顺序保持', () => {
+    const encrypt = vi.fn(secrets.encrypt)
+    const result = createCustomProvider(
+      database,
+      { encrypt, decrypt: secrets.decrypt },
+      relayRequest({
+        authMode: 'env',
+        envVar: 'CUSTOM_DISCOVERY_KEY',
+        apiKey: 'sk-must-be-ignored',
+        model: { modelId: 'env-first', source: 'fetched' },
+        additionalModels: [{ modelId: 'env-second', source: 'fetched' }]
+      })
+    )
+    expect(result.status).toBe('saved')
+    if (result.status !== 'saved') return
+
+    expect(encrypt).not.toHaveBeenCalled()
+    expect(readModelProvider(database, result.providerId)).toMatchObject({
+      authMode: 'env',
+      envVar: 'CUSTOM_DISCOVERY_KEY',
+      secretCiphertext: null
+    })
+    expect(readProviderModels(database, result.providerId).map((model) => model.modelId)).toEqual([
+      'env-first',
+      'env-second'
+    ])
+    expect(readProviderModels(database, result.providerId).map((model) => model.source)).toEqual([
+      'fetched',
+      'fetched'
+    ])
+    expect(
+      listModelProviders(database, {
+        secrets,
+        env: { CUSTOM_DISCOVERY_KEY: 'env-key' }
+      })[0]
+    ).toMatchObject({ keyState: 'env', apiKeyMask: null, credentialError: null })
+  })
+
+  it('重复 / 空 / 非法容量的额外模型整笔拒绝，不留下半条 provider 或模型', () => {
+    const beforeProviders = database.prepare('SELECT COUNT(*) AS count FROM model_provider').get()
+    const cases: Array<[CreateCustomProviderRequest['additionalModels'], string]> = [
+      [[{ modelId: 'relay-model' }], 'duplicate-model-id'],
+      [[{ modelId: 'relay-a' }, { modelId: 'relay-a' }], 'duplicate-model-id'],
+      [[{ modelId: '   ' }], 'missing-model'],
+      [[{ modelId: 'bad-capacity', contextWindow: -1 }], 'invalid-capacity']
+    ]
+
+    for (const [additionalModels, reason] of cases) {
+      expect(
+        createCustomProvider(database, secrets, relayRequest({ additionalModels })),
+        JSON.stringify(additionalModels)
+      ).toEqual({ status: 'rejected', reason })
+    }
+    expect(database.prepare('SELECT COUNT(*) AS count FROM model_provider').get()).toEqual(
+      beforeProviders
+    )
+    expect(
+      database.prepare('SELECT COUNT(*) AS count FROM model_provider_model').get()
+    ).toEqual({ count: 0 })
+  })
+})
+
+describe('addProviderModel 批量加入（获取可用模型后显式应用）', () => {
+  it('一次事务追加所有候选：顺序接在末尾、来源保留 fetched、默认模型与已有行不动', () => {
+    const providerId = createRelay()
+    const before = readProviderModels(database, providerId)
+
+    expect(
+      addProviderModel(database, {
+        providerId,
+        model: { modelId: 'fetched-a', source: 'fetched' },
+        additionalModels: [
+          { modelId: 'deepseek-v4-pro', source: 'fetched' },
+          { modelId: 'manual-b' }
+        ]
+      })
+    ).toEqual({ status: 'saved' })
+
+    const after = readProviderModels(database, providerId)
+    expect(after.map((model) => model.modelId)).toEqual([
+      'relay-model',
+      'fetched-a',
+      'deepseek-v4-pro',
+      'manual-b'
+    ])
+    expect(after.map((model) => model.sort)).toEqual([0, 1, 2, 3])
+    expect(after.slice(1).map((model) => model.source)).toEqual([
+      'fetched',
+      'fetched',
+      'manual'
+    ])
+    expect(after[2]).toMatchObject({
+      displayName: 'DeepSeek V4 Pro',
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+      reasoning: true
+    })
+    expect(readModelProvider(database, providerId)?.defaultModelRowId).toBe(before[0]?.id)
+    expect(after[0]).toEqual(before[0])
+  })
+
+  it('批量里任一重复或容量非法就整批拒绝，不写部分行', () => {
+    const providerId = createRelay()
+    const before = readProviderModels(database, providerId)
+
+    for (const request of [
+      {
+        model: { modelId: 'ok-a', source: 'fetched' as const },
+        additionalModels: [{ modelId: 'relay-model' }]
+      },
+      {
+        model: { modelId: 'ok-a', source: 'fetched' as const },
+        additionalModels: [{ modelId: 'ok-b' }, { modelId: 'ok-b' }]
+      },
+      {
+        model: { modelId: 'ok-a', source: 'fetched' as const },
+        additionalModels: [{ modelId: 'ok-b', maxTokens: -5 }]
+      }
+    ]) {
+      expect(
+        addProviderModel(database, { providerId, ...request }),
+        JSON.stringify(request)
+      ).toEqual({ status: 'rejected', reason: expect.stringMatching(/duplicate-model-id|invalid-capacity/) })
+    }
+    expect(readProviderModels(database, providerId)).toEqual(before)
+  })
+})
