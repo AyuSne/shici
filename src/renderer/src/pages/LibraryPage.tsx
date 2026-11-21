@@ -17,7 +17,7 @@ import { ErrorBlock } from '../components/error-block'
 import { getChatStore, openThreadForMain } from '../chat/store'
 import { LibraryArticleActions } from '../library/article-actions'
 import { ArticleCollectedSection } from '../library/article-collected'
-import { libraryArticleMetaParts } from '../library/display'
+import { libraryArticleMetaParts, librarySetRowTitle } from '../library/display'
 import { formatDay, progressText } from '../library/format'
 import { forgetLibraryArticle, navigate, replaceRoute } from '../navigate'
 import { parseView } from '../routes'
@@ -40,6 +40,7 @@ export function LibraryPage({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [query, setQuery] = useState(() => libraryViewState().query)
+  const [expansion, setExpansion] = useState(() => libraryViewState())
   const [found, setFound] = useState<LibrarySearchResults | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(articleId)
   const [detail, setDetail] = useState<ArticleDetail | null>(null)
@@ -79,16 +80,29 @@ export function LibraryPage({
         if (!active) return
         setListing(value)
         // 只有 AI 文章时也要有默认选中：先取真题第一行，没有就取生成文章第一篇。
-        const firstId = value.sessions[0]?.articles[0]?.id ?? value.aiArticles[0]?.id ?? null
+        const firstId = value.sessions[0]?.sets[0]?.articles[0]?.id ?? value.aiArticles[0]?.id ?? null
         const current = parseView(window.location.hash)
         const routeId = current.route === 'library' ? current.articleId : null
         const routeStillExists =
           routeId !== null &&
           (value.sessions.some((session) =>
-            session.articles.some((article) => article.id === routeId)
+            session.sets.some((set) => set.articles.some((article) => article.id === routeId))
           ) ||
             value.aiArticles.some((article) => article.id === routeId))
         const resolved = routeStillExists ? routeId : firstId
+        if (libraryViewState().expandedSessions === null) {
+          const selectedSession = value.sessions.find((session) =>
+            session.sets.some((set) => set.articles.some((article) => article.id === resolved))
+          )
+          const selectedSet = selectedSession?.sets.find((set) => set.articles.some((article) => article.id === resolved))
+          const patch = {
+            expandedSessions: selectedSession ? [selectedSession.id] : [],
+            expandedSets: selectedSession && selectedSet ? [`${selectedSession.id}:${selectedSet.id}`] : [],
+            aiExpanded: selectedSession === undefined && value.aiArticles.length > 0
+          }
+          updateLibraryViewState(patch)
+          setExpansion(libraryViewState())
+        }
         setSelectedId(resolved)
         if (resolved !== routeId) {
           replaceRoute('library', resolved === null ? {} : { articleId: resolved })
@@ -159,6 +173,21 @@ export function LibraryPage({
     return () => window.clearTimeout(timer)
   }, [hint])
 
+  function updateExpansion(patch: Partial<ReturnType<typeof libraryViewState>>): void {
+    updateLibraryViewState(patch)
+    setExpansion(libraryViewState())
+  }
+
+  function toggleSession(id: string): void {
+    const open = expansion.expandedSessions ?? []
+    updateExpansion({ expandedSessions: open.includes(id) ? open.filter((item) => item !== id) : [...open, id] })
+  }
+
+  function toggleSet(id: string): void {
+    const open = expansion.expandedSets
+    updateExpansion({ expandedSets: open.includes(id) ? open.filter((item) => item !== id) : [...open, id] })
+  }
+
   function select(articleId: string): void {
     setSelectedId(articleId)
     replaceRoute('library', { articleId })
@@ -184,7 +213,7 @@ export function LibraryPage({
   function nextArticleId(articleId: string): string | null {
     if (listing === null) return null
     const ids = [
-      ...listing.sessions.flatMap((session) => session.articles.map((article) => article.id)),
+      ...listing.sessions.flatMap((session) => session.sets.flatMap((set) => set.articles.map((article) => article.id))),
       ...listing.aiArticles.map((article) => article.id)
     ]
     const index = ids.indexOf(articleId)
@@ -306,42 +335,48 @@ export function LibraryPage({
             />
           ) : listing !== null ? (
             <>
-              {listing.sessions.map((session) => (
-                <section key={session.id} className="library-session" aria-label={session.label}>
-                  <h2 className="library-session-head">
-                    <span>{session.label}</span>
-                    <span className="library-session-count">{session.articles.length} 篇</span>
-                  </h2>
-                  <ArticleRowList
-                    articles={session.articles}
-                    selectedId={selectedId}
-                    onSelect={select}
-                  />
-                </section>
-              ))}
+              {listing.sessions.map((session) => {
+                const expanded = expansion.expandedSessions?.includes(session.id) ?? false
+                return (
+                  <section key={session.id} className="library-session" aria-label={session.label}>
+                    <h2 className="library-session-head">
+                      <button type="button" className="library-group-toggle" aria-expanded={expanded}
+                        onClick={() => toggleSession(session.id)}>
+                        <span aria-hidden="true">{expanded ? '▾' : '▸'}</span> {session.label}
+                        <span className="library-session-count">{session.sets.reduce((n, set) => n + set.articles.length, 0)} 篇</span>
+                      </button>
+                    </h2>
+                    {expanded ? session.sets.map((set) => {
+                      const key = `${session.id}:${set.id}`
+                      const setExpanded = expansion.expandedSets.includes(key)
+                      return <section key={key} className="library-set">
+                        <h3 className="library-set-head">
+                          <button type="button" className="library-group-toggle" aria-expanded={setExpanded}
+                            onClick={() => toggleSet(key)}>
+                            <span aria-hidden="true">{setExpanded ? '▾' : '▸'}</span> {set.label}
+                            <span className="library-session-count">{set.articles.length} 篇</span>
+                          </button>
+                        </h3>
+                        {setExpanded ? <ArticleRowList articles={set.articles} selectedId={selectedId} onSelect={select} inSet /> : null}
+                      </section>
+                    }) : null}
+                  </section>
+                )
+              })}
               <section className="library-ai-section" aria-label="AI 生成">
                 <h2 className="library-ai-head">
-                  <span>AI 生成</span>
-                  <span className="library-session-count">{listing.aiArticles.length} 篇</span>
+                  <button type="button" className="library-group-toggle" aria-expanded={expansion.aiExpanded}
+                    onClick={() => updateExpansion({ aiExpanded: !expansion.aiExpanded })}>
+                    <span aria-hidden="true">{expansion.aiExpanded ? '▾' : '▸'}</span> AI 生成
+                    <span className="library-session-count">{listing.aiArticles.length} 篇</span>
+                  </button>
                 </h2>
-                {listing.aiArticles.length === 0 ? (
+                {expansion.aiExpanded ? listing.aiArticles.length === 0 ? (
                   <div className="library-ai-empty">
                     <p className="empty-line">用一组词生成第一篇</p>
-                    <button
-                      type="button"
-                      className="button button-small"
-                      onClick={() => navigate('entries')}
-                    >
-                      去词条页选词
-                    </button>
+                    <button type="button" className="button button-small" onClick={() => navigate('entries')}>去词条页选词</button>
                   </div>
-                ) : (
-                  <ArticleRowList
-                    articles={listing.aiArticles}
-                    selectedId={selectedId}
-                    onSelect={select}
-                  />
-                )}
+                ) : <ArticleRowList articles={listing.aiArticles} selectedId={selectedId} onSelect={select} /> : null}
               </section>
             </>
           ) : null}
@@ -466,9 +501,11 @@ export function LibraryPage({
 function ArticleRowList({
   articles,
   selectedId,
-  onSelect
+  onSelect,
+  inSet = false
 }: {
   articles: readonly LibraryArticle[]
+  inSet?: boolean
   selectedId: string | null
   onSelect: (articleId: string) => void
 }) {
@@ -482,7 +519,7 @@ function ArticleRowList({
             aria-current={article.id === selectedId ? 'true' : undefined}
             onClick={() => onSelect(article.id)}
           >
-            <span className="library-row-name">{article.title}</span>
+            <span className="library-row-name">{inSet ? librarySetRowTitle(article) : article.title}</span>
             <span className="library-row-meta">
               {libraryArticleMetaParts(article).join(' · ')}
             </span>
