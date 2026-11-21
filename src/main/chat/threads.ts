@@ -23,7 +23,6 @@ import type {
   ThreadContextCandidates,
   ThreadContextItem,
   ThreadContextKind,
-  ThreadContextSummary,
   ThreadListItem,
   ThreadListResult,
   ThreadMain,
@@ -33,7 +32,7 @@ import type {
   UpdateThreadContextRequest,
   UpdateThreadContextResult
 } from '../../shared/threads'
-import { GROUP_WORD_LIMIT, wordContextEntryId } from '../../shared/threads'
+import { GROUP_WORD_LIMIT, wordContextEntryId, deduplicateArticleContext, summarizeContextItems } from '../../shared/threads'
 import { paragraphLetter } from '../corpus/letter'
 import type { AppDatabase } from '../db/database'
 
@@ -151,22 +150,7 @@ export function sanitizeContextItems(value: unknown): ThreadContextItem[] {
   return items
 }
 
-/** 「N 个词 · M 条原句 · 约 K 字」：词与原句各数各的，字数据正文码点。 */
-export function summarizeContext(items: readonly ThreadContextItem[]): ThreadContextSummary {
-  let wordCount = 0
-  let sentenceCount = 0
-  let charCount = 0
-  for (const item of items) {
-    if (item.kind === 'word') {
-      wordCount += 1
-    }
-    if (item.kind === 'sentence') {
-      sentenceCount += 1
-    }
-    charCount += Array.from(item.text).length
-  }
-  return { wordCount, sentenceCount, charCount }
-}
+export const summarizeContext = summarizeContextItems
 
 /** 上下文里带上的词条条目数；列表按 id 去过重，同一个词条只算一个。 */
 function wordItemCount(items: readonly ThreadContextItem[]): number {
@@ -571,49 +555,16 @@ function articleItem(database: AppDatabase, articleId: string): ThreadContextIte
     id: `article:${main.articleId}`,
     kind: 'article',
     label: main.title,
-    text: main.title,
+    text: paragraphItemsOfArticle(database, articleId)
+      .map((item) => `${item.label.replace('段 ', '')}. ${item.text}`)
+      .join('\n\n'),
     source
   }
 }
 
-/** 文章挂上时默认带上最近读到的那一段（没读过就从第一段起）。 */
-function lastReadParagraphItem(
-  database: AppDatabase,
-  articleId: string
-): ThreadContextItem | null {
-  const article = database
-    .prepare('SELECT last_paragraph_id FROM article WHERE id = ?')
-    .get(articleId) as { last_paragraph_id: string | null } | undefined
-  const preferred = article?.last_paragraph_id ?? null
-  const row = preferred
-    ? (database
-        .prepare(
-          `SELECT p.id, p.ordinal, p.text, p.article_id, a.title AS article_title,
-                  a.kind AS article_kind
-             FROM paragraph p JOIN article a ON a.id = p.article_id
-            WHERE p.article_id = ? AND p.id = ?`
-        )
-        .get(articleId, preferred) as ParagraphItemRow | undefined)
-    : undefined
-  if (row) {
-    return toParagraphItem(row)
-  }
-  const first = database
-    .prepare(
-      `SELECT p.id, p.ordinal, p.text, p.article_id, a.title AS article_title,
-              a.kind AS article_kind
-         FROM paragraph p JOIN article a ON a.id = p.article_id
-        WHERE p.article_id = ?
-        ORDER BY p.ordinal
-        LIMIT 1`
-    )
-    .get(articleId) as ParagraphItemRow | undefined
-  return first ? toParagraphItem(first) : null
-}
-
 /**
  * 挂上主对象时预填的上下文：词条带主词形与最近收的那句原句，
- * 原句带词与它自己，文章带篇名与最近读到的一段；空白线程什么都不带。
+ * 原句带词与它自己，文章带全文；空白线程什么都不带。
  */
 function defaultContext(database: AppDatabase, main: ThreadMain): ThreadContextItem[] {
   const items: (ThreadContextItem | null)[] = []
@@ -628,7 +579,6 @@ function defaultContext(database: AppDatabase, main: ThreadMain): ThreadContextI
     items.push(sentence ? toSentenceItem(sentence) : null)
   } else if (main.kind === 'article') {
     items.push(articleItem(database, main.articleId))
-    items.push(lastReadParagraphItem(database, main.articleId))
   }
   return items.filter((item): item is ThreadContextItem => item !== null)
 }
@@ -1069,7 +1019,7 @@ export function updateThreadContext(
   if (!readThreadRow(database, request.threadId)) {
     return { status: 'missing' }
   }
-  const items = sanitizeContextItems(request.items)
+  const items = deduplicateArticleContext(sanitizeContextItems(request.items))
   if (wordItemCount(items) > GROUP_WORD_LIMIT) {
     return { status: 'rejected', reason: 'too-many-words' }
   }
@@ -1136,7 +1086,7 @@ export function askQuestion(
   const context =
     request.context === undefined
       ? parseContextJson(thread.context_json)
-      : sanitizeContextItems(request.context)
+      : deduplicateArticleContext(sanitizeContextItems(request.context))
   if (wordItemCount(context) > GROUP_WORD_LIMIT) {
     return { status: 'rejected', reason: 'too-many-words' }
   }
@@ -1322,7 +1272,7 @@ export function editQuestion(
   const context =
     request.context === undefined
       ? parseContextJson(thread.context_json)
-      : sanitizeContextItems(request.context)
+      : deduplicateArticleContext(sanitizeContextItems(request.context))
   if (wordItemCount(context) > GROUP_WORD_LIMIT) {
     return { status: 'rejected', reason: 'too-many-words' }
   }
@@ -1490,6 +1440,7 @@ export function readContextCandidates(
   const seen = new Set<string>()
   const push = (item: ThreadContextItem | null): void => {
     if (!item || included.has(item.id) || seen.has(item.id)) return
+    if (item.kind === 'paragraph' && deduplicateArticleContext([...context, item]).length === context.length) return
     seen.add(item.id)
     candidates.push(item)
   }

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type { ChatStreamUpdate } from '../../../shared/chat'
 import {
   GROUP_WORD_LIMIT,
+  deduplicateArticleContext,
   type ChatThreadView,
   type CreateThreadRequest,
   type ThreadContextItem,
@@ -758,7 +759,7 @@ export function addContextItem(item: ThreadContextItem): void {
   if (view === null || view.context.some((existing) => existing.id === item.id)) {
     return
   }
-  changeContext(view, [...view.context, item])
+  changeContext(view, deduplicateArticleContext([...view.context, item]))
 }
 
 export function removeContextItem(id: string): void {

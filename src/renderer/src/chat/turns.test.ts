@@ -63,7 +63,7 @@ function view(overrides: Partial<ChatThreadView> = {}): ChatThreadView {
       articleCount: 2
     },
     context: [contextItem],
-    contextSummary: { wordCount: 0, sentenceCount: 1, charCount: 56 },
+    contextSummary: { articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 1, charCount: 56 },
     turns: [],
     createdAt: '2026-11-18T08:00:00.000Z',
     updatedAt: '2026-11-18T08:00:00.000Z',
@@ -73,12 +73,22 @@ function view(overrides: Partial<ChatThreadView> = {}): ChatThreadView {
 
 describe('contextSummaryText', () => {
   it('按「N 个词 · M 条原句 · 约 K 字」显示，词与原句各自计数', () => {
-    expect(contextSummaryText({ wordCount: 2, sentenceCount: 3, charCount: 420 })).toBe(
-      '2 个词 · 3 条原句 · 约 420 字'
+    expect(contextSummaryText({ articleCount: 0, paragraphCount: 0, wordCount: 2, sentenceCount: 3, charCount: 420 })).toBe(
+      '3 条原句 · 2 个词 · 约 420 字'
     )
-    expect(contextSummaryText({ wordCount: 0, sentenceCount: 0, charCount: 0 })).toBe(
-      '0 个词 · 0 条原句 · 约 0 字'
+    expect(contextSummaryText({ articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, charCount: 0 })).toBe(
+      '约 0 字'
     )
+  })
+
+  it('摘要按实际全文、段落、原句和词分别计数', () => {
+    const items: ThreadContextItem[] = [
+      { id: 'article:a', kind: 'article', label: '', text: 'Full text', source: '' },
+      { id: 'paragraph:b:1', kind: 'paragraph', label: '', text: 'Other', source: '' },
+      { id: 'sentence:s', kind: 'sentence', label: '', text: 'Line', source: '' },
+      { id: 'word:w', kind: 'word', label: '', text: 'word', source: '' }
+    ]
+    expect(contextSummaryText(summarizeContext(items))).toBe('1 篇全文 · 1 段 · 1 条原句 · 1 个词 · 约 22 字')
   })
 
   it('词只数 word，原句只数 sentence，字数把词与段落也算进去', () => {
@@ -89,6 +99,8 @@ describe('contextSummaryText', () => {
         { id: 'note:1', kind: 'note', label: 'lament', text: '学习内容', source: '' }
       ])
     ).toEqual({
+      articleCount: 0,
+      paragraphCount: 0,
       wordCount: 1,
       sentenceCount: 1,
       charCount: Array.from(contextItem.text).length + 6 + 4
@@ -115,7 +127,7 @@ describe('contextSummaryText', () => {
     const summary = summarizeContext(items)
     expect(summary.wordCount).toBe(20)
     expect(summary.sentenceCount).toBe(20)
-    expect(contextSummaryText(summary)).toMatch(/^20 个词 · 20 条原句 · 约 \d+ 字$/)
+    expect(contextSummaryText(summary)).toMatch(/^20 条原句 · 20 个词 · 约 \d+ 字$/)
   })
 })
 

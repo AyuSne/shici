@@ -339,28 +339,15 @@ describe('createThread', () => {
     expect(result.thread.context[1]?.source).toContain('段 1')
   })
 
-  it('挂文章时预填篇名与最近读到的一段', () => {
-    database
-      .prepare('UPDATE article SET last_paragraph_id = ? WHERE id = ?')
-      .run('2', firstArticle.id)
-    const result = createThread(database, { main: { kind: 'article', articleId: firstArticle.id } }, { now: T4 })
-    expect(result.status).toBe('created')
-    if (result.status !== 'created') return
-
-    expect(result.thread.main).toMatchObject({
-      kind: 'article',
-      articleId: firstArticle.id,
-      title: '2026年6月 · 第1套 · 仔细阅读 Passage One'
-    })
-    expect(itemIds(result.thread.context)).toEqual([
-      `article:${firstArticle.id}`,
-      `paragraph:${firstArticle.id}:2`
-    ])
-    expect(result.thread.context[1]).toMatchObject({
-      kind: 'paragraph',
-      text: 'She approached the counter quietly. The clerk smiled.'
-    })
-    expect(result.thread.contextSummary.sentenceCount).toBe(0)
+  it('文章对话预填完整正文，复用时保留用户调整', () => {
+    const main = { kind: 'article' as const, articleId: longMatch.id }
+    const created = openThreadForMain(database, { main }, { now: T0 })
+    if (created.status !== 'created') throw new Error('create failed')
+    expect(created.thread.context).toMatchObject([{ id: `article:${longMatch.id}`, kind: 'article', text: 'A. First paragraph here.\n\nB. Nothing on approach.\n\nC. Another approach appears here.' }])
+    updateThreadContext(database, { threadId: created.thread.id, items: [] })
+    const reused = openThreadForMain(database, { main })
+    expect(reused.status).toBe('reused')
+    if (reused.status === 'reused') expect(reused.thread.context).toEqual([])
   })
 
   it('空白线程不带上下文，也不允许挂不存在的对象', () => {
@@ -370,7 +357,7 @@ describe('createThread', () => {
     expect(blank.thread.title).toBe('新的学习')
     expect(blank.thread.main).toEqual({ kind: 'none' })
     expect(blank.thread.context).toEqual([])
-    expect(blank.thread.contextSummary).toEqual({ wordCount: 0, sentenceCount: 0, charCount: 0 })
+    expect(blank.thread.contextSummary).toEqual({ articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, charCount: 0 })
 
     expect(
       createThread(database, { main: { kind: 'entry', entryId: 'nope' } }, { now: T4 })
@@ -411,6 +398,8 @@ describe('用一组词开线程', () => {
     expect(first.thread.context[1]?.text).toBe('Another approach appears here.')
     expect(first.thread.context[3]?.text).toBe('Context keeps the skill alive.')
     expect(first.thread.contextSummary).toEqual({
+      articleCount: 0,
+      paragraphCount: 0,
       wordCount: 2,
       sentenceCount: 2,
       charCount: 75
@@ -920,10 +909,39 @@ describe('上下文', () => {
     if (result.status !== 'saved') return
     expect(itemIds(result.thread.context)).toEqual([`sentence:${sentenceId}`])
     expect(result.thread.contextSummary).toEqual({
+      articleCount: 0,
+      paragraphCount: 0,
       wordCount: 0,
       sentenceCount: 1,
       charCount: Array.from('Employers approach hiring differently.').length
     })
+  })
+
+  it('复用历史对话时保留先前选定的全文和段落', () => {
+    const main = { kind: 'article' as const, articleId: firstArticle.id }
+    const created = createThread(database, { main })
+    if (created.status !== 'created') throw new Error('create failed')
+    const legacy = [
+      { id: `article:${firstArticle.id}`, kind: 'article', label: '篇名', text: '篇名', source: '' },
+      { id: `paragraph:${firstArticle.id}:1`, kind: 'paragraph', label: '段 1', text: '原段', source: '' }
+    ]
+    database.prepare('UPDATE thread SET context_json = ? WHERE id = ?').run(JSON.stringify(legacy), created.thread.id)
+    const reused = openThreadForMain(database, { main })
+    if (reused.status !== 'reused') throw new Error('reuse failed')
+    expect(reused.thread.context).toEqual(legacy)
+  })
+
+  it('全文与同篇段落不会重复带入，其他文章段落保留', () => {
+    const created = createThread(database, { main: { kind: 'article', articleId: firstArticle.id } })
+    if (created.status !== 'created') throw new Error('create failed')
+    const full = created.thread.context[0]!
+    const same = { id: `paragraph:${firstArticle.id}:1`, kind: 'paragraph' as const, label: '段 1', text: 'same', source: '' }
+    const other = { id: `paragraph:${longMatch.id}:A`, kind: 'paragraph' as const, label: '段 A', text: 'other', source: '' }
+    for (const items of [[same, other, full], [full, same, other]]) {
+      const result = updateThreadContext(database, { threadId: created.thread.id, items })
+      if (result.status !== 'saved') throw new Error('save failed')
+      expect(itemIds(result.thread.context)).toEqual(items.filter((item) => item !== same).map((item) => item.id))
+    }
   })
 
   it('候选里是这次还能加的原句、段落与学习内容，已带上的不再出现', () => {
@@ -956,9 +974,9 @@ describe('上下文', () => {
     if (created.status !== 'created') throw new Error('create failed')
     const candidates = readContextCandidates(database, created.thread.id).items
     const ids = itemIds(candidates)
-    // 篇名与最近读到的一段已经预填，候选里是剩下的段落、这一篇收的原句与相关学习内容。
+    // 全文已带上，同篇段落不再出现；仍可加入原句与学习内容。
     expect(ids).not.toContain(`article:${firstArticle.id}`)
-    expect(ids.filter((id) => id.startsWith('paragraph:')).length).toBe(2)
+    expect(ids.filter((id) => id.startsWith('paragraph:')).length).toBe(0)
     expect(ids).toContain(`sentence:${seeded.approachSentenceIds[0]}`)
     expect(ids).toContain(`sentence:${seeded.approachSentenceIds[1]}`)
     expect(ids.some((id) => id.startsWith('note:'))).toBe(true)
@@ -1057,6 +1075,8 @@ describe('上下文', () => {
     expect(restored.status).toBe('saved')
     if (restored.status !== 'saved') return
     expect(restored.thread.contextSummary).toEqual({
+      articleCount: 0,
+      paragraphCount: 0,
       wordCount: 2,
       sentenceCount: 2,
       charCount: 75

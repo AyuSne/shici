@@ -1,6 +1,7 @@
 import type { ChatTurn } from '../../../shared/chat'
 import {
   CONTINUE_INSTRUCTION,
+  summarizeContextItems,
   type ChatThreadView,
   type ThreadAnswer,
   type ThreadContextItem,
@@ -35,27 +36,16 @@ export const CONTEXT_KIND_LABEL: Record<ThreadContextKind, string> = {
 }
 
 export function contextSummaryText(summary: ThreadContextSummary): string {
-  return `${summary.wordCount} 个词 · ${summary.sentenceCount} 条原句 · 约 ${summary.charCount} 字`
+  const parts: string[] = []
+  if (summary.articleCount) parts.push(`${summary.articleCount} 篇全文`)
+  if (summary.paragraphCount) parts.push(`${summary.paragraphCount} 段`)
+  if (summary.sentenceCount) parts.push(`${summary.sentenceCount} 条原句`)
+  if (summary.wordCount) parts.push(`${summary.wordCount} 个词`)
+  parts.push(`约 ${summary.charCount} 字`)
+  return parts.join(' · ')
 }
 
-/** 与主进程同一套算法：词只数 word，原句只数 sentence，字数按正文码点。 */
-export function summarizeContext(
-  items: readonly ThreadContextItem[]
-): ThreadContextSummary {
-  let wordCount = 0
-  let sentenceCount = 0
-  let charCount = 0
-  for (const item of items) {
-    if (item.kind === 'word') {
-      wordCount += 1
-    }
-    if (item.kind === 'sentence') {
-      sentenceCount += 1
-    }
-    charCount += Array.from(item.text).length
-  }
-  return { wordCount, sentenceCount, charCount }
-}
+export const summarizeContext = summarizeContextItems
 
 /** 学习上下文写成一段 system 前言；没有材料时返回 null，请求里就不带 system 消息。 */
 export function threadSystemPrompt(items: readonly ThreadContextItem[]): string | null {
