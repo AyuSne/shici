@@ -550,7 +550,8 @@
   background: var(--sunken);
 }
 
-.credential-mode {
+.credential-mode,
+.retry-mode {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
@@ -559,7 +560,8 @@
   border: 0;
 }
 
-.credential-mode .model-option {
+.credential-mode .model-option,
+.retry-mode .model-option {
   display: inline-flex;
   gap: 6px;
   align-items: center;

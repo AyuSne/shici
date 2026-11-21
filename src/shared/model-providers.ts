@@ -19,8 +19,23 @@ export type ProviderKeyState = 'stored' | 'env' | 'missing'
 
 export type ProviderVerification = 'verified' | 'unverified'
 
-/** 上次校验没通过的原因；网络不通时不算密钥错。 */
-export type ProviderCheckError = 'invalid-key' | 'invalid-config' | 'network'
+/**
+ * 上次校验 / 调用没通过的原因。前三个是旧校验就有的三分类；其余把真实
+ * HTTP 状态与本地配置问题如实分开——网络不通、超时、服务繁忙都不等于密钥错。
+ */
+export type ProviderCheckError =
+  | 'invalid-key'
+  | 'invalid-config'
+  | 'network'
+  | 'quota'
+  | 'rate-limit'
+  | 'server'
+  | 'timeout'
+  | 'empty-response'
+  | 'missing-credential'
+  | 'unsupported-protocol'
+  | 'no-model'
+  | 'unknown'
 
 export type ProviderSource = 'builtin' | 'custom'
 
@@ -81,6 +96,11 @@ export type ModelProviderSummary = {
   retryPolicy: ProviderRetryPolicy
   verification: ProviderVerification
   lastError: ProviderCheckError | null
+  /**
+   * 上次失败时服务端给的 request id；失败原因与它对得上服务端日志。
+   * 旧版本没有这一列（可选），没有就显示为空。
+   */
+  lastErrorRequestId?: string | null
   lastCheckedAt: string | null
   lastVerifiedAt: string | null
   source: ProviderSource
@@ -216,17 +236,20 @@ export type CreateCustomProviderResult =
   | { status: 'saved'; providerId: string; providerKey: string }
   | { status: 'rejected'; reason: CustomProviderRejection }
 
-/** 只允许改显示名与地址：Provider ID 与协议创建后不可改。 */
+/** 只允许改显示名、地址与重试策略：Provider ID 与协议创建后不可改。 */
 export type UpdateProviderRequest = {
   providerId: string
   displayName: string
   baseUrl: string
+  /** 不传表示保持原策略；传了就必须是 normal / always，否则整笔拒绝。 */
+  retryPolicy?: ProviderRetryPolicy
 }
 
 export type UpdateProviderRejection =
   | 'missing-display-name'
   | 'missing-base-url'
   | 'invalid-base-url'
+  | 'invalid-retry-policy'
 
 export type UpdateProviderResult =
   | { status: 'saved' }

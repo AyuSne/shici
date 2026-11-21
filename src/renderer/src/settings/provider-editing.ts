@@ -224,6 +224,8 @@ export function providerUpdateErrorText(reason: UpdateProviderRejection): string
       return '先填接口地址。'
     case 'invalid-base-url':
       return '接口地址要是 http(s) 开头的完整地址。'
+    case 'invalid-retry-policy':
+      return '重试策略无法识别；刷新后再选一次。'
   }
 }
 

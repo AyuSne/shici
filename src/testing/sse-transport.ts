@@ -91,6 +91,36 @@ export function isWritable(response: ServerResponse): boolean {
   return !response.writableEnded && !response.destroyed
 }
 
+/**
+ * 四个协议 stub 共用的「按请求序号取脚本」规则：`sequence` 用完后重复
+ * 最后一个；空序列给出协议合法的 `fallback`（每个协议自己决定形状）。
+ * 只做选择，不碰协议事件，避免各 stub 各抄一份分叉。
+ */
+export type ScriptSequence<T> =
+  | T
+  | { kind: 'sequence'; scripts: readonly T[] }
+
+export function isScriptSequence<T>(
+  script: ScriptSequence<T>
+): script is { kind: 'sequence'; scripts: readonly T[] } {
+  return (
+    typeof script === 'object' &&
+    script !== null &&
+    (script as { kind?: unknown }).kind === 'sequence'
+  )
+}
+
+export function scriptAt<T>(
+  script: ScriptSequence<T>,
+  index: number,
+  fallback: T
+): T {
+  if (!isScriptSequence(script)) {
+    return script
+  }
+  return script.scripts[Math.min(index, script.scripts.length - 1)] ?? fallback
+}
+
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }

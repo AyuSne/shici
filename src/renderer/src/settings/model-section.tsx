@@ -12,6 +12,7 @@ import {
   addBuiltinProvider,
   deleteProvider,
   loadSettingsOverview,
+  testProviderConnection,
   updateProviderCredential
 } from '../api'
 import { failureText } from '../errors'
@@ -25,6 +26,9 @@ import {
   providerModelsText,
   providerProtocolText,
   providerSourceText,
+  providerTestFailureText,
+  providerTestVerifiedText,
+  retryPolicyText,
   verificationText
 } from './format'
 import { credentialRejectionText, modelSectionDescription } from './messages'
@@ -46,7 +50,8 @@ type ModelSectionProps = {
  *   内置与自定义 provider 都可用；OpenCode GO 的聚合目录首版只读；
  * - 保存不联网：填完密钥立即落库，状态是「未验证」；真正成功生成一次后才转「已验证」。
  *   获取可用模型是卡片里的显式动作：只读返回候选，勾选后再显式加入，不自动保存；
- *   测试连接留给后续票，不在本票入口里。
+ *   「测试连接」同样是显式动作：按这套 provider 的协议发一次最小请求，通过才转已验证，
+ *   失败保留原配置与原密钥并显示原因与 request id。
  */
 export function ModelSection({ overview, onChange, notify }: ModelSectionProps) {
   const setups = listBuiltinProviderSetups()
@@ -63,6 +68,10 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
   const [credentialEditingId, setCredentialEditingId] = useState<string | null>(null)
   const [credentialError, setCredentialError] = useState<string | null>(null)
+  /** 最近一次「测试连接」失败的结果：只留在对应卡片上，直到重测或改配置。 */
+  const [testResult, setTestResult] = useState<{ providerId: string; text: string } | null>(
+    null
+  )
 
   const setup = setups.find((candidate) => candidate.id === catalogId) ?? setups[0]
   const builtinNames = setups.map((candidate) => candidate.displayName).join('、')
@@ -138,6 +147,9 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
     return run(`delete-${provider.id}`, async () => {
       const result = await deleteProvider({ providerId: provider.id })
       setConfirmDelete(null)
+      if (testResult?.providerId === provider.id) {
+        setTestResult(null)
+      }
       if (result.status !== 'deleted') {
         setFormError('这套提供商已经不在了。')
         return
@@ -151,11 +163,40 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
     })
   }
 
+  /**
+   * 显式「测试连接」：按这套 provider 的协议发一次最小请求。
+   * 保存与测试彻底分开——失败只写验证状态与最后错误，原配置与原密钥原样保留。
+   */
+  function onTest(provider: ModelProviderSummary): Promise<void> {
+    return run(`test-${provider.id}`, async () => {
+      if (testResult?.providerId === provider.id) {
+        setTestResult(null)
+      }
+      const result = await testProviderConnection({ providerId: provider.id })
+      if (result.status === 'missing') {
+        setFormError('这套提供商已经不在了，刷新后再试。')
+        await refresh()
+        return
+      }
+      await refresh()
+      if (result.status === 'verified') {
+        notify(providerTestVerifiedText(result))
+        return
+      }
+      const text = providerTestFailureText(result)
+      setTestResult({ providerId: provider.id, text })
+      notify(`「${provider.displayName}」${text}`)
+    })
+  }
+
   function startCredentialEdit(provider: ModelProviderSummary): void {
     // 卡片内同时只开一个编辑面板，避免两个表单抢同一块位置。
     setEditingProviderId(null)
     setCredentialEditingId(provider.id)
     setCredentialError(null)
+    if (testResult?.providerId === provider.id) {
+      setTestResult(null)
+    }
   }
 
   function cancelCredentialEdit(): void {
@@ -258,6 +299,15 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                     <button
                       type="button"
                       className="link-button"
+                      aria-label={`测试连接 ${provider.displayName}`}
+                      disabled={busy !== null || provider.models.length === 0}
+                      onClick={() => void onTest(provider)}
+                    >
+                      {busy === `test-${provider.id}` ? '测试中…' : '测试连接'}
+                    </button>
+                    <button
+                      type="button"
+                      className="link-button"
                       disabled={busy !== null}
                       onClick={() => startCredentialEdit(provider)}
                     >
@@ -296,6 +346,10 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                     <dd>
                       <code>{providerModelsText(provider)}</code>
                     </dd>
+                  </div>
+                  <div>
+                    <dt>重试策略</dt>
+                    <dd>{retryPolicyText(provider.retryPolicy)}</dd>
                   </div>
                   <div>
                     <dt>密钥</dt>
@@ -345,6 +399,12 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                 />
 
                 <p className="profile-check">{checkText(provider)}</p>
+
+                {testResult?.providerId === provider.id ? (
+                  <p className="field-error" role="alert" data-test-result={provider.id}>
+                    {testResult.text}
+                  </p>
+                ) : null}
 
                 {confirmDelete === provider.id ? (
                   <div className="profile-confirm">
@@ -551,7 +611,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                 保存提供商
               </button>
               <span className="settings-hint">
-                保存后仍是未验证；成功对话一次会自动转已验证。
+                保存后仍是未验证；可点卡片上的「测试连接」，或成功对话一次后自动转已验证。
               </span>
             </div>
           </div>

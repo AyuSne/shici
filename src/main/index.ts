@@ -95,6 +95,7 @@ import {
 import { createElectronSecretStore } from './settings/electron-secrets'
 import { updateProviderCredential } from './settings/credential-writes'
 import { fetchProviderModels } from './settings/model-discovery'
+import { testProviderConnection } from './settings/provider-test'
 import { readSettingsOverview } from './settings/operations'
 import {
   addProviderModel,
@@ -111,8 +112,10 @@ import {
   setDefaultProviderModel
 } from './settings/provider-writes'
 import {
+  checkReasonOfChatError,
   isProviderSelectionCleared,
-  markProviderVerified
+  markProviderVerified,
+  recordProviderFailure
 } from './settings/providers'
 import { saveThemePreference } from './settings/theme'
 import { applyThemePreference, createMainWindow } from './window'
@@ -207,7 +210,25 @@ function start(): void {
   const chatConfig = resolveChatConfig(opened, secrets, process.env)
   const chat = createChatService({
     resolveConfig: () => resolveChatConfig(opened, secrets, process.env),
-    onVerified: (providerId) => markProviderVerified(opened, providerId)
+    // 回写都带着调用开始时冻结的 provider 版本：调用期间换了地址 / 密钥 /
+    // 默认模型，旧结果就不会落到新配置上。
+    onVerified: (providerId, providerUpdatedAt) =>
+      markProviderVerified(opened, providerId, new Date().toISOString(), providerUpdatedAt),
+    onError: (providerId, error, providerUpdatedAt) => {
+      // 发送前的本地配置错误没有对应的服务端失败，服务层已经跳过；这里再守一道。
+      if (error.code === 'not-configured') {
+        return
+      }
+      recordProviderFailure(
+        opened,
+        providerId,
+        {
+          reason: checkReasonOfChatError(error),
+          ...(error.requestId === undefined ? {} : { requestId: error.requestId })
+        },
+        { expectedUpdatedAt: providerUpdatedAt, revokeVerified: false }
+      )
+    }
   })
   /** 启动时的模型名：给启动值保存回答用，也给钉住出处兜底。 */
   const configuredModel = chatConfig?.model ?? ''
@@ -342,6 +363,8 @@ function start(): void {
       updateProviderCredential(opened, secrets, payload),
     'settings:provider-models-fetch': (payload) =>
       fetchProviderModels(opened, secrets, process.env, payload),
+    'settings:provider-test': (payload) =>
+      testProviderConnection(opened, secrets, process.env, payload),
     'settings:reading-save': (payload) => saveReadingPreferences(opened, payload.preferences),
     'settings:theme-save': (payload) => {
       const result = saveThemePreference(opened, payload.theme)

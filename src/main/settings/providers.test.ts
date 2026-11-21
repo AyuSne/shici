@@ -6,10 +6,13 @@ import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate, migrations } from '../db/migrations'
 import {
   listModelProviders,
-  maskApiKey,
+  markProviderCheckPassed,
   markProviderVerified,
+  maskApiKey,
+  parseProviderLastError,
   readActiveChatProvider,
-  readActiveProviderId
+  readActiveProviderId,
+  recordProviderFailure
 } from './providers'
 import type { SecretStore } from './secret-store'
 
@@ -416,6 +419,169 @@ describe('markProviderVerified', () => {
         )
         .get()
     ).toEqual({ verification: 'verified', last_verified_at: '2026-11-18T09:30:00.000Z' })
+  })
+})
+
+describe('验证状态的条件回写', () => {
+  it('配置版本对不上时不写：换地址 / 换密钥后旧的成功结果落空', () => {
+    migratedDatabase(twoProfiles, 'profile-deepseek')
+
+    expect(
+      markProviderVerified(database, 'profile-deepseek', '2026-11-18T10:00:00.000Z', 'stale-rev')
+    ).toBe('stale')
+
+    expect(
+      database
+        .prepare(
+          `SELECT verification, last_verified_at FROM model_provider WHERE id = 'profile-deepseek'`
+        )
+        .get()
+    ).toEqual({
+      verification: 'verified',
+      last_verified_at: '2026-11-18T09:30:00.000Z'
+    })
+  })
+
+  it('配置版本一致时才转已验证；真实调用成功不写 last_checked_at', () => {
+    migratedDatabase(twoProfiles, 'profile-backup')
+
+    expect(
+      markProviderVerified(
+        database,
+        'profile-backup',
+        '2026-11-18T10:00:00.000Z',
+        '2026-11-18T09:01:00.000Z'
+      )
+    ).toBe('recorded')
+
+    expect(
+      database
+        .prepare(
+          `SELECT verification, last_error, last_checked_at, last_verified_at
+             FROM model_provider WHERE id = 'profile-backup'`
+        )
+        .get()
+    ).toEqual({
+      verification: 'verified',
+      last_error: null,
+      last_checked_at: '2026-11-18T09:10:00.000Z',
+      last_verified_at: '2026-11-18T10:00:00.000Z'
+    })
+  })
+
+  it('显式测试通过同时写校验时刻与验证时刻', () => {
+    migratedDatabase(twoProfiles)
+
+    expect(
+      markProviderCheckPassed(database, 'profile-deepseek', '2026-11-18T10:00:00.000Z')
+    ).toBe('recorded')
+
+    expect(
+      database
+        .prepare(
+          `SELECT verification, last_checked_at, last_verified_at
+             FROM model_provider WHERE id = 'profile-deepseek'`
+        )
+        .get()
+    ).toEqual({
+      verification: 'verified',
+      last_checked_at: '2026-11-18T10:00:00.000Z',
+      last_verified_at: '2026-11-18T10:00:00.000Z'
+    })
+  })
+
+  it('失败记录原因与 request id；真实对话失败不降级已验证状态', () => {
+    migratedDatabase(twoProfiles, 'profile-deepseek')
+
+    const written = recordProviderFailure(
+      database,
+      'profile-deepseek',
+      { reason: 'server', requestId: 'req-500' },
+      { now: '2026-11-18T10:05:00.000Z', revokeVerified: false }
+    )
+
+    expect(written).toBe('recorded')
+    const row = database
+      .prepare(
+        `SELECT verification, last_error, last_checked_at, last_verified_at
+           FROM model_provider WHERE id = 'profile-deepseek'`
+      )
+      .get() as Record<string, unknown>
+    expect(row).toMatchObject({
+      verification: 'verified',
+      last_checked_at: '2026-11-18T10:05:00.000Z',
+      last_verified_at: '2026-11-18T09:30:00.000Z'
+    })
+    expect(parseProviderLastError(String(row.last_error))).toEqual({
+      reason: 'server',
+      requestId: 'req-500'
+    })
+  })
+
+  it('显式测试失败收回已验证；失败不改地址与密钥', () => {
+    migratedDatabase(twoProfiles, 'profile-deepseek')
+    const before = readActiveChatProvider(database, { secrets, env: {} })?.provider
+
+    recordProviderFailure(
+      database,
+      'profile-deepseek',
+      { reason: 'invalid-key', requestId: 'req-401' },
+      { now: '2026-11-18T10:06:00.000Z', revokeVerified: true }
+    )
+
+    const after = database
+      .prepare(
+        `SELECT verification, last_verified_at, base_url, secret_ciphertext, last_error
+           FROM model_provider WHERE id = 'profile-deepseek'`
+      )
+      .get() as Record<string, unknown>
+    expect(after).toMatchObject({
+      verification: 'unverified',
+      last_verified_at: null,
+      base_url: before?.baseUrl,
+      secret_ciphertext: before?.secretCiphertext
+    })
+    expect(parseProviderLastError(String(after.last_error))).toEqual({
+      reason: 'invalid-key',
+      requestId: 'req-401'
+    })
+  })
+
+  it('版本对不上时不写失败：旧失败不覆盖新配置', () => {
+    migratedDatabase(twoProfiles, 'profile-deepseek')
+
+    expect(
+      recordProviderFailure(
+        database,
+        'profile-deepseek',
+        { reason: 'timeout' },
+        { now: '2026-11-18T10:07:00.000Z', expectedUpdatedAt: 'stale-rev', revokeVerified: true }
+      )
+    ).toBe('stale')
+
+    expect(
+      database
+        .prepare(
+          `SELECT verification, last_error, last_checked_at FROM model_provider WHERE id = 'profile-deepseek'`
+        )
+        .get()
+    ).toEqual({
+      verification: 'verified',
+      last_error: null,
+      last_checked_at: '2026-11-18T09:30:00.000Z'
+    })
+  })
+
+  it('旧版裸分类与坏 JSON 都能读，坏值不冒充原因', () => {
+    expect(parseProviderLastError('network')).toEqual({ reason: 'network', requestId: null })
+    expect(parseProviderLastError(JSON.stringify({ reason: 'invalid-key', requestId: 'req-1' })))
+      .toEqual({ reason: 'invalid-key', requestId: 'req-1' })
+    expect(parseProviderLastError('not-a-reason')).toEqual({ reason: null, requestId: null })
+    expect(parseProviderLastError('{bad json')).toEqual({ reason: null, requestId: null })
+    expect(parseProviderLastError('{"reason":"weird"}')).toEqual({
+      reason: null,
+      requestId: null
+    })
   })
 })
 

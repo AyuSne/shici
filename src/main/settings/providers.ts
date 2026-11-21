@@ -11,6 +11,7 @@ import type {
   ProviderSource,
   ProviderVerification
 } from '../../shared/model-providers'
+import type { ChatError, ProviderErrorCode } from '../../shared/chat'
 import type { ModelThinkingLevel } from '../../shared/model-catalog'
 import { isModelProtocol } from '../../shared/model-protocols'
 import { DEFAULT_RETRY_POLICY } from '../../shared/model-providers'
@@ -50,6 +51,8 @@ export type ModelProviderRecord = {
   retryPolicy: ProviderRetryPolicy
   verification: ProviderVerification
   lastError: ProviderCheckError | null
+  /** 上次失败时服务端给的 request id；旧数据没有。 */
+  lastErrorRequestId: string | null
   lastCheckedAt: string | null
   lastVerifiedAt: string | null
   source: ProviderSource
@@ -151,10 +154,63 @@ function protocolOf(value: string): ProviderProtocol | null {
   return isModelProtocol(value) ? value : null
 }
 
-function checkErrorOf(value: string | null): ProviderCheckError | null {
-  return value === 'invalid-key' || value === 'invalid-config' || value === 'network'
-    ? value
-    : null
+const CHECK_ERRORS: ReadonlySet<string> = new Set<ProviderCheckError>([
+  'invalid-key',
+  'invalid-config',
+  'network',
+  'quota',
+  'rate-limit',
+  'server',
+  'timeout',
+  'empty-response',
+  'missing-credential',
+  'unsupported-protocol',
+  'no-model',
+  'unknown'
+])
+
+function checkErrorOf(value: string): ProviderCheckError | null {
+  return CHECK_ERRORS.has(value) ? (value as ProviderCheckError) : null
+}
+
+/**
+ * `last_error` 列兼容两种写法：
+ * - 旧数据与迁移数据是裸的分类字符串（invalid-key / network / …）；
+ * - 本批开始把「原因 + request id」写成 JSON，排障时能和上游日志对上。
+ *
+ * 坏 JSON 或被删掉的旧分类按「没有记录」处理，不让一行配置打不开设置页。
+ */
+export function parseProviderLastError(value: string | null): {
+  reason: ProviderCheckError | null
+  requestId: string | null
+} {
+  if (value === null) {
+    return { reason: null, requestId: null }
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return { reason: null, requestId: null }
+  }
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed)
+      if (typeof parsed === 'object' && parsed !== null) {
+        const record = parsed as Record<string, unknown>
+        const reason =
+          typeof record.reason === 'string' ? checkErrorOf(record.reason) : null
+        const rawRequestId = record.requestId
+        const requestId =
+          typeof rawRequestId === 'string' && rawRequestId.trim() !== ''
+            ? rawRequestId.trim()
+            : null
+        return { reason, requestId }
+      }
+    } catch {
+      // 坏 JSON 按没有记录处理。
+    }
+    return { reason: null, requestId: null }
+  }
+  return { reason: checkErrorOf(trimmed), requestId: null }
 }
 
 function retryPolicyOf(value: string): ProviderRetryPolicy {
@@ -201,6 +257,7 @@ function parseThinkingLevelMap(value: string | null): ModelThinkingLevelMap | nu
 }
 
 function toProviderRecord(row: ProviderRow): ModelProviderRecord {
+  const lastError = parseProviderLastError(row.last_error)
   return {
     id: row.id,
     providerKey: row.provider_key,
@@ -212,7 +269,8 @@ function toProviderRecord(row: ProviderRow): ModelProviderRecord {
     secretCiphertext: row.secret_ciphertext,
     retryPolicy: retryPolicyOf(row.retry_policy),
     verification: row.verification === 'verified' ? 'verified' : 'unverified',
-    lastError: checkErrorOf(row.last_error),
+    lastError: lastError.reason,
+    lastErrorRequestId: lastError.requestId,
     lastCheckedAt: row.last_checked_at,
     lastVerifiedAt: row.last_verified_at,
     source: row.source === 'builtin' ? 'builtin' : 'custom',
@@ -388,6 +446,7 @@ export function listModelProviders(
       retryPolicy: provider.retryPolicy,
       verification: provider.verification,
       lastError: provider.lastError,
+      lastErrorRequestId: provider.lastErrorRequestId,
       lastCheckedAt: provider.lastCheckedAt,
       lastVerifiedAt: provider.lastVerifiedAt,
       source: provider.source,
@@ -426,19 +485,192 @@ export function readActiveChatProvider(
 }
 
 /**
- * 一次成功调用之后自动转「已验证」。这里不写上次校验时间：
- * 那是对「测试连接」这类显式校验的记时，成功调用只证明配置此刻可用。
- * 迁移后只写 provider 表，旧 model_profile 不再接受运行时写入。
+ * 状态回写的结果：`stale` 表示测试 / 调用期间配置被改过（地址、密钥、默认模型
+ * 或目录行），这次结果不再代表当前配置，所以什么都没写。
+ */
+export type ProviderStatusWrite = 'recorded' | 'stale' | 'missing'
+
+export type ProviderCheckFailure = {
+  reason: ProviderCheckError
+  /** 服务端给的 request id；没有响应（超时 / 连不上）时为空。 */
+  requestId?: string
+}
+
+function statusWriteOf(
+  database: AppDatabase,
+  providerId: string,
+  changes: number
+): ProviderStatusWrite {
+  if (changes > 0) {
+    return 'recorded'
+  }
+  return readModelProvider(database, providerId) === null ? 'missing' : 'stale'
+}
+
+/**
+ * 三个状态回写共用的条件 UPDATE。列名只来自固定白名单，值一律绑定参数；
+ * 带 `expectedUpdatedAt` 时再加版本条件。不要把它扩成任意 SQL 构造器。
+ */
+type ProviderStatusPatch = {
+  verification?: 'verified' | 'unverified'
+  lastError?: string | null
+  lastCheckedAt?: string | null
+  lastVerifiedAt?: string | null
+}
+
+const STATUS_COLUMN: Record<keyof ProviderStatusPatch, string> = {
+  verification: 'verification',
+  lastError: 'last_error',
+  lastCheckedAt: 'last_checked_at',
+  lastVerifiedAt: 'last_verified_at'
+}
+
+function writeProviderStatus(
+  database: AppDatabase,
+  providerId: string,
+  patch: ProviderStatusPatch,
+  expectedUpdatedAt?: string
+): ProviderStatusWrite {
+  const keys = Object.keys(patch) as Array<keyof ProviderStatusPatch>
+  const assignments = keys.map((key) => `${STATUS_COLUMN[key]} = ?`)
+  const args: Array<string | null> = keys.map((key) => {
+    const value = patch[key]
+    return value === undefined ? null : value
+  })
+  args.push(providerId)
+  const where = ['id = ?']
+  if (expectedUpdatedAt !== undefined) {
+    where.push('updated_at = ?')
+    args.push(expectedUpdatedAt)
+  }
+  const result = database
+    .prepare(
+      `UPDATE model_provider SET ${assignments.join(', ')} WHERE ${where.join(' AND ')}`
+    )
+    .run(...args)
+  return statusWriteOf(database, providerId, result.changes)
+}
+
+/**
+ * 一次**真实调用**成功之后自动转「已验证」。
+ *
+ * 只写 provider 表；不写 `last_checked_at` —— 那是对「测试连接」这类显式校验
+ * 的记时，成功调用只证明配置此刻可用。传入 `expectedUpdatedAt` 时做条件更新：
+ * 调用期间换地址 / 换密钥 / 换默认模型会让旧结果落空，绝不把新配置误标已验证。
  */
 export function markProviderVerified(
   database: AppDatabase,
   providerId: string,
-  now = new Date().toISOString()
-): void {
-  database
-    .prepare(
-      `UPDATE model_provider SET verification = 'verified', last_error = NULL,
-         last_verified_at = ?, updated_at = ? WHERE id = ?`
-    )
-    .run(now, now, providerId)
+  now = new Date().toISOString(),
+  expectedUpdatedAt?: string
+): ProviderStatusWrite {
+  return writeProviderStatus(
+    database,
+    providerId,
+    { verification: 'verified', lastError: null, lastVerifiedAt: now },
+    expectedUpdatedAt
+  )
+}
+
+/** 显式「测试连接」通过：同时记下校验时刻，与真实调用成功区分开。 */
+export function markProviderCheckPassed(
+  database: AppDatabase,
+  providerId: string,
+  checkedAt: string,
+  expectedUpdatedAt?: string
+): ProviderStatusWrite {
+  return writeProviderStatus(
+    database,
+    providerId,
+    {
+      verification: 'verified',
+      lastError: null,
+      lastCheckedAt: checkedAt,
+      lastVerifiedAt: checkedAt
+    },
+    expectedUpdatedAt
+  )
+}
+
+/**
+ * 记录一次失败：原因（以及可得的 request id）写进 `last_error`，时间写进
+ * `last_checked_at`。`revokeVerified` 只给显式「测试连接」用：它没通过，
+ * 就把「已验证」收回；真实对话失败只记录最后错误，不降级已验证状态。
+ *
+ * 与成功路径一样支持 `expectedUpdatedAt` 条件更新，避免运行中改配置后旧失败
+ * 覆盖新配置的状态。
+ */
+export function recordProviderFailure(
+  database: AppDatabase,
+  providerId: string,
+  failure: ProviderCheckFailure,
+  options: {
+    now?: string
+    expectedUpdatedAt?: string
+    revokeVerified?: boolean
+  } = {}
+): ProviderStatusWrite {
+  const now = options.now ?? new Date().toISOString()
+  const encoded = JSON.stringify({
+    reason: failure.reason,
+    ...(failure.requestId === undefined || failure.requestId.trim() === ''
+      ? {}
+      : { requestId: failure.requestId.trim() })
+  })
+  return writeProviderStatus(
+    database,
+    providerId,
+    {
+      lastError: encoded,
+      lastCheckedAt: now,
+      ...(options.revokeVerified === true
+        ? { verification: 'unverified' as const, lastVerifiedAt: null }
+        : {})
+    },
+    options.expectedUpdatedAt
+  )
+}
+
+const CHECK_ERROR_OF_KIND: Record<ProviderErrorCode, ProviderCheckError> = {
+  AUTH: 'invalid-key',
+  INVALID_REQUEST: 'invalid-config',
+  CONTEXT_WINDOW: 'invalid-config',
+  QUOTA: 'quota',
+  RATE_LIMIT: 'rate-limit',
+  SERVER: 'server',
+  TIMEOUT: 'timeout',
+  TRANSPORT: 'network',
+  EMPTY_RESPONSE: 'empty-response',
+  UNKNOWN: 'unknown'
+}
+
+/**
+ * 真实对话失败 → 落库的失败原因。优先用请求层捕获的稳定分类；
+ * 没有分类的旧形状再退回渲染层错误码。`not-configured` 是发送前的本地配置
+ * 错误（没有发出请求），由调用方跳过，不覆盖上一次真实失败。
+ */
+export function checkReasonOfChatError(error: ChatError): ProviderCheckError {
+  if (error.kind !== undefined) {
+    return CHECK_ERROR_OF_KIND[error.kind]
+  }
+  switch (error.code) {
+    case 'invalid-key':
+      return 'invalid-key'
+    case 'context-too-long':
+      return 'invalid-config'
+    case 'insufficient-balance':
+      return 'quota'
+    case 'rate-limited':
+      return 'rate-limit'
+    case 'server-busy':
+      return 'server'
+    case 'network':
+      return 'network'
+    case 'empty-response':
+      return 'empty-response'
+    case 'not-configured':
+      return 'missing-credential'
+    case 'unknown':
+      return 'unknown'
+  }
 }

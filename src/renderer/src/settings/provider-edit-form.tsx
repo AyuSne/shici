@@ -4,12 +4,15 @@ import {
   isModelDirectoryReadOnly
 } from '../../../shared/model-directory'
 import type { FetchedModelCandidate } from '../../../shared/model-discovery'
-import type { ModelProviderSummary } from '../../../shared/model-providers'
+import type {
+  ModelProviderSummary,
+  ProviderRetryPolicy
+} from '../../../shared/model-providers'
 import type { ProviderCredentialDraft } from '../../../shared/provider-credentials'
 import { addProviderModel, updateProvider } from '../api'
 import { failureText } from '../errors'
 import { emptyCredentialDraft } from './credential-editor'
-import { providerProtocolText } from './format'
+import { providerProtocolText, retryPolicyText } from './format'
 import { providerModelDraftOf } from './model-discovery'
 import { ModelDiscoveryPanel } from './model-discovery-panel'
 import {
@@ -39,6 +42,9 @@ export function ProviderEditForm({
   const aggregate = isAggregateModelProvider(provider)
   const [displayName, setDisplayName] = useState(provider.displayName)
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? '')
+  const [retryMode, setRetryMode] = useState<ProviderRetryPolicy['mode']>(
+    provider.retryPolicy.mode
+  )
   // 获取可用模型用的凭据草稿：与「编辑凭据」分开展示，只用于这次获取，不写库。
   const [credential, setCredential] = useState<ProviderCredentialDraft>(
     emptyCredentialDraft({
@@ -100,7 +106,8 @@ export function ProviderEditForm({
       const result = await updateProvider({
         providerId: provider.id,
         displayName: displayName.trim(),
-        baseUrl: aggregate ? '' : baseUrl.trim()
+        baseUrl: aggregate ? '' : baseUrl.trim(),
+        retryPolicy: { mode: retryMode }
       })
       if (result.status === 'missing') {
         setFormError('这套提供商已经不在了，刷新后再试。')
@@ -110,6 +117,8 @@ export function ProviderEditForm({
         const message = providerUpdateErrorText(result.reason)
         if (result.reason === 'missing-display-name') {
           setNameError(message)
+        } else if (result.reason === 'invalid-retry-policy') {
+          setFormError(message)
         } else {
           setUrlError(message)
         }
@@ -188,6 +197,36 @@ export function ProviderEditForm({
           )}
         </>
       )}
+
+      <fieldset className="retry-mode" data-retry-policy={retryMode}>
+        <legend className="settings-field-label">重试策略</legend>
+        <label className="model-option">
+          <input
+            type="radio"
+            name={`retry-mode-${provider.id}`}
+            value="normal"
+            checked={retryMode === 'normal'}
+            disabled={busy}
+            onChange={() => setRetryMode('normal')}
+          />
+          <span>只重试临时错误</span>
+        </label>
+        <label className="model-option">
+          <input
+            type="radio"
+            name={`retry-mode-${provider.id}`}
+            value="always"
+            checked={retryMode === 'always'}
+            disabled={busy}
+            onChange={() => setRetryMode('always')}
+          />
+          <span>所有失败都重试</span>
+        </label>
+      </fieldset>
+      <p className="field-hint">
+        {retryPolicyText({ mode: retryMode })}。已经输出正文或思维链后不再自动重试，
+        会保留已输出内容并显示真实错误；停止会取消还在等待的重试。
+      </p>
 
       <ModelDiscoveryPanel
         source={provider.source === 'builtin' ? 'builtin' : 'custom'}

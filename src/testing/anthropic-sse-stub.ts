@@ -2,6 +2,7 @@ import type { ServerResponse } from 'node:http'
 import {
   delay,
   isWritable,
+  scriptAt,
   startLocalSseTransport,
   type LocalSseRequest
 } from './sse-transport'
@@ -19,7 +20,8 @@ import {
  * 与 OpenAI 形状的 `sse-stub.ts` 分开：两种协议的事件名与请求字段不同，
  * 共用一份会把两套形状混在一个类型里。传输外壳共用 `sse-transport.ts`。
  */
-export type AnthropicStubScript =
+/** 单个响应；`sequence` 里按请求顺序取用，最后一个脚本会被重复使用。 */
+export type AnthropicStubResponse =
   | {
       kind: 'stream'
       thinking?: readonly string[]
@@ -63,6 +65,11 @@ export type AnthropicStubScript =
       headers?: Readonly<Record<string, string>>
     }
 
+/** 默认脚本或脚本序列；序列用完后重复最后一个。 */
+export type AnthropicStubScript =
+  | AnthropicStubResponse
+  | { kind: 'sequence'; scripts: readonly AnthropicStubResponse[] }
+
 export type AnthropicStubRequest = LocalSseRequest
 
 export type AnthropicStub = {
@@ -79,9 +86,15 @@ export async function startAnthropicStub(
   script: AnthropicStubScript
 ): Promise<AnthropicStub> {
   let current = script
-  const transport = await startLocalSseTransport((response, request) =>
-    respond(response, current, request.body)
-  )
+  let sequenceIndex = 0
+  const transport = await startLocalSseTransport((response, request) => {
+    const chosen = scriptAt(current, sequenceIndex, {
+      kind: 'status' as const,
+      status: 500
+    })
+    sequenceIndex += 1
+    return respond(response, chosen, request.body)
+  })
 
   return {
     baseUrl: transport.baseUrl,
@@ -91,6 +104,7 @@ export async function startAnthropicStub(
     },
     setScript(next) {
       current = next
+      sequenceIndex = 0
     },
     close() {
       return transport.close()
@@ -100,7 +114,7 @@ export async function startAnthropicStub(
 
 async function respond(
   response: ServerResponse,
-  script: AnthropicStubScript,
+  script: AnthropicStubResponse,
   body: Record<string, unknown>
 ): Promise<void> {
   if (script.kind === 'status') {
@@ -207,6 +221,9 @@ async function respond(
     return
   }
   if (script.kind === 'truncate') {
+    // 先让已写出的 content_block_stop 有机会抵达客户端，再模拟断线；
+    // 否则同 tick 的 socket 关闭可能把最后一段正文一起吞掉。
+    await delay(10)
     response.destroy()
     return
   }

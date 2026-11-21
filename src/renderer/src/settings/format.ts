@@ -1,10 +1,14 @@
 import { isAggregateModelProvider } from '../../../shared/model-directory'
 import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
+import type { ChatCredentialProblem } from '../../../shared/chat'
 import type {
   ModelProviderModelSummary,
   ModelProviderSummary,
-  ProviderProtocol
+  ProviderCheckError,
+  ProviderProtocol,
+  ProviderRetryPolicy
 } from '../../../shared/model-providers'
+import type { ProviderTestFailure, ProviderTestResult } from '../../../shared/provider-test'
 import type { ReadingPreferences } from '../../../shared/reading'
 import type { BackupSummary, RestoreRejection } from '../../../shared/settings'
 import type { ThemePreference } from '../../../shared/types'
@@ -22,19 +26,142 @@ export function checkText(provider: ModelProviderSummary): string {
   if (provider.lastCheckedAt === null && provider.lastVerifiedAt === null) {
     return '还没校验过'
   }
+  const requestId =
+    provider.lastErrorRequestId === undefined || provider.lastErrorRequestId === null
+      ? ''
+      : ` · 请求 ID ${provider.lastErrorRequestId}`
   if (provider.verification === 'verified') {
     // 成功调用也会自动转已验证，这时用真正证实密钥可用的那个时刻。
     const moment = formatMoment(provider.lastVerifiedAt ?? provider.lastCheckedAt ?? '')
-    return moment === '' ? '已验证' : `上次校验 ${moment} 通过`
+    const passed = moment === '' ? '已验证' : `上次校验 ${moment} 通过`
+    return provider.lastError === null
+      ? passed
+      : `${passed}；最近一次失败 · ${providerCheckReasonText(provider.lastError)}${requestId}`
   }
   const moment = formatMoment(provider.lastCheckedAt ?? '')
-  const reason =
-    provider.lastError === 'invalid-key'
-      ? '密钥无效'
-      : provider.lastError === 'invalid-config'
-        ? '接口地址或模型名不对'
-        : '未能完成'
-  return `上次校验 ${moment} 未通过 · ${reason}`
+  return `上次校验 ${moment} 未通过 · ${providerCheckReasonText(provider.lastError)}${requestId}`
+}
+
+/**
+ * 失败原因 → 一句可操作的中文。测试连接与卡片上的「上次校验」共用这一份，
+ * 新增分类时只改这里。
+ */
+export function providerCheckReasonText(reason: ProviderCheckError | null): string {
+  switch (reason) {
+    case 'invalid-key':
+      return '密钥无效'
+    case 'invalid-config':
+      return '接口地址或模型名不对'
+    case 'quota':
+      return '余额不足'
+    case 'rate-limit':
+      return '请求太频繁'
+    case 'server':
+      return '服务繁忙'
+    case 'timeout':
+      return '超时'
+    case 'empty-response':
+      return '返回了空回答'
+    case 'missing-credential':
+      return '没有可用的密钥'
+    case 'unsupported-protocol':
+      return '协议不受支持'
+    case 'no-model':
+      return '没有可用的模型'
+    case 'network':
+      return '网络异常'
+    case 'unknown':
+    case null:
+      return '未能完成'
+  }
+}
+
+/**
+ * 测试失败后的下一步动作。只读结构化原因（reason / kind / status）与主进程
+ * 已经解析好的本地凭据问题，不把服务端 `detail` 带进界面——那里可能有
+ * 任意上游文本甚至密钥片段。
+ */
+export function providerTestActionText(result: ProviderTestFailure): string | null {
+  switch (result.reason) {
+    case 'invalid-key':
+      return '到设置 → 模型服务 → 编辑凭据里换一个有效的密钥。'
+    case 'quota':
+      return '这套密钥没有可用余额了；充值或换一个有余额的密钥。'
+    case 'invalid-config':
+      return result.error.kind === 'CONTEXT_WINDOW' || result.error.status === 413
+        ? '这次请求的内容太长；删减上下文后再试。'
+        : '检查接口地址与模型名后再试。'
+    case 'rate-limit':
+      return '稍等几秒再试。'
+    case 'server':
+      return '模型服务暂时不可用，稍后重试。'
+    case 'timeout':
+    case 'network':
+      return '检查网络或接口地址后再试。'
+    case 'empty-response':
+      return '稍后重试；如果一直是空回答，检查接口地址与模型名。'
+    case 'missing-credential':
+      return credentialActionText(result.error.credential)
+    case 'unsupported-protocol':
+      return '到设置 → 模型服务里新建一套使用本版支持协议的提供商，再切换使用。'
+    case 'no-model':
+      return '先在这套提供商的模型目录里加一条模型。'
+    case 'unknown':
+      return null
+  }
+}
+
+function credentialActionText(problem: ChatCredentialProblem | undefined): string {
+  switch (problem?.kind) {
+    case 'env-missing':
+      return `在系统环境里补上 ${problem.envVar}，或到设置 → 模型服务 → 编辑凭据里改用本机保存的密钥。`
+    case 'env-var-unset':
+      return '到设置 → 模型服务 → 编辑凭据里填上环境变量名。'
+    case 'stored-decrypt-failed':
+      return '到设置 → 模型服务 → 编辑凭据里重新填一个密钥。'
+    case 'stored-missing':
+      return '到设置 → 模型服务 → 编辑凭据里填一个密钥。'
+    default:
+      return '到设置 → 模型服务 → 编辑凭据里补上密钥。'
+  }
+}
+
+/** 一次失败测试的卡片文案：原因 + 下一步动作 + request id；没写回时说明为什么。 */
+export function providerTestFailureText(result: ProviderTestFailure): string {
+  const parts = [`测试没通过：${providerCheckReasonText(result.reason)}`]
+  const action = providerTestActionText(result)
+  if (action !== null) {
+    parts.push(action)
+  }
+  if (result.requestId !== undefined && result.requestId.trim() !== '') {
+    parts.push(`请求 ID ${result.requestId}`)
+  }
+  if (!result.persisted) {
+    parts.push('测试期间配置已改动，这次结果没有写回；请重新测试')
+  }
+  return parts.join(' · ')
+}
+
+/** 一次通过测试的结果文案；请求成功但配置在测试期间变了，不能谎称已验证。 */
+export function providerTestVerifiedText(
+  result: Extract<ProviderTestResult, { status: 'verified' }>
+): string {
+  return result.persisted
+    ? '测试连接通过，已标为已验证。'
+    : '测试连接通过，但测试期间配置已改动，没有写回；请重新测试。'
+}
+
+/**
+ * 重试策略的一句话说明。normal 是默认：只重试临时错误；always 覆盖所有
+ * 模型请求失败（401/402/413 这类重试没用的情况也会再试）。两者都最多 5 次，
+ * 且一旦有正文或思维链就停止自动重试。
+ */
+export function retryPolicyText(
+  policy: Pick<ProviderRetryPolicy, 'mode'>
+): string {
+  return policy.mode === 'always'
+    ? '所有失败都重试（最多 5 次）'
+    : '只重试临时错误（默认，最多 5 次）'
 }
 
 export function protocolText(protocol: ProviderProtocol | null): string {
