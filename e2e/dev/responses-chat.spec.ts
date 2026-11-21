@@ -108,7 +108,7 @@ test.describe('OpenAI Responses 协议', () => {
     const gpt5Radio = openai.locator('[data-model-row="gpt-5"]').getByRole('radio')
     await gpt5Radio.click()
     await expect(gpt5Radio).toBeChecked()
-    await openai.getByRole('button', { name: '使用这个' }).click()
+    await openai.getByRole('button', { name: '设为当前' }).click()
     await expect(openai).toContainText('使用中')
 
     // 地址只在用例内改成本机 stub：不联网，但走真实的 pi Responses 请求。
@@ -205,7 +205,7 @@ test.describe('OpenAI Responses 协议', () => {
     await expect(card).toContainText('OpenAI Responses')
     await expect(card.locator('[data-model-row="gpt-5"]')).toBeVisible()
     await expect(card).toContainText('未验证')
-    await card.getByRole('button', { name: '使用这个' }).click()
+    await card.getByRole('button', { name: '设为当前' }).click()
     await expect(card).toContainText('使用中')
 
     // 外部行为落库：协议与模型行的 api 都是 openai-responses，密钥只有密文。

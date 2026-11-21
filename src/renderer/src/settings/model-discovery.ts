@@ -101,8 +101,8 @@ export function combineCustomProviderModels(
 /** 内置身份直说本地目录、零 HTTP；自定义强调用当前表单里尚未保存的值。 */
 export function discoverySourceHint(source: 'builtin' | 'custom'): string {
   return source === 'builtin'
-    ? '内置目录：直接返回随程序打包的本地目录，不联网，也不使用当前地址或密钥。'
-    : '使用当前地址、协议与密钥来源获取；还没保存的修改也会生效，获取本身不写库。'
+    ? '从本地目录查看可用模型。'
+    : '使用当前填写的地址、协议与密钥获取。'
 }
 
 /** 失败原因写成可执行的中文提示；不包含上游响应正文或任何密钥。 */

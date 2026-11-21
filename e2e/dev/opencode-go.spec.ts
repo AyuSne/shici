@@ -42,8 +42,8 @@ test.describe('OpenCode GO 聚合入口', () => {
     // 1. 内置入口：聚合协议、无统一地址、32 个模型都来自生成目录。
     await page.getByLabel('内置提供商').selectOption('opencode-go')
     const preview = page.locator('.builtin-preview')
-    await expect(preview).toContainText('按模型给（无统一地址）')
-    await expect(preview).toContainText('按模型混合')
+    await expect(preview).toContainText('各模型分别提供')
+    await expect(preview).toContainText('多种协议')
     await expect(preview).toContainText('OPENCODE_GO_API_KEY')
     await expect(preview).toContainText('32 个模型')
 
@@ -54,11 +54,11 @@ test.describe('OpenCode GO 聚合入口', () => {
 
     const card = page.locator('[data-provider-key="opencode-go"]')
     await expect(card).toContainText('OpenCode GO')
-    await expect(card).toContainText('按模型混合')
-    await expect(card).toContainText('按模型给（无统一地址）')
-    await expect(card).toContainText('32 个模型（协议与地址按模型给）')
+    await expect(card).toContainText('多种协议')
+    await expect(card).toContainText('各模型分别提供')
+    await expect(card).toContainText('32 个模型')
     await expect(card).toContainText('sk-·············0001')
-    await expect(card).toContainText('OpenCode GO 的模型目录首版只读')
+    await expect(card).toContainText('OpenCode GO 的模型目录不可编辑')
 
     // 32 行模型都在，且各自显示自己的协议。
     await expect(card.locator('[data-model-row]')).toHaveCount(32)
@@ -123,7 +123,7 @@ test.describe('OpenCode GO 聚合入口', () => {
     await openSettings(reopened.page)
     const reopenedCard = reopened.page.locator('[data-provider-key="opencode-go"]')
     await expect(reopenedCard).toContainText('团队 OpenCode GO')
-    await expect(reopenedCard).toContainText('按模型混合')
+    await expect(reopenedCard).toContainText('多种协议')
     await expect(reopenedCard.locator('[data-model-row]')).toHaveCount(32)
     await expect(
       reopenedCard.locator('[data-model-row="gemini-4-argon"] input[type="radio"]')
@@ -188,7 +188,7 @@ test.describe('OpenCode GO 聚合入口', () => {
     const { page } = handle
     await openSettings(page)
     const card = page.locator('[data-provider-key="opencode-go"]')
-    await expect(card).toContainText('按模型混合')
+    await expect(card).toContainText('多种协议')
     await expect(card.locator('[data-model-row]')).toHaveCount(32)
 
     // 1. 获取可用模型只读本地目录：即使已配置 32 个模型也没有新候选，零 HTTP。
@@ -237,7 +237,7 @@ test.describe('OpenCode GO 聚合入口', () => {
 
     // 5. 删除使用中的 GO：选择清空，但历史线程与钉住快照都保留。
     await card.getByRole('button', { name: '删除' }).click()
-    await expect(card).toContainText('这是使用中的提供商')
+    await expect(card).toContainText('删除当前提供商后，需要另选一套才能继续对话')
     await card.getByRole('button', { name: '确认删除' }).click()
     await expect(page.getByRole('status')).toContainText('已删除使用中的提供商')
     await expect(page.locator('.settings-empty')).toContainText('还没有模型提供商')

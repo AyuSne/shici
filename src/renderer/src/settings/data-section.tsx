@@ -22,7 +22,6 @@ type PendingRestore = {
   file: string
   createdAt: string
   bytes: number
-  schemaVersion: number
 }
 
 type Busy = 'open' | 'backup' | 'pick' | 'restore' | 'export' | null
@@ -105,8 +104,7 @@ export function DataSection({
         setPending({
           file: result.file,
           createdAt: result.createdAt,
-          bytes: result.bytes,
-          schemaVersion: result.schemaVersion
+          bytes: result.bytes
         })
       } else if (result.status === 'rejected') {
         setError(restoreRejectionText(result.reason))
@@ -167,7 +165,7 @@ export function DataSection({
         setExportedTo(result.file)
         notify('已导出为 JSONL')
       } else if (result.status === 'missing') {
-        setError('这条线程已经不在了。')
+        setError('这段对话已经不在了。')
       } else if (result.status === 'failed') {
         setError('没能写入导出文件，看看目标位置还能不能写。')
       }
@@ -182,8 +180,7 @@ export function DataSection({
     <section className="settings-section" aria-labelledby="settings-data-title">
       <h2 id="settings-data-title">数据</h2>
       <p className="settings-desc">
-        所有文章、词条、原句与学习内容都存在这台机器上。密钥用系统密钥库加密保存，
-        不写明文。
+        文章、词条和学习内容保存在这台设备上。
       </p>
 
       <div className="data-card">
@@ -212,9 +209,8 @@ export function DataSection({
         </p>
         <p className="settings-hint">
           备份默认放在 <code className="data-inline-path">{overview.backupDirectory}</code>；
-          恢复前自动留的快照放在{' '}
-          <code className="data-inline-path">{overview.snapshotDirectory}</code>。手动备份不含密钥，
-          恢复后需要重新填写。
+          恢复前的备份放在{' '}
+          <code className="data-inline-path">{overview.snapshotDirectory}</code>。备份不含密钥，恢复后需要重新填写。
         </p>
         <div className="settings-actions">
           <button
@@ -241,9 +237,8 @@ export function DataSection({
               用「{fileNameOf(pending.file)}」替换本机资料库？
             </p>
             <p className="settings-hint">
-              这份备份来自 {formatMoment(pending.createdAt)} · {formatBytes(pending.bytes)} ·
-              资料库版本 {pending.schemaVersion}。替换前会自动留一份当前快照，恢复错了还能换回来；
-              手动备份里没有密钥，恢复后需要重新填写。
+              备份时间 {formatMoment(pending.createdAt)} · {formatBytes(pending.bytes)}。
+              恢复将替换当前资料，替换前会自动备份。恢复后需要重新填写密钥。
             </p>
             <div className="settings-actions">
               <button
@@ -269,21 +264,21 @@ export function DataSection({
 
       <div className="data-card">
         <p className="data-card-title">导出</p>
-        <p className="settings-hint">把一条线程导成可读的 JSONL，只含当前分支。</p>
+        <p className="settings-hint">将一段对话导出为 JSONL，只包含当前分支。</p>
         {threads === null ? (
-          <p className="settings-empty">正在读线程…</p>
+          <p className="settings-empty">正在读取对话…</p>
         ) : threads.length === 0 ? (
-          <p className="settings-empty">还没有线程，先从对话开始。</p>
+          <p className="settings-empty">还没有对话。</p>
         ) : (
           <>
             <label className="settings-field">
-              <span>线程</span>
+              <span>对话</span>
               <select
                 value={threadId}
                 onChange={(event) => setThreadId(event.target.value)}
                 disabled={busy !== null}
               >
-                <option value="">选一条线程</option>
+                <option value="">选择一段对话</option>
                 {threads.map((thread) => (
                   <option key={thread.id} value={thread.id}>
                     {thread.title} · {thread.turnCount} 轮

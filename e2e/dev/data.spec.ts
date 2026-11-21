@@ -156,8 +156,9 @@ test.describe('备份、恢复与导出', () => {
 
     const confirm = page.getByRole('alertdialog', { name: '确认恢复' })
     await expect(confirm).toContainText('english-learning-backup.db')
-    await expect(confirm).toContainText('替换前会自动留一份当前快照')
-    await expect(confirm).toContainText('备份里没有密钥')
+    await expect(confirm).toContainText('恢复将替换当前资料，替换前会自动备份')
+    await expect(confirm).toContainText('恢复后需要重新填写密钥')
+    await expect(confirm).not.toContainText('资料库版本')
 
     // 恢复成功后整库换过，界面重新载入；路由留在设置页。
     const reloaded = page.waitForEvent('load')
@@ -226,7 +227,7 @@ test.describe('备份、恢复与导出', () => {
     await expect(page.getByText('答案来了。')).toBeVisible()
 
     await openData(page)
-    await page.getByLabel('线程').selectOption({ index: 1 })
+    await page.getByRole('region', { name: '数据' }).getByLabel('对话').selectOption({ index: 1 })
     await stubSaveDialog(electronApp, exportFile)
     await page.getByRole('button', { name: '导出为 JSONL' }).click()
 

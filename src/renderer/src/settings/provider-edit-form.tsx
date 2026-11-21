@@ -84,7 +84,7 @@ export function ProviderEditForm({
       }
       await refresh()
       setDiscoveryReset((current) => current + 1)
-      notify(`已加入 ${drafts.length} 个获取到的模型；已有目录、默认模型与顺序不变`)
+      notify(`已加入 ${drafts.length} 个获取到的模型`)
     } finally {
       setBusy(false)
     }
@@ -128,7 +128,7 @@ export function ProviderEditForm({
       notify(
         aggregate || baseUrl.trim() === (provider.baseUrl ?? '')
           ? `已保存「${displayName.trim()}」`
-          : `已保存「${displayName.trim()}」的新地址；状态回到未验证`
+          : `已保存「${displayName.trim()}」的新地址`
       )
       onClose()
     } catch (error) {
@@ -154,7 +154,7 @@ export function ProviderEditForm({
       </dl>
       <p className="field-hint">
         {aggregate
-          ? 'Provider ID 与「按模型混合」的协议创建后不可改；接口地址由每条模型自带，这里没有统一地址。'
+          ? 'Provider ID 创建后不可改。'
           : 'Provider ID 与协议创建后不可改；要换协议请新建一套。'}
       </p>
 
@@ -175,7 +175,7 @@ export function ProviderEditForm({
 
       {aggregate ? (
         <p className="field-hint" data-aggregate-address="true">
-          接口地址按每条模型自带（OpenCode GO 没有统一地址）；改显示名或凭据不影响模型地址。
+          各模型使用各自的接口地址。
         </p>
       ) : (
         <>

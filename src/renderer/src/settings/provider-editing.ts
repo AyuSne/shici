@@ -120,7 +120,7 @@ export function modelDirectoryHint(
   if (catalog !== null) {
     return `目录收录：${modelCapacityText(catalog)} · ${modelThinkingText(catalog)}`
   }
-  return '不在目录：仍可加入并发送；缺容量时按默认值兜底（上下文 1,000,000 · 输出 128,000 · text）。'
+  return '不在目录，仍可加入使用。'
 }
 
 /**

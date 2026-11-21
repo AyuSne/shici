@@ -157,11 +157,7 @@ export function CustomProviderForm({
       setDiscoveryReset((current) => current + 1)
       setErrors(NO_ERRORS)
       await refresh()
-      notify(
-        credential.authMode === 'env'
-          ? `已保存自定义提供商「${savedName}」（使用环境变量）；未验证（保存时不联网）`
-          : `已保存自定义提供商「${savedName}」；未验证（保存时不联网）`
-      )
+      notify(`已保存自定义提供商「${savedName}」`)
     } catch (error) {
       setFormError(failureText(error, '自定义提供商没有保存成功，再试一次。'))
     } finally {
@@ -173,8 +169,7 @@ export function CustomProviderForm({
     <div className="custom-provider-form" data-custom-provider-form="true">
       <h3>自定义模型 API</h3>
       <p className="settings-desc">
-        填 Provider ID、显示名、协议、地址与密钥，并至少带一个模型。Provider ID
-        与协议创建后不可改；保存只写本机，不联网校验。
+        填写服务信息，并至少添加一个模型。Provider ID 与协议创建后不可改。
       </p>
 
       <label className="settings-field">
@@ -270,12 +265,9 @@ export function CustomProviderForm({
         value={credential}
         onChange={setCredential}
         apiKeyLabel="自定义 API 密钥"
-        keyHint="可以先留空存成「缺失」草稿；发送或获取模型前必须补上密钥，不会匿名请求。密钥只经系统密钥库加密保存。"
+        keyHint="可以先留空，使用前再填写密钥。"
         disabled={busy}
       />
-      <p className="field-hint">
-        环境变量模式不写密文；切回本机或更换来源时由主进程按确认规则处理。
-      </p>
 
       <label className="settings-field">
         <span>首个模型（可留空）</span>
@@ -339,9 +331,6 @@ export function CustomProviderForm({
         <button type="button" className="button" disabled={busy} onClick={() => void onSave()}>
           保存自定义提供商
         </button>
-        <span className="settings-hint">
-          保存后仍是未验证；可点卡片上的「测试连接」，或成功对话一次后自动转已验证。
-        </span>
       </div>
     </div>
   )

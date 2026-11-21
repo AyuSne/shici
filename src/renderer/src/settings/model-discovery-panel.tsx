@@ -174,7 +174,7 @@ export function ModelDiscoveryPanel({
 
       {showCredentialFields ? (
         <>
-          <p className="settings-field-label">获取时使用的密钥 · 只读，不改已保存凭据</p>
+          <p className="settings-field-label">获取时使用的密钥</p>
           <CredentialEditor
             idPrefix={`discovery-${providerId ?? 'provider'}`}
             value={credential}
@@ -239,13 +239,13 @@ export function ModelDiscoveryPanel({
             {readOnly
               ? readOnlyDirectoryHint('discovery')
               : selected.length === 0
-                ? '先勾选要加入目录的模型；获取和勾选都不会自动保存。'
-                : `已选 ${selected.length} 个；加入后追加到目录末尾，不改已有模型、默认模型与顺序。`}
+                ? '勾选要加入的模型。'
+                : `已选 ${selected.length} 个模型。`}
           </span>
         </div>
       ) : selected.length === 0 ? null : (
         <p className="field-hint" data-discovery-draft-hint="true">
-          已选 {selected.length} 个模型；保存提供商时一起写入，现在还没入库。
+          已选 {selected.length} 个模型，将随提供商一起保存。
         </p>
       )}
     </div>

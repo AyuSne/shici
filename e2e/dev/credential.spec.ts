@@ -106,7 +106,7 @@ test.describe('密钥来源三态与凭据编辑', () => {
     await expect(envVarInput).toHaveValue('DEEPSEEK_API_KEY')
     await envVarInput.fill('E2E_ENV_KEY')
     await page.getByRole('button', { name: '保存提供商' }).click()
-    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+    await expect(page.getByRole('status')).toContainText('已保存')
 
     const card = page.locator('[data-provider-key="deepseek"]')
     await expect(card).toContainText('环境 · E2E_ENV_KEY')
@@ -120,7 +120,7 @@ test.describe('密钥来源三态与凭据编辑', () => {
     })
 
     // 指向本地 stub 后，真的用环境变量里的合成密钥发一次。
-    await card.getByRole('button', { name: '使用这个' }).click()
+    await card.getByRole('button', { name: '设为当前' }).click()
     await expect(card).toContainText('使用中')
     pointProviderAtStub(userDataDirectory, 'deepseek', stub.baseUrl)
     await openChat(page)
@@ -230,10 +230,10 @@ test.describe('密钥来源三态与凭据编辑', () => {
     await page.getByLabel('内置提供商').selectOption('deepseek')
     await page.getByLabel('API 密钥').fill('sk-e2e-stored-1234')
     await page.getByRole('button', { name: '保存提供商' }).click()
-    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+    await expect(page.getByRole('status')).toContainText('已保存')
     const card = page.locator('[data-provider-key="deepseek"]')
     await expect(card).toContainText('本机 · sk-·············1234')
-    await card.getByRole('button', { name: '使用这个' }).click()
+    await card.getByRole('button', { name: '设为当前' }).click()
     pointProviderAtStub(userDataDirectory, 'deepseek', stub.baseUrl)
     expect(readProviderRow(userDataDirectory, 'deepseek')).toMatchObject({
       auth_mode: 'stored',
@@ -246,8 +246,7 @@ test.describe('密钥来源三态与凭据编辑', () => {
     await card.getByLabel('环境变量名').fill('E2E_SWITCH_KEY')
     await card.getByRole('button', { name: '保存凭据' }).click()
     const confirm = card.locator('.profile-confirm')
-    await expect(confirm).toContainText('清除这套本机已存的密钥')
-    await expect(confirm).toContainText('取消则保持原配置')
+    await expect(confirm).toContainText('清除本机保存的密钥')
     await confirm.getByRole('button', { name: '取消' }).click()
 
     await expect(card).toContainText('本机 · sk-·············1234')
@@ -340,10 +339,10 @@ test.describe('密钥来源三态与凭据编辑', () => {
     await page.getByLabel('内置提供商').selectOption('deepseek')
     await page.getByLabel('API 密钥').fill('sk-e2e-pending-7777')
     await page.getByRole('button', { name: '保存提供商' }).click()
-    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+    await expect(page.getByRole('status')).toContainText('已保存')
     const card = page.locator('[data-provider-key="deepseek"]')
     await expect(card).toContainText('本机 · sk-·············7777')
-    await card.getByRole('button', { name: '使用这个' }).click()
+    await card.getByRole('button', { name: '设为当前' }).click()
     pointProviderAtStub(userDataDirectory, 'deepseek', stub.baseUrl)
     expect(readProviderRow(userDataDirectory, 'deepseek').secret_ciphertext).toMatch(
       /^dpapi:v1:/
@@ -356,7 +355,7 @@ test.describe('密钥来源三态与凭据编辑', () => {
     await card.getByLabel('环境变量名').fill('E2E_PENDING_SWITCH')
     await card.getByRole('button', { name: '保存凭据' }).click()
     const switchConfirm = card.locator('.profile-confirm')
-    await expect(switchConfirm).toContainText('清除这套本机已存的密钥')
+    await expect(switchConfirm).toContainText('清除本机保存的密钥')
     await card.getByRole('radio', { name: '保存在本机' }).check()
     await expect(switchConfirm).toHaveCount(0)
     await card.getByRole('button', { name: '保存凭据' }).click()
@@ -423,7 +422,7 @@ test.describe('密钥来源三态与凭据编辑', () => {
     await form.getByLabel('环境变量名').fill('E2E_CUSTOM_ENV')
     await form.getByLabel('首个模型 ID').fill('custom-env-model')
     await form.getByRole('button', { name: '保存自定义提供商' }).click()
-    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+    await expect(page.getByRole('status')).toContainText('已保存')
 
     const card = page.locator('[data-provider-key="my-relay"]')
     await expect(card).toContainText('环境 · E2E_CUSTOM_ENV')
@@ -434,7 +433,7 @@ test.describe('密钥来源三态与凭据编辑', () => {
     })
 
     // 自定义 provider 直接用环境变量发请求。
-    await card.getByRole('button', { name: '使用这个' }).click()
+    await card.getByRole('button', { name: '设为当前' }).click()
     await openChat(page)
     await sendMessage(page, '自定义环境变量')
     await expect(page.getByText('自定义环境变量回答。')).toBeVisible()

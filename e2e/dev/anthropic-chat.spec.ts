@@ -61,7 +61,7 @@ test.describe('Anthropic Messages 内置入口', () => {
 
     await page.getByLabel('API 密钥').fill('sk-ant-e2e-0001')
     await page.getByRole('button', { name: '保存提供商' }).click()
-    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+    await expect(page.getByRole('status')).toContainText('已保存')
     await expect(page.getByLabel('API 密钥')).toHaveValue('')
 
     const card = page.locator('[data-provider-key="anthropic"]')
@@ -82,7 +82,7 @@ test.describe('Anthropic Messages 内置入口', () => {
     await expect(card).toContainText(stub.baseUrl)
 
     // 3. 使用中 + 真实流式：思维链先到、正文后到，请求带 x-api-key。
-    await card.getByRole('button', { name: '使用这个' }).click()
+    await card.getByRole('button', { name: '设为当前' }).click()
     await expect(card).toContainText('使用中')
 
     await openChat(page)
@@ -184,7 +184,7 @@ test.describe('自定义 Anthropic Messages 协议', () => {
     )
 
     // 使用中后真实发请求：模型行按 anthropic-messages 派发，鉴权走 x-api-key。
-    await card.getByRole('button', { name: '使用这个' }).click()
+    await card.getByRole('button', { name: '设为当前' }).click()
     await expect(card).toContainText('使用中')
     await openChat(page)
     await ask(page, '用自定义协议回答')
