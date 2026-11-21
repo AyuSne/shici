@@ -339,7 +339,9 @@ export function CustomProviderForm({
         <button type="button" className="button" disabled={busy} onClick={() => void onSave()}>
           保存自定义提供商
         </button>
-        <span className="settings-hint">保存后仍是未验证；成功对话一次会自动转已验证。</span>
+        <span className="settings-hint">
+          保存后仍是未验证；可点卡片上的「测试连接」，或成功对话一次后自动转已验证。
+        </span>
       </div>
     </div>
   )
