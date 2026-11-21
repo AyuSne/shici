@@ -233,7 +233,6 @@ describe('createCustomProvider', () => {
     const rejected: Array<[Partial<CreateCustomProviderRequest>, string]> = [
       [{ displayName: '   ' }, 'missing-display-name'],
       [{ protocol: 'anthropic-messages' }, 'unsupported-protocol'],
-      [{ protocol: 'google-generative-ai' }, 'unsupported-protocol'],
       [{ protocol: 'not-a-protocol' as never }, 'unsupported-protocol'],
       [{ baseUrl: '   ' }, 'missing-base-url'],
       [{ baseUrl: 'relay.example.com/v1' }, 'invalid-base-url'],

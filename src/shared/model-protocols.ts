@@ -29,11 +29,12 @@ export const MODEL_PROTOCOL_LABELS: Record<ModelProtocol, string> = {
  * 自定义入口当前开放的协议。这不是第二份协议清单：下拉选项仍由
  * `MODEL_PROTOCOLS` 生成，这里只决定当前哪些选项可用。
  *
- * 批 3 同时打开 OpenAI Responses；其余协议由各自票据追加，最终取并集。
+ * 批 3 同时打开 OpenAI Responses 与 Gemini API；其余协议由各自票据追加，最终取并集。
  */
 export const OPEN_CUSTOM_PROTOCOLS: readonly ModelProtocol[] = [
   'openai-completions',
-  'openai-responses'
+  'openai-responses',
+  'google-generative-ai'
 ]
 
 export function isCustomProviderProtocol(protocol: ModelProtocol): boolean {
