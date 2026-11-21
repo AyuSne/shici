@@ -12,6 +12,7 @@ import type {
   ProviderVerification
 } from '../../shared/model-providers'
 import type { ModelThinkingLevel } from '../../shared/model-catalog'
+import { isModelProtocol } from '../../shared/model-protocols'
 import { DEFAULT_RETRY_POLICY } from '../../shared/model-providers'
 import type { AppDatabase } from '../db/database'
 import { readSetting, writeSetting } from '../db/settings'
@@ -36,7 +37,8 @@ export type ModelProviderRecord = {
   id: string
   providerKey: string
   displayName: string
-  protocol: ProviderProtocol
+  /** null 表示库里存了本版不认识的协议：不静默换成别的。 */
+  protocol: ProviderProtocol | null
   baseUrl: string | null
   authMode: ProviderAuthMode
   envVar: string | null
@@ -49,7 +51,8 @@ export type ModelProviderRecord = {
   source: ProviderSource
   /** 内置目录身份（deepseek / kimi / glm）；迁移来的 custom 为 null。 */
   catalogProviderId: string | null
-  defaultModelId: string | null
+  /** 默认模型**行 id**（库内 id，不是请求里发送的模型名）。 */
+  defaultModelRowId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -59,7 +62,8 @@ export type ModelProviderModelRecord = {
   providerId: string
   modelId: string
   displayName: string
-  api: ProviderProtocol
+  /** null 表示库里存了本版不认识的协议：不发请求，也不猜成别的协议。 */
+  api: ProviderProtocol | null
   baseUrl: string | null
   contextWindow: number | null
   maxTokens: number | null
@@ -132,17 +136,16 @@ const PROVIDER_COLUMNS = `id, provider_key, display_name, protocol, base_url, au
 const MODEL_COLUMNS = `id, provider_id, model_id, display_name, api, base_url, context_window,
   max_tokens, input, reasoning, thinking_level_map, compat, source, sort, created_at, updated_at`
 
-const PROTOCOLS: readonly ProviderProtocol[] = [
-  'openai-completions',
-  'openai-responses',
-  'anthropic-messages',
-  'google-generative-ai'
-]
-
-function protocolOf(value: string): ProviderProtocol {
-  return PROTOCOLS.includes(value as ProviderProtocol)
-    ? (value as ProviderProtocol)
-    : 'openai-completions'
+/**
+ * 库里读出的协议：只认共享清单里的四个值。
+ *
+ * 旧实现保留了一份本地 `PROTOCOLS` 数组，数组可以短于类型（给类型加协议却忘了
+ * 加进数组时 TypeScript 不报错），未知值会被静默换成 openai-completions，等于拿
+ * 错误的协议发请求。这里改用共享守卫；不认识的持久化值返回 null，由调用方明确
+ * 拒绝（聊天不发请求、卡片显示未识别），绝不冒充另一个协议。
+ */
+function protocolOf(value: string): ProviderProtocol | null {
+  return isModelProtocol(value) ? value : null
 }
 
 function checkErrorOf(value: string | null): ProviderCheckError | null {
@@ -211,7 +214,7 @@ function toProviderRecord(row: ProviderRow): ModelProviderRecord {
     lastVerifiedAt: row.last_verified_at,
     source: row.source === 'builtin' ? 'builtin' : 'custom',
     catalogProviderId: row.catalog_provider_id,
-    defaultModelId: row.default_model_id,
+    defaultModelRowId: row.default_model_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }
@@ -363,8 +366,8 @@ export function readDefaultModel(
   if (models.length === 0) {
     return null
   }
-  if (provider.defaultModelId !== null) {
-    const chosen = models.find((model) => model.id === provider.defaultModelId)
+  if (provider.defaultModelRowId !== null) {
+    const chosen = models.find((model) => model.id === provider.defaultModelRowId)
     if (chosen !== undefined) {
       return chosen
     }
@@ -381,9 +384,9 @@ export function listModelProviders(
   return readModelProviderRecords(database).map((provider) => {
     const models = readProviderModels(database, provider.id)
     const defaultModel =
-      provider.defaultModelId === null
+      provider.defaultModelRowId === null
         ? (models[0] ?? null)
-        : (models.find((model) => model.id === provider.defaultModelId) ?? models[0] ?? null)
+        : (models.find((model) => model.id === provider.defaultModelRowId) ?? models[0] ?? null)
     const apiKey = readProviderApiKey(provider, options)
     return {
       id: provider.id,
@@ -404,8 +407,7 @@ export function listModelProviders(
       source: provider.source,
       catalogProviderId: provider.catalogProviderId,
       active: provider.id === activeId,
-      defaultModelId: defaultModel?.id ?? null,
-      defaultModel: defaultModel?.modelId ?? null,
+      defaultModelRowId: defaultModel?.id ?? null,
       models: models.map(toModelSummary)
     }
   })

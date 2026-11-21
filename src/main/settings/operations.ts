@@ -44,8 +44,10 @@ export function readSettingsOverview(
   return {
     providers,
     activeProviderId,
-    defaultModelId: defaultModel?.id ?? null,
-    activeModel: defaultModel?.modelId ?? options.fallbackModel,
+    defaultModelRowId: defaultModel?.id ?? null,
+    // 环境变量退路只在「一条 provider 都没有」时成立；有 provider 但没启用时，
+    // 设置页的警告已经说明没有使用中的提供商，这里不能显示一个不会用到的模型名。
+    activeModel: defaultModel?.modelId ?? (providers.length === 0 ? options.fallbackModel : ''),
     reading: readReadingPreferences(database),
     theme: readThemePreference(database),
     appVersion: options.appVersion,

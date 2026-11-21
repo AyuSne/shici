@@ -215,9 +215,9 @@ describe('createBackup', () => {
         keyState: 'env',
         apiKeyMask: null,
         verification: 'verified',
-        retryPolicy: { mode: 'always' },
-        defaultModel: 'claude-sonnet-4'
+        retryPolicy: { mode: 'always' }
       })
+      expect(provider?.models[0]?.modelId).toBe('claude-sonnet-4')
       expect(provider?.models[0]).toMatchObject({
         api: 'anthropic-messages',
         contextWindow: 200000,
@@ -494,9 +494,9 @@ describe('restoreBackup', () => {
       protocol: 'openai-completions',
       active: true,
       verification: 'verified',
-      defaultModel: 'deepseek-v4-pro',
       apiKeyMask: 'sk-·············0003'
     })
+    expect(providers[0]?.models[0]?.modelId).toBe('deepseek-v4-pro')
     // 历史线程一并回来；旧表保留但不再参与运行时。
     expect(readThreadView(database, 'thread-old')?.title).toBe('旧线程')
     expect(database.prepare('SELECT COUNT(*) AS count FROM model_profile').get()).toEqual({

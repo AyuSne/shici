@@ -1,5 +1,5 @@
-import type { CatalogModel, CatalogProvider, ModelProtocol } from '../../shared/model-catalog'
-import { findCatalogModel, findModelProvider } from '../../shared/model-catalog'
+import type { CatalogModel, ModelProtocol } from '../../shared/model-catalog'
+import { findCatalogModel } from '../../shared/model-catalog'
 import type {
   ModelProviderModelRecord,
   ModelProviderRecord,
@@ -34,10 +34,19 @@ export const UNKNOWN_MAX_TOKENS = 128_000
 export const DEFAULT_BASE_URL = 'https://api.deepseek.com'
 export const DEFAULT_MODEL = 'deepseek-flash'
 
+/**
+ * 使用中的 provider + 默认模型的描述符。
+ *
+ * 模型行的 `api` 是真正的派发依据（聚合网关按模型分派）：库里存了本版不认识的
+ * 协议时返回 null，由调用方明确报「没有可用配置」，绝不静默换成另一种协议。
+ */
 export function descriptorOfProvider(
   provider: ModelProviderRecord,
   model: ModelProviderModelRecord
-): ChatModelDescriptor {
+): ChatModelDescriptor | null {
+  if (model.api === null) {
+    return null
+  }
   return {
     provider: provider.providerKey,
     model: model.modelId,
@@ -53,7 +62,6 @@ export function descriptorOfProvider(
 }
 
 export function descriptorOfCatalogModel(
-  _provider: CatalogProvider,
   model: CatalogModel,
   baseUrl: string,
   providerId: string
@@ -111,11 +119,10 @@ export function readEnvChatConfig(env: NodeJS.ProcessEnv): EnvChatConfig | null 
   }
   const baseUrl = env.DEEPSEEK_BASE_URL?.trim() || DEFAULT_BASE_URL
   const model = env.DEEPSEEK_MODEL?.trim() || DEFAULT_MODEL
-  const provider = findModelProvider('deepseek')
   const catalogModel = findCatalogModel('deepseek', model)
   const descriptor =
-    provider !== undefined && catalogModel !== undefined
-      ? descriptorOfCatalogModel(provider, catalogModel, baseUrl, 'deepseek')
+    catalogModel !== undefined
+      ? descriptorOfCatalogModel(catalogModel, baseUrl, 'deepseek')
       : fallbackDescriptor({
           provider: 'deepseek',
           model,

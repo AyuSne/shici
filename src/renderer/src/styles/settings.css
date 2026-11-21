@@ -286,7 +286,7 @@
 .model-options {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -297,8 +297,8 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 8px;
+  border-radius: 8px;
   cursor: pointer;
 }
 

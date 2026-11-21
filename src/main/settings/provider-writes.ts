@@ -96,7 +96,7 @@ export function addBuiltinProvider(
     model,
     sort: index
   }))
-  const defaultModelId = models[0]?.id ?? null
+  const defaultModelRowId = models[0]?.id ?? null
 
   const insert = database.transaction(() => {
     database
@@ -118,7 +118,7 @@ export function addBuiltinProvider(
         setup.envVar,
         ciphertext,
         setup.id,
-        defaultModelId,
+        defaultModelRowId,
         now,
         now
       )
@@ -175,7 +175,7 @@ export function setDefaultProviderModel(
   database
     .prepare('UPDATE model_provider SET default_model_id = ?, updated_at = ? WHERE id = ?')
     .run(row.id, timestampOf(options), providerId)
-  return { status: 'saved', defaultModelId: row.id }
+  return { status: 'saved', defaultModelRowId: row.id }
 }
 
 /**

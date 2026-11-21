@@ -42,8 +42,9 @@ const PROTOCOL_TEXT: Record<ProviderProtocol, string> = {
   'google-generative-ai': 'Gemini API'
 }
 
-export function protocolText(protocol: ProviderProtocol): string {
-  return PROTOCOL_TEXT[protocol]
+export function protocolText(protocol: ProviderProtocol | null): string {
+  // 库里存了本版不认识的协议时如实说，不冒充另一种协议。
+  return protocol === null ? '未识别协议' : PROTOCOL_TEXT[protocol]
 }
 
 /** 密钥三态：本机（带掩码）、环境（带变量名）、缺失（带变量名）。 */

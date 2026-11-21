@@ -43,6 +43,44 @@ describe('classifyFailure', () => {
     expect(classifyFailure(new TypeError('fetch failed'))).toBe('TRANSPORT')
     expect(classifyFailure(new Error('socket hang up'))).toBe('TRANSPORT')
   })
+
+  it('原生 fetch 把超时码放在 cause 链里时也算超时，不看 message 措辞', () => {
+    const failed = (cause: unknown): TypeError =>
+      new TypeError('fetch failed', { cause })
+    const wrapped = (cause: unknown): TypeError =>
+      new TypeError('fetch failed', { cause: failed(cause) })
+
+    // Node/undici 的连接、响应头、响应体超时都只把码放在 cause 上。
+    expect(classifyFailure(failed({ code: 'UND_ERR_CONNECT_TIMEOUT' }))).toBe('TIMEOUT')
+    expect(classifyFailure(wrapped({ code: 'UND_ERR_HEADERS_TIMEOUT' }))).toBe('TIMEOUT')
+    expect(classifyFailure(wrapped({ code: 'UND_ERR_BODY_TIMEOUT' }))).toBe('TIMEOUT')
+    expect(classifyFailure(failed({ code: 'ETIMEDOUT' }))).toBe('TIMEOUT')
+    expect(
+      classifyFailure(failed(Object.assign(new Error('超时'), { name: 'TimeoutError' })))
+    ).toBe('TIMEOUT')
+    // 只有 message 里有 timeout 字样时不算，避免按文案猜分类。
+    expect(classifyFailure(new TypeError('request timeout occurred'))).toBe('TRANSPORT')
+    expect(classifyFailure(failed({ code: 'ECONNREFUSED' }))).toBe('TRANSPORT')
+    expect(classifyFailure(failed(new Error('connect failed')))).toBe('TRANSPORT')
+  })
+
+  it('cause 链打转或过长时安全收尾，不会无限递归', () => {
+    const looped: { cause?: unknown } = {}
+    looped.cause = looped
+    expect(classifyFailure(new TypeError('fetch failed', { cause: looped }))).toBe('TRANSPORT')
+
+    const cyclic = new Error('fetch failed') as Error & { cause?: unknown }
+    cyclic.cause = cyclic
+    expect(classifyFailure(cyclic)).toBe('TRANSPORT')
+
+    let chain: Error & { cause?: unknown } = new Error('fetch failed')
+    for (let depth = 0; depth < 50; depth += 1) {
+      const next = new Error('fetch failed') as Error & { cause?: unknown }
+      chain.cause = next
+      chain = next
+    }
+    expect(classifyFailure(chain)).toBe('TRANSPORT')
+  })
 })
 
 describe('readRequestId', () => {

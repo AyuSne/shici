@@ -27,9 +27,12 @@ describe('chooseThinkingLevel', () => {
 
 describe('resolveThinkingLevel（用 pi 的真实能力表）', () => {
   it('DeepSeek 目录描述符在 pi 里支持 high', async () => {
-    const provider = findModelProvider('deepseek')!
     const model = findCatalogModel('deepseek', 'deepseek-flash')!
-    const descriptor = descriptorOfCatalogModel(provider, model, provider.baseUrl!, 'deepseek')
+    const descriptor = descriptorOfCatalogModel(
+      model,
+      findModelProvider('deepseek')!.baseUrl!,
+      'deepseek'
+    )
 
     await expect(resolveThinkingLevel(descriptor)).resolves.toBe('high')
   })

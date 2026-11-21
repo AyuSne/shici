@@ -144,7 +144,7 @@ describe('listModelProviders', () => {
       lastVerifiedAt: '2026-11-18T09:30:00.000Z',
       source: 'custom',
       active: true,
-      defaultModel: 'deepseek-flash'
+      defaultModelRowId: expect.any(String)
     })
     expect(providers[1]).toMatchObject({
       id: 'profile-backup',
@@ -154,11 +154,11 @@ describe('listModelProviders', () => {
       lastCheckedAt: '2026-11-18T09:10:00.000Z',
       lastVerifiedAt: null,
       active: false,
-      defaultModel: 'backup-model'
+      defaultModelRowId: expect.any(String)
     })
     expect(providers[0]?.models).toEqual([
       {
-        id: providers[0]?.defaultModelId,
+        id: providers[0]?.defaultModelRowId,
         modelId: 'deepseek-flash',
         displayName: 'deepseek-flash',
         api: 'openai-completions',
@@ -171,6 +171,7 @@ describe('listModelProviders', () => {
         sort: 0
       }
     ])
+    expect(providers[1]?.models[0]?.modelId).toBe('backup-model')
     expect(providers.every((provider) => /^[a-z][a-z0-9-]*$/.test(provider.providerKey))).toBe(
       true
     )
@@ -235,6 +236,46 @@ describe('listModelProviders', () => {
       env: { MY_PROVIDER_KEY: 'env-secret' }
     }).find((provider) => provider.id === 'provider-env')
     expect(present).toMatchObject({ keyState: 'env', apiKeyMask: null })
+  })
+
+  it('四个已知协议读库都原样返回，不会被降级成别的协议', () => {
+    migratedDatabase([twoProfiles[0]!])
+
+    for (const protocol of [
+      'openai-completions',
+      'openai-responses',
+      'anthropic-messages',
+      'google-generative-ai'
+    ] as const) {
+      database.prepare('UPDATE model_provider SET protocol = ?').run(protocol)
+      database.prepare('UPDATE model_provider_model SET api = ?').run(protocol)
+
+      const provider = listModelProviders(database, { secrets, env: {} })[0]
+      expect(provider?.protocol, protocol).toBe(protocol)
+      expect(provider?.models[0]?.api, protocol).toBe(protocol)
+    }
+  })
+
+  it('库里存了不认识的协议时读成 null，不静默冒充 openai-completions', () => {
+    migratedDatabase([
+      {
+        id: 'profile-unknown',
+        name: '未知协议',
+        baseUrl: 'https://unknown.example.com',
+        model: 'unknown-model',
+        apiKeySecret: sealed('sk-unknown-key')
+      }
+    ])
+    database
+      .prepare(`UPDATE model_provider SET protocol = 'mistral-conversations'`)
+      .run()
+    database
+      .prepare(`UPDATE model_provider_model SET api = 'mistral-conversations'`)
+      .run()
+
+    const provider = listModelProviders(database, { secrets, env: {} })[0]
+    expect(provider?.protocol).toBeNull()
+    expect(provider?.models[0]?.api).toBeNull()
   })
 })
 

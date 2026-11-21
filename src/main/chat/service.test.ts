@@ -10,6 +10,7 @@ import {
   type StubScript
 } from '../../testing/sse-stub'
 import { openDatabase, type AppDatabase } from '../db/database'
+import { createBackup, restoreBackup } from '../data/backup'
 import { migrate } from '../db/migrations'
 import {
   activateModelProvider,
@@ -17,7 +18,7 @@ import {
   setDefaultProviderModel
 } from '../settings/provider-writes'
 import type { SecretStore } from '../settings/secret-store'
-import { readProviderModels } from '../settings/providers'
+import { listModelProviders, readProviderModels } from '../settings/providers'
 import type { ChatConfig } from './config'
 import { resolveChatConfig } from './config'
 import { descriptorOfCatalogModel, type ChatModelDescriptor } from './model-descriptor'
@@ -256,9 +257,46 @@ describe('createChatService', () => {
     expect(events).toEqual([
       {
         type: 'error',
-        error: { code: 'empty-response', kind: 'EMPTY_RESPONSE', detail: expect.any(String) }
+        error: {
+          code: 'empty-response',
+          kind: 'EMPTY_RESPONSE',
+          status: 200,
+          detail: expect.any(String)
+        }
       }
     ])
+  })
+
+  it('空回答也保留捕获到的状态码、request id 与 Retry-After，不丢排障信息', async () => {
+    const target = await stub({
+      kind: 'stream',
+      text: [],
+      headers: { 'x-request-id': 'req-empty', 'retry-after': '3' }
+    })
+    const service = createChatService({ resolveConfig: () => configFor(target) })
+    const { events, send, waitFor } = collector()
+
+    service.start(
+      { threadId: 'thread-1', streamId: 'stream-empty-headers', messages: [userTurn] },
+      send
+    )
+    await waitFor((current) => current.some((event) => event.type === 'error'))
+
+    expect(events).toEqual([
+      {
+        type: 'error',
+        error: {
+          code: 'empty-response',
+          kind: 'EMPTY_RESPONSE',
+          status: 200,
+          requestId: 'req-empty',
+          retryAfterMs: 3000,
+          detail: expect.any(String)
+        }
+      }
+    ])
+    // 空回答不是成功：不能因此把 provider 标成已验证。
+    expect(events.some((event) => event.type === 'done')).toBe(false)
   })
 
   it('连不上模型服务时归为网络异常，稳定分类是 TRANSPORT', async () => {
@@ -587,6 +625,74 @@ describe('内置 provider 与描述符进请求', () => {
     expect(request?.body.reasoning_effort).toBeUndefined()
   })
 
+  it('备份恢复后的内置 provider 丢了本机密钥：发送前明确报配置错误，不发任何请求', async () => {
+    const target = await stub({ kind: 'stream', text: ['不该被调用'] })
+    const providerId = addAndActivate('deepseek', 'sk-deepseek-0001')
+    // 地址指向本地 stub：如果仍在发送，请求数会立刻暴露出来。
+    pointAt(providerId, target.baseUrl)
+    const backupFile = join(directory, 'backup.db')
+    await createBackup(database, { file: backupFile, now: '2026-11-21T01:00:00.000Z' })
+    const restored = await restoreBackup(database, {
+      file: backupFile,
+      snapshotDirectory: join(directory, 'snapshots'),
+      now: '2026-11-21T02:00:00.000Z'
+    })
+    expect(restored.status).toBe('restored')
+    // 备份按设计抹掉本机密文；恢复后 provider 还在、仍是使用中。
+    expect(
+      database
+        .prepare('SELECT secret_ciphertext, source FROM model_provider WHERE id = ?')
+        .get(providerId)
+    ).toEqual({ secret_ciphertext: null, source: 'builtin' })
+
+    const config = resolveChatConfig(database, secrets, {})
+    expect(config).toMatchObject({ apiKey: '', providerId, missingCredential: true })
+
+    const service = createChatService({ resolveConfig: () => config })
+    const { events, send, waitFor } = collector()
+    service.start({ threadId: 'thread-1', streamId: 'stream-restored', messages: [userTurn] }, send)
+    await waitFor((current) => current.length > 0)
+
+    expect(events).toEqual([
+      {
+        type: 'error',
+        error: { code: 'not-configured', detail: expect.any(String) }
+      }
+    ])
+    expect(target.requests).toHaveLength(0)
+  })
+
+  it('保存了内置 provider 但没点「使用这个」时不静默改用环境变量里的另一套密钥', async () => {
+    const target = await stub({ kind: 'stream', text: ['不该被调用'] })
+    const added = addBuiltinProvider(
+      database,
+      secrets,
+      { catalogProviderId: 'deepseek', apiKey: 'sk-provider-0001' },
+      { now: '2026-11-21T00:00:00.000Z' }
+    )
+    if (added.status !== 'saved') throw new Error('没存上')
+    // 没有 activateModelProvider：provider 行存在但没有使用中。
+    const env = {
+      DEEPSEEK_API_KEY: 'sk-env-other-0002',
+      DEEPSEEK_BASE_URL: target.baseUrl,
+      DEEPSEEK_MODEL: 'env-model'
+    }
+    expect(listModelProviders(database, { secrets, env })[0]?.active).toBe(false)
+
+    const service = createChatService({
+      resolveConfig: () => resolveChatConfig(database, secrets, env)
+    })
+    const { events, send, waitFor } = collector()
+    service.start(
+      { threadId: 'thread-1', streamId: 'stream-unactivated', messages: [userTurn] },
+      send
+    )
+    await waitFor((current) => current.length > 0)
+
+    expect(events).toEqual([{ type: 'error', error: { code: 'not-configured' } }])
+    expect(target.requests).toHaveLength(0)
+  })
+
   it('两个并发请求各用各的捕获与协议状态，一个失败不污染另一个', async () => {
     const failing = await stub({
       kind: 'status',
@@ -652,7 +758,7 @@ describe('streamChatCompletion', () => {
   it('目录模型没有思考能力时省略 reasoning；有 high 时需要 high', async () => {
     const high = findModelProvider('deepseek')!
     const model = high.models[0]!
-    const descriptor = descriptorOfCatalogModel(high, model, 'http://127.0.0.1:1', 'deepseek')
+    const descriptor = descriptorOfCatalogModel(model, 'http://127.0.0.1:1', 'deepseek')
     expect(descriptor.reasoning).toBe(true)
     expect(descriptor.thinkingLevelMap?.high).toBe('high')
   })

@@ -10,9 +10,9 @@ export type ChatTurn = {
 
 /**
  * 思考强度必须显式传给模型服务：不传时服务端会回到“关闭思考”，
- * 界面上的思维链永远不会出现（已实测）。
+ * 界面上的思维链永远不会出现（已实测）。首版固定 high，唯一来源在
+ * `src/main/chat/thinking.ts` 的 `DESIRED_THINKING_LEVEL`。
  */
-export type ReasoningEffort = 'low' | 'high' | 'max'
 
 export type ChatErrorCode =
   | 'invalid-key'
