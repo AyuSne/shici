@@ -75,10 +75,19 @@ import type {
   ActivateProviderResult,
   AddBuiltinProviderRequest,
   AddBuiltinProviderResult,
+  AddProviderModelRequest,
+  CreateCustomProviderRequest,
+  CreateCustomProviderResult,
+  DeleteProviderModelRequest,
   DeleteProviderRequest,
   DeleteProviderResult,
+  ProviderModelWriteResult,
+  ReorderProviderModelsRequest,
   SetDefaultProviderModelRequest,
-  SetDefaultProviderModelResult
+  SetDefaultProviderModelResult,
+  UpdateProviderModelRequest,
+  UpdateProviderRequest,
+  UpdateProviderResult
 } from './model-providers'
 import type {
   UpdateProviderCredentialRequest,
@@ -252,6 +261,33 @@ export interface IpcContract {
     payload: AddBuiltinProviderRequest
     result: AddBuiltinProviderResult
   }
+  /** 从「自定义 API」入口创建一套 provider，至少要带一个模型。 */
+  'settings:provider-create': {
+    payload: CreateCustomProviderRequest
+    result: CreateCustomProviderResult
+  }
+  /** 只改显示名与地址：Provider ID 与协议创建后不可改。 */
+  'settings:provider-update': {
+    payload: UpdateProviderRequest
+    result: UpdateProviderResult
+  }
+  /** 模型目录增删改与排序；排序请求必须带完整顺序。 */
+  'settings:provider-model-add': {
+    payload: AddProviderModelRequest
+    result: ProviderModelWriteResult
+  }
+  'settings:provider-model-update': {
+    payload: UpdateProviderModelRequest
+    result: ProviderModelWriteResult
+  }
+  'settings:provider-model-delete': {
+    payload: DeleteProviderModelRequest
+    result: ProviderModelWriteResult
+  }
+  'settings:provider-model-reorder': {
+    payload: ReorderProviderModelsRequest
+    result: ProviderModelWriteResult
+  }
   'settings:provider-default-model': {
     payload: SetDefaultProviderModelRequest
     result: SetDefaultProviderModelResult
@@ -360,6 +396,12 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'pins:source': true,
   'settings:overview': true,
   'settings:provider-add': true,
+  'settings:provider-create': true,
+  'settings:provider-update': true,
+  'settings:provider-model-add': true,
+  'settings:provider-model-update': true,
+  'settings:provider-model-delete': true,
+  'settings:provider-model-reorder': true,
   'settings:provider-default-model': true,
   'settings:provider-activate': true,
   'settings:provider-delete': true,

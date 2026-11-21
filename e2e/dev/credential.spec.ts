@@ -327,4 +327,57 @@ test.describe('密钥来源三态与凭据编辑', () => {
       secret_ciphertext: null
     })
   })
+
+  test('自定义 API 可直接用环境变量创建（无需先存本机密钥），也能改回本机', async ({
+    launch,
+    userDataDirectory
+  }) => {
+    const stub = await createStub({ kind: 'stream', text: ['自定义环境变量回答。'] })
+    const handle = await launch({
+      env: { ...noEnvironmentFallback, E2E_CUSTOM_ENV: 'sk-e2e-custom-env' }
+    })
+    const { page } = handle
+    await openSettings(page)
+
+    await page.getByRole('button', { name: '自定义 API', exact: true }).click()
+    const form = page.locator('[data-custom-provider-form="true"]')
+    await expect(form).toBeVisible()
+    await form.getByLabel('Provider ID').fill('my-relay')
+    await form.getByLabel('显示名').fill('我的中转')
+    await form.getByLabel('自定义接口地址').fill(stub.baseUrl)
+    await form.getByRole('radio', { name: '使用环境变量' }).check()
+    await expect(form.getByLabel('自定义 API 密钥')).toHaveCount(0)
+    await form.getByLabel('环境变量名').fill('E2E_CUSTOM_ENV')
+    await form.getByLabel('首个模型 ID').fill('custom-env-model')
+    await form.getByRole('button', { name: '保存自定义提供商' }).click()
+    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+
+    const card = page.locator('[data-provider-key="my-relay"]')
+    await expect(card).toContainText('环境 · E2E_CUSTOM_ENV')
+    expect(readProviderRow(userDataDirectory, 'my-relay')).toEqual({
+      auth_mode: 'env',
+      env_var: 'E2E_CUSTOM_ENV',
+      secret_ciphertext: null
+    })
+
+    // 自定义 provider 直接用环境变量发请求。
+    await card.getByRole('button', { name: '使用这个' }).click()
+    await openChat(page)
+    await sendMessage(page, '自定义环境变量')
+    await expect(page.getByText('自定义环境变量回答。')).toBeVisible()
+    await expect.poll(() => stub.requests.length).toBe(1)
+    expect(stub.requests[0]?.headers.authorization).toBe('Bearer sk-e2e-custom-env')
+
+    // 再从环境变量改回本机：写一把新密钥，密文重新落库。
+    await openSettings(page)
+    await card.getByRole('button', { name: '编辑凭据' }).click()
+    await card.getByRole('radio', { name: '保存在本机' }).check()
+    await card.getByLabel('API 密钥').fill('sk-custom-stored-5555')
+    await card.getByRole('button', { name: '保存凭据' }).click()
+    await expect(card).toContainText('本机 · sk-·············5555')
+    expect(readProviderRow(userDataDirectory, 'my-relay')).toMatchObject({
+      auth_mode: 'stored',
+      secret_ciphertext: expect.stringMatching(/^dpapi:v1:/)
+    })
+  })
 })

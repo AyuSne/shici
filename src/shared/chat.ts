@@ -1,3 +1,5 @@
+import type { ProviderCredentialProblem } from './provider-credentials'
+
 /**
  * 对话流在渲染层与主进程之间传递的形状。渲染层只认这套事件，
  * 不认识 SSE、HTTP 状态码或具体服务商。
@@ -9,14 +11,10 @@ export type ChatTurn = {
 }
 
 /**
- * 凭据不可用的原因：与主进程 `ProviderCredentialProblem` 同构，
+ * 凭据不可用的原因：直接复用主进程的 `ProviderCredentialProblem`，
  * 渲染层只认这套，不问来源细节。
  */
-export type ChatCredentialProblem =
-  | { kind: 'stored-decrypt-failed' }
-  | { kind: 'stored-missing' }
-  | { kind: 'env-missing'; envVar: string }
-  | { kind: 'env-var-unset' }
+export type ChatCredentialProblem = ProviderCredentialProblem
 
 /**
  * 思考强度必须显式传给模型服务：不传时服务端会回到“关闭思考”，

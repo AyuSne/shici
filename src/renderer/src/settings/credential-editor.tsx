@@ -30,6 +30,10 @@ export type CredentialEditorProps = {
   storedKeyUnreadable?: boolean
   /** 目录或现有配置带出的默认环境变量名；输入框留空时用它。 */
   defaultEnvVar?: string
+  /** 自定义 API 表单用与内置表单不同的字段名，避免同页两个「API 密钥」。 */
+  apiKeyLabel?: string
+  /** 覆盖本机模式的密钥提示（如自定义 API 允许留空）。 */
+  keyHint?: string
   disabled?: boolean
   error?: string | null
 }
@@ -62,6 +66,8 @@ export function CredentialEditor({
   hasStoredKey = false,
   storedKeyUnreadable = false,
   defaultEnvVar = '',
+  apiKeyLabel = 'API 密钥',
+  keyHint,
   disabled = false,
   error = null
 }: CredentialEditorProps) {
@@ -128,10 +134,10 @@ export function CredentialEditor({
       {stored ? (
         <>
           <label className="settings-field">
-            <span>API 密钥</span>
+            <span>{apiKeyLabel}</span>
             <input
               type="password"
-              aria-label="API 密钥"
+              aria-label={apiKeyLabel}
               autoComplete="off"
               spellCheck={false}
               value={value.apiKey}
@@ -141,11 +147,12 @@ export function CredentialEditor({
             />
           </label>
           <p className="field-hint">
-            {storedKeyUnreadable
-              ? '库里的旧密文解不开，只有重填一个新密钥才能恢复使用；不会自动改用环境变量。'
-              : hasStoredKey
-                ? '已保存的密钥只显示掩码，不会回传到界面；留空表示继续用原来那把。'
-                : '密钥只经系统密钥库加密保存，保存时不联网。'}
+            {keyHint ??
+              (storedKeyUnreadable
+                ? '库里的旧密文解不开，只有重填一个新密钥才能恢复使用；不会自动改用环境变量。'
+                : hasStoredKey
+                  ? '已保存的密钥只显示掩码，不会回传到界面；留空表示继续用原来那把。'
+                  : '密钥只经系统密钥库加密保存，保存时不联网。')}
           </p>
         </>
       ) : null}

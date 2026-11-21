@@ -149,3 +149,122 @@ export type DeleteProviderResult =
       activeCleared: boolean
     }
   | { status: 'missing' }
+
+/* ---------- #63：自定义 provider 与模型目录编辑 ---------- */
+
+/** Provider ID 的精确形状：小写字母开头，单词之间只用一个连字符。 */
+export const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
+
+export function isValidProviderId(value: string): boolean {
+  return PROVIDER_ID_PATTERN.test(value)
+}
+
+/** 自定义 provider 保存时至少要带一个模型；本票先只收模型 ID。 */
+export type CustomProviderModelDraft = {
+  modelId: string
+  displayName?: string
+}
+
+export type CreateCustomProviderRequest = {
+  /** 唯一且创建后不可改。 */
+  providerId: string
+  displayName: string
+  /** 本票只开放 OpenAI Chat Completions，但值仍来自共享协议表。 */
+  protocol: ProviderProtocol
+  baseUrl: string
+  /** 密钥来源；不传按本机处理。环境模式不需要先存本机密钥。 */
+  authMode?: ProviderAuthMode
+  /** 环境变量名：环境模式必填；本机模式也保留下来备用。 */
+  envVar?: string | null
+  /**
+   * 本机模式下保存的密钥。空串表示这个地址不需要密钥（自部署 / 本地中转）。
+   * 环境模式即使带了也忽略：不加密、不落密文。
+   */
+  apiKey?: string
+  /** 自定义 provider 至少要有一个模型才能保存。 */
+  model: CustomProviderModelDraft
+}
+
+export type CustomProviderRejection =
+  | 'invalid-provider-id'
+  | 'duplicate-provider-id'
+  | 'missing-display-name'
+  | 'unsupported-protocol'
+  | 'missing-base-url'
+  | 'invalid-base-url'
+  | 'missing-model'
+  | 'missing-key'
+  | 'invalid-env-var'
+
+export type CreateCustomProviderResult =
+  | { status: 'saved'; providerId: string; providerKey: string }
+  | { status: 'rejected'; reason: CustomProviderRejection }
+
+/** 只允许改显示名与地址：Provider ID 与协议创建后不可改。 */
+export type UpdateProviderRequest = {
+  providerId: string
+  displayName: string
+  baseUrl: string
+}
+
+export type UpdateProviderRejection =
+  | 'missing-display-name'
+  | 'missing-base-url'
+  | 'invalid-base-url'
+
+export type UpdateProviderResult =
+  | { status: 'saved' }
+  | { status: 'missing' }
+  | { status: 'rejected'; reason: UpdateProviderRejection }
+
+/** 手填模型行：容量留空表示按目录/兜底处理。 */
+export type ProviderModelDraft = {
+  modelId: string
+  displayName?: string
+  contextWindow?: number | null
+  maxTokens?: number | null
+  reasoning?: boolean
+}
+
+export type AddProviderModelRequest = {
+  providerId: string
+  model: ProviderModelDraft
+}
+
+export type UpdateProviderModelRequest = {
+  providerId: string
+  modelRowId: string
+  /** 没给的容量字段保持原值；显式 null 表示清空。 */
+  model: ProviderModelDraft
+}
+
+export type DeleteProviderModelRequest = {
+  providerId: string
+  modelRowId: string
+}
+
+export type ReorderProviderModelsRequest = {
+  providerId: string
+  /** 完整的模型行顺序；必须与当前目录一一对应，否则拒绝。 */
+  modelRowIds: string[]
+}
+
+export type ProviderModelRejection =
+  | 'missing-model-id'
+  | 'duplicate-model-id'
+  | 'unknown-model'
+  | 'unknown-protocol'
+  | 'invalid-capacity'
+  /** 还是默认模型：先另选一个默认模型再删。 */
+  | 'default-model'
+  /** 目录至少留一条模型。 */
+  | 'last-model'
+  | 'order-mismatch'
+  /** OpenCode GO 这类聚合入口的目录首版只读，只能选默认模型。 */
+  | 'read-only'
+
+export type ProviderModelWriteResult =
+  | { status: 'saved' }
+  | { status: 'deleted' }
+  | { status: 'missing' }
+  | { status: 'rejected'; reason: ProviderModelRejection }

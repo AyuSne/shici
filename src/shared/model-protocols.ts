@@ -17,6 +17,24 @@ export const MODEL_PROTOCOLS = [
 
 export type ModelProtocol = (typeof MODEL_PROTOCOLS)[number]
 
+/** 界面显示名也只留一份；设置页的协议下拉与卡片文案都读这里。 */
+export const MODEL_PROTOCOL_LABELS: Record<ModelProtocol, string> = {
+  'openai-completions': 'OpenAI Chat Completions',
+  'openai-responses': 'OpenAI Responses',
+  'anthropic-messages': 'Anthropic Messages',
+  'google-generative-ai': 'Gemini API'
+}
+
+/**
+ * #63 的自定义入口本票只开放 OpenAI Chat Completions。这不是第二份协议清单：
+ * 下拉选项仍由 `MODEL_PROTOCOLS` 生成，这里只决定当前哪些选项可用。
+ */
+export const OPEN_CUSTOM_PROTOCOLS: readonly ModelProtocol[] = ['openai-completions']
+
+export function isCustomProviderProtocol(protocol: ModelProtocol): boolean {
+  return OPEN_CUSTOM_PROTOCOLS.includes(protocol)
+}
+
 export function isModelProtocol(value: unknown): value is ModelProtocol {
   return (
     typeof value === 'string' &&
