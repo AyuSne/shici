@@ -232,7 +232,6 @@ describe('createCustomProvider', () => {
   it('字段缺一不可，且只接受当前开放的协议；拒绝时一条都不写', () => {
     const rejected: Array<[Partial<CreateCustomProviderRequest>, string]> = [
       [{ displayName: '   ' }, 'missing-display-name'],
-      [{ protocol: 'anthropic-messages' }, 'unsupported-protocol'],
       [{ protocol: 'not-a-protocol' as never }, 'unsupported-protocol'],
       [{ baseUrl: '   ' }, 'missing-base-url'],
       [{ baseUrl: 'relay.example.com/v1' }, 'invalid-base-url'],

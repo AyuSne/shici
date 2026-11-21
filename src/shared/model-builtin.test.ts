@@ -7,11 +7,13 @@ import {
 } from './model-builtin'
 
 describe('内置提供商目录（批 2 + 批 3）', () => {
-  it('按固定顺序列 DeepSeek、Kimi、智谱 GLM、OpenAI、xAI 与 Google Gemini', () => {
+  it('按固定顺序列分批开放的入口', () => {
     expect(BUILTIN_PROVIDER_IDS).toEqual([
       'deepseek',
       'kimi',
       'glm',
+      'anthropic',
+      'minimax',
       'openai',
       'xai',
       'gemini'
@@ -20,6 +22,8 @@ describe('内置提供商目录（批 2 + 批 3）', () => {
       'deepseek',
       'kimi',
       'glm',
+      'anthropic',
+      'minimax',
       'openai',
       'xai',
       'gemini'
@@ -58,6 +62,20 @@ describe('内置提供商目录（批 2 + 批 3）', () => {
         protocol: 'openai-completions',
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
         envVar: 'ZAI_API_KEY'
+      },
+      {
+        id: 'anthropic',
+        displayName: 'Anthropic',
+        protocol: 'anthropic-messages',
+        baseUrl: 'https://api.anthropic.com',
+        envVar: 'ANTHROPIC_API_KEY'
+      },
+      {
+        id: 'minimax',
+        displayName: 'MiniMax',
+        protocol: 'anthropic-messages',
+        baseUrl: 'https://api.minimax.io/anthropic',
+        envVar: 'MINIMAX_API_KEY'
       },
       {
         id: 'openai',
@@ -150,6 +168,36 @@ describe('内置提供商目录（批 2 + 批 3）', () => {
     })
   })
 
+  it('Anthropic 与 MiniMax 带出各自的 Anthropic Messages 端点与模型目录', () => {
+    const anthropic = readBuiltinProviderSetup('anthropic')
+    const minimax = readBuiltinProviderSetup('minimax')
+
+    expect(anthropic?.models.length).toBeGreaterThan(0)
+    expect(anthropic?.models.map((model) => model.api)).toEqual(
+      anthropic?.models.map(() => 'anthropic-messages')
+    )
+    expect(anthropic?.models[0]).toMatchObject({
+      id: 'claude-fable-5',
+      api: 'anthropic-messages',
+      contextWindow: 1000000,
+      maxTokens: 128000,
+      reasoning: true
+    })
+
+    expect(minimax?.models.map((model) => model.id)).toEqual([
+      'MiniMax-M2.7',
+      'MiniMax-M2.7-highspeed',
+      'MiniMax-M3',
+      'MiniMax-M3.1-Flash'
+    ])
+    expect(minimax?.models[0]).toMatchObject({
+      api: 'anthropic-messages',
+      contextWindow: 204800,
+      maxTokens: 131072,
+      reasoning: true
+    })
+  })
+
   it('OpenAI 与 xAI 带出各自的 Responses 模型目录，不共用别家元数据', () => {
     const openai = readBuiltinProviderSetup('openai')
     const xai = readBuiltinProviderSetup('xai')
@@ -197,15 +245,14 @@ describe('内置提供商目录（批 2 + 批 3）', () => {
     })
   })
 
-  it('目录之外的入口（含尚未开放的协议）在本票不可从目录添加', () => {
+  it('目录之外的入口（OpenCode GO 与空值）不可从目录添加', () => {
     expect(readBuiltinProviderSetup('opencode-go')).toBeNull()
-    expect(readBuiltinProviderSetup('anthropic')).toBeNull()
     expect(readBuiltinProviderSetup('')).toBeNull()
     expect(isBuiltinProviderId('deepseek')).toBe(true)
+    expect(isBuiltinProviderId('anthropic')).toBe(true)
     expect(isBuiltinProviderId('openai')).toBe(true)
     expect(isBuiltinProviderId('xai')).toBe(true)
     expect(isBuiltinProviderId('gemini')).toBe(true)
-    expect(isBuiltinProviderId('anthropic')).toBe(false)
     expect(isBuiltinProviderId(42)).toBe(false)
   })
 })

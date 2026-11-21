@@ -116,7 +116,7 @@ test.describe('Google Gemini 内置入口与聊天', () => {
     await expect(card).toContainText('sk-·············1111')
     await expect(page.locator('body')).not.toContainText(syntheticKey)
 
-    // 自定义 API 的协议下拉里 Gemini API 已启用；仍未开放的协议保持禁用。
+    // 自定义 API 的协议下拉里，四种协议在本批次都已启用。
     await page.getByRole('button', { name: '自定义 API' }).click()
     const form = page.locator('[data-custom-provider-form="true"]')
     const protocol = form.getByLabel('协议')
@@ -126,7 +126,7 @@ test.describe('Google Gemini 内置入口与聊天', () => {
       'Gemini API'
     )
     await expect(protocol.locator('option[value="openai-completions"]')).toBeEnabled()
-    await expect(protocol.locator('option[value="anthropic-messages"]')).toBeDisabled()
+    await expect(protocol.locator('option[value="anthropic-messages"]')).toBeEnabled()
 
     // Esc 停止：保留已输出内容、标「未完成」，不再补 error / done。
     stub.setScript({ kind: 'hang', thinking: ['再想。'], text: ['先写到这里'] })
