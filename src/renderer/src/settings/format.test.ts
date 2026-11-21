@@ -226,7 +226,7 @@ describe('测试连接的结果文案', () => {
     ['timeout', { kind: 'TIMEOUT' }, '检查网络'],
     ['network', { kind: 'TRANSPORT' }, '检查网络'],
     ['empty-response', { kind: 'EMPTY_RESPONSE' }, '空回答'],
-    ['unsupported-protocol', {}, '协议'],
+    ['unsupported-protocol', {}, '新建一套使用本版支持协议的提供商'],
     ['no-model', {}, '模型目录']
   ] as const)('%s 给出下一步动作', (reason, error, action) => {
     expect(providerTestFailureText(failure(reason, error))).toContain(action)

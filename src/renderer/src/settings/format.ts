@@ -103,7 +103,7 @@ export function providerTestActionText(result: ProviderTestFailure): string | nu
     case 'missing-credential':
       return credentialActionText(result.error.credential)
     case 'unsupported-protocol':
-      return '到设置里为这套提供商换一个本版支持的协议。'
+      return '到设置 → 模型服务里新建一套使用本版支持协议的提供商，再切换使用。'
     case 'no-model':
       return '先在这套提供商的模型目录里加一条模型。'
     case 'unknown':
