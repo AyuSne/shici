@@ -8,6 +8,7 @@ import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate } from '../db/migrations'
 import { fetchProviderModels, modelsListEndpoint } from './model-discovery'
 import { createCustomProvider } from './provider-editing'
+import { readProviderModels } from './providers'
 import { addBuiltinProvider } from './provider-writes'
 import type { SecretStore } from './secret-store'
 
@@ -61,7 +62,7 @@ describe('OpenAI 协议模型列表', () => {
           displayName: 'alpha',
           contextWindow: null,
           maxTokens: null,
-          reasoning: false,
+          reasoning: null,
           origin: 'remote'
         },
         {
@@ -69,7 +70,7 @@ describe('OpenAI 协议模型列表', () => {
           displayName: 'beta',
           contextWindow: null,
           maxTokens: null,
-          reasoning: false,
+          reasoning: null,
           origin: 'remote'
         }
       ]
@@ -78,6 +79,33 @@ describe('OpenAI 协议模型列表', () => {
     expect(stub.requests[0]?.method).toBe('GET')
     expect(stub.requests[0]?.url).toBe('/relay/openai/v1/models')
     expect(stub.requests[0]?.headers.authorization).toBe('Bearer sk-synthetic-0001')
+  })
+
+  it('上游明确给出思考能力时如实保留；没有字段就是未知，不伪造 false', async () => {
+    const stub = await stubWith({
+      body: JSON.stringify({
+        data: [
+          { id: 'reasoner', reasoning: true },
+          { id: 'plain-model', reasoning: false },
+          { id: 'unknown-model' }
+        ]
+      })
+    })
+
+    const result = await fetchProviderModels(database, secrets, {}, {
+      source: 'custom',
+      protocol: 'openai-completions',
+      baseUrl: stub.baseUrl,
+      authMode: 'stored',
+      apiKey: 'sk-synthetic-0009'
+    })
+
+    if (result.status !== 'fetched') throw new Error('unreachable')
+    expect(result.candidates.map((candidate) => candidate.reasoning)).toEqual([
+      true,
+      false,
+      null
+    ])
   })
 
   it('OpenAI Responses：同一套 GET {base}/models 与 Bearer 头，不追加 chat 路径', async () => {
@@ -125,7 +153,7 @@ describe('Anthropic 协议模型列表', () => {
           displayName: 'Claude Sonnet 4.5',
           contextWindow: null,
           maxTokens: null,
-          reasoning: false,
+          reasoning: null,
           origin: 'remote'
         }
       ]
@@ -196,7 +224,7 @@ describe('Gemini 协议模型列表', () => {
           displayName: 'Gemini 2.5 Pro',
           contextWindow: 1_048_576,
           maxTokens: 65_536,
-          reasoning: false,
+          reasoning: null,
           origin: 'remote'
         },
         {
@@ -204,7 +232,7 @@ describe('Gemini 协议模型列表', () => {
           displayName: 'Gemini 2.5 Flash',
           contextWindow: 1_000_000,
           maxTokens: 8_192,
-          reasoning: false,
+          reasoning: null,
           origin: 'remote'
         }
       ]
@@ -282,7 +310,7 @@ function snapshot(): unknown {
 
 function createStoredRelay(patch: Partial<Parameters<typeof createCustomProvider>[2]> = {}) {
   const result = createCustomProvider(database, secrets, {
-    providerId: 'relay-seeded',
+    providerKey: 'relay-seeded',
     displayName: 'Seeded Relay',
     protocol: 'openai-completions',
     baseUrl: 'https://relay.example.com/v1',
@@ -485,6 +513,27 @@ describe('自定义 API 凭据优先级', () => {
     expect(stub.requests).toHaveLength(0)
   })
 
+  it('环境变量名撞上对象继承属性时按缺失点名变量，不抛 TypeError 也不发请求', async () => {
+    const stub = await stubWith({ body: '{"data":[]}' })
+
+    for (const envVar of ['constructor', '__proto__']) {
+      await expect(
+        fetchProviderModels(database, secrets, {}, requestOf({
+          baseUrl: stub.baseUrl,
+          authMode: 'env',
+          envVar
+        })),
+        envVar
+      ).resolves.toEqual({
+        status: 'rejected',
+        reason: 'missing-credential',
+        problem: 'env-missing',
+        envVar
+      })
+    }
+    expect(stub.requests).toHaveLength(0)
+  })
+
   it('本机密文解不开：明确 credential-error，不回落环境变量，也不发请求', async () => {
     const stub = await stubWith({ body: '{"data":[]}' })
     const providerId = createStoredRelay()
@@ -507,18 +556,44 @@ describe('自定义 API 凭据优先级', () => {
     expect(stub.requests).toHaveLength(0)
   })
 
-  it('新建未保存的自定义 API 可以无密钥（本地服务），不会借用任何已存密钥', async () => {
+  it('新建未保存的自定义 API 缺少密钥时明确报缺失，不匿名请求', async () => {
     const stub = await stubWith({ body: JSON.stringify({ data: [{ id: 'local-model' }] }) })
     createStoredRelay()
 
     const result = await fetchProviderModels(database, secrets, {}, requestOf({
       baseUrl: stub.baseUrl,
       authMode: 'stored',
+      apiKey: '   '
+    }))
+
+    expect(result).toEqual({
+      status: 'rejected',
+      reason: 'missing-credential',
+      problem: 'stored-missing'
+    })
+    expect(stub.requests).toHaveLength(0)
+  })
+
+  it('编辑一套没有密文的自定义 provider 时也报缺失，不借用任何密钥', async () => {
+    const stub = await stubWith({ body: JSON.stringify({ data: [{ id: 'relay-model' }] }) })
+    const providerId = createStoredRelay()
+    database
+      .prepare('UPDATE model_provider SET secret_ciphertext = NULL WHERE id = ?')
+      .run(providerId)
+
+    const result = await fetchProviderModels(database, secrets, {}, requestOf({
+      providerId,
+      baseUrl: stub.baseUrl,
+      authMode: 'stored',
       apiKey: ''
     }))
 
-    expect(result).toMatchObject({ status: 'fetched' })
-    expect(stub.requests[0]?.headers.authorization).toBeUndefined()
+    expect(result).toEqual({
+      status: 'rejected',
+      reason: 'missing-credential',
+      problem: 'stored-missing'
+    })
+    expect(stub.requests).toHaveLength(0)
   })
 
   it('providerId 指向内置 provider 时拒绝跨 provider 借密钥，不发请求', async () => {
@@ -552,6 +627,47 @@ describe('自定义 API 凭据优先级', () => {
 
     expect(result).toEqual({ status: 'rejected', reason: 'unknown-provider' })
     expect(stub.requests).toHaveLength(0)
+  })
+})
+
+describe('获取结果交给保存路径', () => {
+  it('列表没给思考能力时，保存已知模型仍沿用本地目录的思考能力与 compat', async () => {
+    const stub = await stubWith({
+      body: JSON.stringify({ data: [{ id: 'deepseek-v4-pro' }] })
+    })
+    const fetched = await fetchProviderModels(database, secrets, {}, requestOf({
+      baseUrl: stub.baseUrl,
+      authMode: 'stored',
+      apiKey: 'sk-synthetic-0010'
+    }))
+    if (fetched.status !== 'fetched') throw new Error('unreachable')
+    expect(fetched.candidates[0]).toMatchObject({
+      modelId: 'deepseek-v4-pro',
+      reasoning: null
+    })
+
+    // 界面在 reasoning 为 null 时不把 false 塞进草稿；保存时由目录/兜底补上。
+    const created = createCustomProvider(database, secrets, {
+      providerKey: 'fetched-known',
+      displayName: 'Fetched Known',
+      protocol: 'openai-completions',
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-save-synthetic',
+      model: {
+        modelId: 'deepseek-v4-pro',
+        displayName: 'DeepSeek V4 Pro',
+        source: 'fetched'
+      }
+    })
+    if (created.status !== 'saved') throw new Error(JSON.stringify(created))
+
+    expect(readProviderModels(database, created.providerId)[0]).toMatchObject({
+      modelId: 'deepseek-v4-pro',
+      reasoning: true,
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+      compat: { thinkingFormat: 'deepseek' }
+    })
   })
 })
 
@@ -638,7 +754,7 @@ describe('请求与解析失败', () => {
           displayName: 'alpha',
           contextWindow: null,
           maxTokens: null,
-          reasoning: false,
+          reasoning: null,
           origin: 'remote'
         }
       ]
@@ -698,7 +814,7 @@ describe('4 MiB 实际字节边界', () => {
           displayName: 'big-model',
           contextWindow: null,
           maxTokens: null,
-          reasoning: false,
+          reasoning: null,
           origin: 'remote'
         }
       ]

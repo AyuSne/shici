@@ -4,6 +4,7 @@ import {
   combineCustomProviderModels,
   discoveryFailureText,
   discoverySourceHint,
+  providerModelDraftOf,
   selectedCandidates,
   toggleSelectedModelId
 } from './model-discovery'
@@ -28,6 +29,16 @@ const beta: FetchedModelCandidate = {
   contextWindow: null,
   maxTokens: null,
   reasoning: false,
+  origin: 'remote'
+}
+
+/** 上游列表没给思考能力：不能伪造 false 把本地目录的 true 覆盖掉。 */
+const gamma: FetchedModelCandidate = {
+  modelId: 'gamma',
+  displayName: 'Gamma',
+  contextWindow: 64_000,
+  maxTokens: 4_096,
+  reasoning: null,
   origin: 'remote'
 }
 
@@ -98,6 +109,20 @@ describe('候选勾选与草稿合并', () => {
 
   it('什么都没填/没勾选时草稿为空，由保存校验拦住', () => {
     expect(combineCustomProviderModels('   ', [])).toEqual([])
+  })
+
+  it('上游没给思考能力时草稿不带 reasoning，由目录/发送层兜底', () => {
+    const draft = providerModelDraftOf(gamma)
+    expect(draft).toEqual({
+      modelId: 'gamma',
+      displayName: 'Gamma',
+      contextWindow: 64_000,
+      maxTokens: 4_096,
+      source: 'fetched'
+    })
+    expect(draft).not.toHaveProperty('reasoning')
+    // 上游明确给了 false 就保留，不擅自改成 true。
+    expect(providerModelDraftOf(beta).reasoning).toBe(false)
   })
 })
 

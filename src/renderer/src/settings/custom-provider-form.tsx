@@ -112,7 +112,7 @@ export function CustomProviderForm({
         return
       }
       const result = await createCustomProvider({
-        providerId: providerId.trim(),
+        providerKey: providerId.trim(),
         displayName: displayName.trim(),
         protocol,
         baseUrl: baseUrl.trim(),
@@ -271,7 +271,7 @@ export function CustomProviderForm({
         value={credential}
         onChange={setCredential}
         apiKeyLabel="自定义 API 密钥"
-        keyHint="留空表示这个地址不需要密钥（自部署 / 本地中转）；密钥只经系统密钥库加密保存。"
+        keyHint="可以先留空存成「缺失」草稿；发送或获取模型前必须补上密钥，不会匿名请求。密钥只经系统密钥库加密保存。"
         disabled={busy}
       />
       <p className="field-hint">

@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { CatalogModel } from '../../shared/model-catalog'
-import { findProviderCatalogModel } from '../../shared/model-directory'
+import {
+  findProviderCatalogModel,
+  isModelDirectoryReadOnly
+} from '../../shared/model-directory'
 import {
   isCustomProviderProtocol,
   isModelProtocol
@@ -77,12 +80,17 @@ function modelIdExists(
   return row !== undefined
 }
 
+/**
+ * 容量入参只接受正的安全整数。0 不是「未知」——未知用 undefined/null；把 0
+ * 写进请求限制会让上下文或输出上限直接失效，负数、小数与超出安全整数的值
+ * 同样不能用。校验失败整笔拒绝。
+ */
 function capacitiesValid(draft: ProviderModelDraft): boolean {
   return [draft.contextWindow, draft.maxTokens].every(
     (value) =>
       value === undefined ||
       value === null ||
-      (Number.isInteger(value) && value >= 0)
+      (Number.isSafeInteger(value) && value > 0)
   )
 }
 
@@ -90,21 +98,21 @@ function jsonOrNull(value: unknown): string | null {
   return value === undefined || value === null ? null : JSON.stringify(value)
 }
 
-/**
- * #59 的聚合入口 OpenCode GO 首版只读：能选默认模型，不能在这个版本手加、
- * 改、删或重排模型行。其它内置入口与自定义 provider 都可编辑。
- */
-export function isModelDirectoryReadOnly(
-  provider: Pick<ModelProviderRecord, 'catalogProviderId'>
-): boolean {
-  return provider.catalogProviderId === 'opencode-go'
-}
-
 function inputOf(catalog: CatalogModel | null): ModelInput {
   if (catalog === null) {
     return 'text'
   }
   return catalog.input.includes('text') ? 'text' : 'image'
+}
+
+type ModelMetadata = {
+  displayName: string
+  contextWindow: number | null
+  maxTokens: number | null
+  input: ModelInput
+  reasoning: boolean
+  thinkingLevelMap: string | null
+  compat: string | null
 }
 
 /**
@@ -115,15 +123,7 @@ function inputOf(catalog: CatalogModel | null): ModelInput {
 function metadataOf(
   provider: ModelProviderRecord,
   draft: ProviderModelDraft
-): {
-  displayName: string
-  contextWindow: number | null
-  maxTokens: number | null
-  input: ModelInput
-  reasoning: boolean
-  thinkingLevelMap: string | null
-  compat: string | null
-} {
+): ModelMetadata {
   const catalog = findProviderCatalogModel(
     {
       source: provider.source,
@@ -148,20 +148,78 @@ function metadataOf(
   }
 }
 
+/**
+ * 编辑模型行时的元数据：
+ *
+ * - 模型 ID 没变：这是普通编辑，保留已保存的隐藏元数据（用户此前调好的
+ *   thinking_level_map / compat / input）与未显式改动的容量；
+ * - 模型 ID 变了：身份换了，旧模型的兼容开关与思考映射不再成立。按新 ID 的
+ *   目录条目重算；目录里没有就清空，发送时走通用兜底。用户显式填的容量与
+ *   思考开关仍优先。
+ */
+function updatedMetadataOf(
+  provider: ModelProviderRecord,
+  existing: ModelProviderModelRecord,
+  draft: ProviderModelDraft
+): ModelMetadata & { baseUrl: string | null } {
+  const modelId = draft.modelId.trim()
+  if (modelId === existing.modelId) {
+    return {
+      displayName: draft.displayName?.trim() || existing.displayName,
+      contextWindow:
+        draft.contextWindow === undefined ? existing.contextWindow : draft.contextWindow,
+      maxTokens: draft.maxTokens === undefined ? existing.maxTokens : draft.maxTokens,
+      input: existing.input,
+      reasoning: draft.reasoning ?? existing.reasoning,
+      thinkingLevelMap: jsonOrNull(existing.thinkingLevelMap),
+      compat: jsonOrNull(existing.compat),
+      baseUrl: existing.baseUrl
+    }
+  }
+
+  const catalog = findProviderCatalogModel(
+    {
+      source: provider.source,
+      catalogProviderId: provider.catalogProviderId,
+      protocol: provider.protocol
+    },
+    modelId
+  )
+  return {
+    displayName: draft.displayName?.trim() || catalog?.name || modelId,
+    contextWindow:
+      draft.contextWindow === undefined
+        ? (catalog?.contextWindow ?? null)
+        : draft.contextWindow,
+    maxTokens:
+      draft.maxTokens === undefined ? (catalog?.maxTokens ?? null) : draft.maxTokens,
+    input: inputOf(catalog),
+    // 未知模型没有可借用的思考能力；用户显式勾选/取消优先。
+    reasoning: draft.reasoning ?? catalog?.reasoning ?? false,
+    thinkingLevelMap: jsonOrNull(catalog?.thinkingLevelMap),
+    compat: jsonOrNull(catalog?.compat),
+    // 逐模型地址属于旧身份；换模型后回落到 provider 的地址。
+    baseUrl: null
+  }
+}
+
+/**
+ * 模型行的唯一 INSERT：创建自定义 provider 时批量写入与后来「加入模型」
+ * 都走这里。列序、目录元数据与来源只写一份，避免加列时改漏一处。
+ */
 function insertModelRow(
   database: AppDatabase,
-  providerId: string,
+  provider: ModelProviderRecord,
   draft: ProviderModelDraft,
   sort: number,
   now: string,
-  source: 'manual' | 'fetched' = 'manual'
+  source: 'manual' | 'fetched',
+  rowId = randomUUID()
 ): string {
-  const provider = readModelProvider(database, providerId)
-  if (provider === null || provider.protocol === null) {
-    throw new Error(`provider ${providerId} 没有可用的协议`)
+  if (provider.protocol === null) {
+    throw new Error(`provider ${provider.id} 没有可用的协议`)
   }
   const metadata = metadataOf(provider, draft)
-  const rowId = randomUUID()
   database
     .prepare(
       `INSERT INTO model_provider_model (
@@ -171,7 +229,7 @@ function insertModelRow(
     )
     .run(
       rowId,
-      providerId,
+      provider.id,
       draft.modelId.trim(),
       metadata.displayName,
       provider.protocol,
@@ -240,7 +298,7 @@ export function createCustomProvider(
   request: CreateCustomProviderRequest,
   options?: ProviderEditingOptions
 ): CreateCustomProviderResult {
-  const providerKey = request.providerId.trim()
+  const providerKey = request.providerKey.trim()
   if (!isValidProviderId(providerKey)) {
     return { status: 'rejected', reason: 'invalid-provider-id' }
   }
@@ -274,8 +332,8 @@ export function createCustomProvider(
     authMode: request.authMode,
     envVar: request.envVar,
     apiKey: request.apiKey,
-    // 自定义 API 可以是无需密钥的本地服务；内置目录添加仍必须填 key。
-    allowEmptyStoredKey: true
+    // 自定义 API 可以先存成「缺失」草稿；发送前仍必须补密钥，不匿名请求。
+    allowMissingStoredKey: true
   })
   if (!credential.ok) {
     return { status: 'rejected', reason: credential.reason }
@@ -320,31 +378,7 @@ export function createCustomProvider(
       if (rowId === undefined) {
         throw new Error('模型行 id 缺失')
       }
-      const metadata = metadataOf(provider, draft)
-      database
-        .prepare(
-          `INSERT INTO model_provider_model (
-             id, provider_id, model_id, display_name, api, base_url, context_window, max_tokens,
-             input, reasoning, thinking_level_map, compat, source, sort, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          rowId,
-          providerId,
-          draft.modelId,
-          metadata.displayName,
-          request.protocol,
-          metadata.contextWindow,
-          metadata.maxTokens,
-          metadata.input,
-          metadata.reasoning ? 1 : 0,
-          metadata.thinkingLevelMap,
-          metadata.compat,
-          draft.source,
-          index,
-          now,
-          now
-        )
+      insertModelRow(database, provider, draft, index, now, draft.source, rowId)
     })
   })
   insert()
@@ -456,7 +490,7 @@ export function addProviderModel(
     const rowIds = drafts.map((draft, index) =>
       insertModelRow(
         database,
-        provider.id,
+        provider,
         draft,
         baseSort + index,
         now,
@@ -513,21 +547,25 @@ export function updateProviderModel(
   }
 
   const now = nowOf(options)
+  const metadata = updatedMetadataOf(provider, existing, request.model)
   database
     .prepare(
       `UPDATE model_provider_model
-          SET model_id = ?, display_name = ?, context_window = ?, max_tokens = ?,
-              reasoning = ?, updated_at = ?
+          SET model_id = ?, display_name = ?, base_url = ?, context_window = ?,
+              max_tokens = ?, input = ?, reasoning = ?, thinking_level_map = ?,
+              compat = ?, updated_at = ?
         WHERE id = ? AND provider_id = ?`
     )
     .run(
       modelId,
-      request.model.displayName?.trim() || modelId,
-      request.model.contextWindow === undefined
-        ? existing.contextWindow
-        : request.model.contextWindow,
-      request.model.maxTokens === undefined ? existing.maxTokens : request.model.maxTokens,
-      (request.model.reasoning ?? existing.reasoning) ? 1 : 0,
+      metadata.displayName,
+      metadata.baseUrl,
+      metadata.contextWindow,
+      metadata.maxTokens,
+      metadata.input,
+      metadata.reasoning ? 1 : 0,
+      metadata.thinkingLevelMap,
+      metadata.compat,
       now,
       existing.id,
       provider.id

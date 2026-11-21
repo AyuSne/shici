@@ -92,7 +92,8 @@ async function runStream(
   send: ChatUpdateSender,
   controller: AbortController,
   config: ChatConfig | null
-): Promise<void> {  if (!config) {
+): Promise<void> {
+  if (!config) {
     send({
       streamId: request.streamId,
       event: { type: 'error', error: { code: 'not-configured' } }

@@ -65,19 +65,13 @@ export function resolveChatConfig(
       // 库里存了本版不认识的协议：明确没有可用配置，不拿别的协议去发请求。
       return null
     }
-    // 配置写着「用本机密钥」或「读环境变量」，但凭据确实拿不到：明确报「还没有配置」，
-    // 不拿空密钥去撞服务端，也不换源。
+    // 三态是严格的：配置写着「用本机密钥」或「读环境变量」，但凭据确实拿不到，
+    // 就明确报配置错误，不拿空密钥去撞服务端，也不换源。
     //
-    // 从来没存过密钥的 custom 配置（迁移来的本地 Ollama）仍允许无密钥发送；其余缺失
-    // 都明确报错：环境模式点名变量，坏密文说解不开，绝不悄悄改用另一套凭据。
-    const keylessEndpoint =
-      active.credential.state === 'missing' &&
-      active.credential.problem.kind === 'stored-missing' &&
-      active.provider.source === 'custom'
+    // 自定义 provider 也不例外：保存时可以先把空密钥存成「缺失」草稿，
+    // 但发送前必须补上；从本机清除密钥或备份恢复后同样是缺失，绝不匿名发送。
     const credentialProblem =
-      active.credential.state === 'missing' && !keylessEndpoint
-        ? active.credential.problem
-        : undefined
+      active.credential.state === 'missing' ? active.credential.problem : undefined
     return {
       apiKey: active.credential.state === 'missing' ? '' : active.credential.apiKey,
       // 模型行可以覆盖 provider 的地址（聚合网关按模型带地址）。

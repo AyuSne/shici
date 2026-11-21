@@ -171,8 +171,11 @@ export type CustomProviderModelDraft = {
 }
 
 export type CreateCustomProviderRequest = {
-  /** 唯一且创建后不可改。 */
-  providerId: string
+  /**
+   * 唯一且创建后不可改的 Provider ID：落库到 `provider_key` 列，是配置与
+   * 凭据引用的稳定身份。返回结果里的 `providerId` 是库内 UUID，两者不同。
+   */
+  providerKey: string
   displayName: string
   /** 本票只开放 OpenAI Chat Completions，但值仍来自共享协议表。 */
   protocol: ProviderProtocol
@@ -182,7 +185,8 @@ export type CreateCustomProviderRequest = {
   /** 环境变量名：环境模式必填；本机模式也保留下来备用。 */
   envVar?: string | null
   /**
-   * 本机模式下保存的密钥。空串表示这个地址不需要密钥（自部署 / 本地中转）。
+   * 本机模式下保存的密钥。空串表示先存成「缺失」草稿：保存不联网，卡片会
+   * 明确显示缺失；发送或获取模型前必须补上密钥，绝不会匿名请求。
    * 环境模式即使带了也忽略：不加密、不落密文。
    */
   apiKey?: string

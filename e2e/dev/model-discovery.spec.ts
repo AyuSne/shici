@@ -189,7 +189,28 @@ test.describe('获取可用模型', () => {
 
     // 键盘勾选第一个候选，再点选 beta；gamma 勾了又取消，最终只保存 alpha + beta。
     const alphaCheckbox = form.getByRole('checkbox', { name: '选择模型 relay-alpha' })
-    await alphaCheckbox.focus()
+    // 候选复选框的键盘焦点必须是 2px 琥珀描边（token §7），不是浏览器默认焦点框。
+    await form.getByRole('button', { name: '获取可用模型' }).focus()
+    await page.keyboard.press('Tab')
+    await expect(alphaCheckbox).toBeFocused()
+    // 125% 缩放下 Chromium 把 2px 描边折算成 1.6 CSS px；断言的是规则本身：
+    // 键盘焦点可匹配 :focus-visible、实线琥珀描边、约 2px 宽与偏移。
+    const focusStyle = await alphaCheckbox.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        focusVisible: element.matches(':focus-visible'),
+        style: style.outlineStyle,
+        color: style.outlineColor,
+        width: Number.parseFloat(style.outlineWidth),
+        offset: Number.parseFloat(style.outlineOffset)
+      }
+    })
+    expect(focusStyle.focusVisible).toBe(true)
+    expect(focusStyle.style).toBe('solid')
+    expect(focusStyle.color).toBe('rgb(143, 90, 26)')
+    expect(focusStyle.width).toBeGreaterThanOrEqual(1.5)
+    expect(focusStyle.width).toBeLessThanOrEqual(2)
+    expect(focusStyle.offset).toBeGreaterThanOrEqual(1.5)
     await page.keyboard.press('Space')
     await expect(alphaCheckbox).toBeChecked()
     await form.getByRole('checkbox', { name: '选择模型 relay-beta' }).check()

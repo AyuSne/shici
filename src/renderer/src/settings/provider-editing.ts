@@ -12,6 +12,7 @@ import type {
 } from '../../../shared/model-providers'
 import { isValidProviderId } from '../../../shared/model-providers'
 import { modelCapacityText, modelThinkingText } from './format'
+import { READ_ONLY_DIRECTORY_REJECTION } from './messages'
 
 /**
  * 设置页「自定义 provider / 模型目录编辑」的纯显示与校验逻辑。
@@ -78,13 +79,7 @@ export function modelIdError(
     : null
 }
 
-/** OpenCode GO 这类聚合入口的目录首版只读，只能选默认模型。 */
-export function modelDirectoryReadOnly(
-  provider: Pick<ModelProviderSummary, 'catalogProviderId'>
-): boolean {
-  return provider.catalogProviderId === 'opencode-go'
-}
-
+/** 模型 ID 是否在当前 provider 的目录里；与主进程保存时的查找规则一致。 */
 export function modelInDirectory(
   provider: ProviderCatalogIdentity,
   modelId: string
@@ -157,14 +152,14 @@ export function moveModelId(
   return next
 }
 
-/** 空输入表示「目录未提供」，交给发送层兜底；其余只接受非负整数。 */
+/** 空输入表示「目录未提供」，交给发送层兜底；其余只接受正的安全整数。 */
 export function parseCapacity(value: string): number | null | 'invalid' {
   const trimmed = value.trim()
   if (trimmed === '') {
     return null
   }
   const parsed = Number(trimmed)
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : 'invalid'
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 'invalid'
 }
 
 export function customProviderErrorText(reason: CustomProviderRejection): string {
@@ -186,7 +181,7 @@ export function customProviderErrorText(reason: CustomProviderRejection): string
     case 'duplicate-model-id':
       return '候选里有重复的模型 ID；刷新后重新勾选。'
     case 'invalid-capacity':
-      return '容量要填 0 或正整数。'
+      return '容量要填正整数。'
     case 'missing-key':
       return '本机模式要填一个 API 密钥；或改用环境变量。'
     case 'invalid-env-var':
@@ -216,7 +211,7 @@ export function modelWriteErrorText(reason: ProviderModelRejection): string {
     case 'unknown-protocol':
       return '这套 provider 的协议无法识别，不能编辑模型目录。'
     case 'invalid-capacity':
-      return '容量要填 0 或正整数。'
+      return '容量要填正整数。'
     case 'default-model':
       return '这是默认模型：先另选一个默认模型，再删除。'
     case 'last-model':
@@ -224,6 +219,6 @@ export function modelWriteErrorText(reason: ProviderModelRejection): string {
     case 'order-mismatch':
       return '模型目录刚刚变过，刷新后再排序。'
     case 'read-only':
-      return 'OpenCode GO 的模型目录首版只读，只能选默认模型。'
+      return READ_ONLY_DIRECTORY_REJECTION
   }
 }

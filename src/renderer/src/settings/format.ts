@@ -92,13 +92,20 @@ export function modelCapacityText(
 }
 
 export function modelThinkingText(
-  model: Pick<ModelProviderModelSummary, 'reasoning'>
+  model: Pick<ModelProviderModelSummary, 'reasoning'> | { reasoning: boolean | null }
 ): string {
+  if (model.reasoning === null) {
+    return '思考能力未知'
+  }
   return model.reasoning ? '支持思考' : '不支持思考'
 }
 
 /** 模型选择器每行的元数据；目录只读，这里只负责说清。 */
-export function modelMetaText(model: ModelProviderModelSummary): string {
+export function modelMetaText(
+  model: Pick<ModelProviderModelSummary, 'contextWindow' | 'maxTokens'> & {
+    reasoning: boolean | null
+  }
+): string {
   return `${modelCapacityText(model)} · ${modelThinkingText(model)}`
 }
 

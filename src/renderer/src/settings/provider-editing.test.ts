@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import { isModelDirectoryReadOnly } from '../../../shared/model-directory'
 import {
   baseUrlError,
   customProviderErrorText,
   displayNameError,
   modelDirectoryHint,
-  modelDirectoryReadOnly,
   modelIdError,
   modelInDirectory,
   modelWriteErrorText,
@@ -93,11 +93,11 @@ describe('modelDirectoryHint 与 modelInDirectory', () => {
   })
 })
 
-describe('modelDirectoryReadOnly', () => {
+describe('isModelDirectoryReadOnly', () => {
   it('只对 OpenCode GO 的聚合目录返回只读，内置单协议与自定义都可编辑', () => {
-    expect(modelDirectoryReadOnly({ catalogProviderId: 'opencode-go' })).toBe(true)
-    expect(modelDirectoryReadOnly({ catalogProviderId: 'deepseek' })).toBe(false)
-    expect(modelDirectoryReadOnly({ catalogProviderId: null })).toBe(false)
+    expect(isModelDirectoryReadOnly({ catalogProviderId: 'opencode-go' })).toBe(true)
+    expect(isModelDirectoryReadOnly({ catalogProviderId: 'deepseek' })).toBe(false)
+    expect(isModelDirectoryReadOnly({ catalogProviderId: null })).toBe(false)
   })
 })
 
@@ -123,13 +123,14 @@ describe('协议下拉文案', () => {
 })
 
 describe('容量输入解析', () => {
-  it('空串表示目录未提供，非负整数按数字，其余算非法', () => {
+  it('空串表示目录未提供；只接受正的安全整数', () => {
     expect(parseCapacity('')).toBeNull()
     expect(parseCapacity('   ')).toBeNull()
     expect(parseCapacity('1000000')).toBe(1000000)
-    expect(parseCapacity('0')).toBe(0)
-    expect(parseCapacity('-1')).toBe('invalid')
+    expect(parseCapacity('0')).toBe('invalid')
     expect(parseCapacity('1.5')).toBe('invalid')
+    expect(parseCapacity('9007199254740993')).toBe('invalid')
+    expect(parseCapacity('-1')).toBe('invalid')
     expect(parseCapacity('abc')).toBe('invalid')
   })
 })

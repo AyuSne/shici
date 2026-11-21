@@ -1,4 +1,5 @@
 import { useState, type DragEvent } from 'react'
+import { isModelDirectoryReadOnly } from '../../../shared/model-directory'
 import type { ModelProviderModelSummary, ModelProviderSummary } from '../../../shared/model-providers'
 import {
   addProviderModel,
@@ -9,9 +10,9 @@ import {
 } from '../api'
 import { failureText } from '../errors'
 import { modelMetaText } from './format'
+import { readOnlyDirectoryHint } from './messages'
 import {
   modelDirectoryHint,
-  modelDirectoryReadOnly,
   modelIdError,
   modelInDirectory,
   modelWriteErrorText,
@@ -45,7 +46,7 @@ export function ProviderModelEditor({
 }: ProviderModelEditorProps) {
   const models = provider.models
   const modelIds = models.map((model) => model.modelId)
-  const readOnly = modelDirectoryReadOnly(provider)
+  const readOnly = isModelDirectoryReadOnly(provider)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [addModelId, setAddModelId] = useState('')
@@ -471,9 +472,7 @@ export function ProviderModelEditor({
       )}
 
       {readOnly ? (
-        <p className="settings-hint">
-          OpenCode GO 的模型目录首版只读：可以选默认模型，不能手加、修改、删除或排序。
-        </p>
+        <p className="settings-hint">{readOnlyDirectoryHint('edit')}</p>
       ) : (
         <div className="model-add-form">
           <label className="settings-field">

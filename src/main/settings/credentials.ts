@@ -4,6 +4,7 @@ import {
   type ProviderCredentialProblem,
   type UpdateProviderCredentialRequest
 } from '../../shared/provider-credentials'
+import { readEnvValue } from '../process-env'
 import type { ModelProviderRecord } from './providers'
 import type { SecretStore } from './secret-store'
 
@@ -40,8 +41,10 @@ export function resolveProviderCredential(
     if (name === '') {
       return { state: 'missing', problem: { kind: 'env-var-unset' } }
     }
-    const value = options.env?.[name]?.trim() ?? ''
-    if (value === '') {
+    // 变量名可编辑：继承属性（constructor/__proto__）与非字符串值都算没设置，
+    // 不能在这里对函数调 trim。
+    const value = readEnvValue(options.env, name)
+    if (value === null) {
       return { state: 'missing', problem: { kind: 'env-missing', envVar: name } }
     }
     return { state: 'env', apiKey: value, envVar: name }
@@ -76,10 +79,11 @@ export type CredentialInput = {
   envVar?: string | null
   apiKey?: string | null
   /**
-   * 自定义 API 可能指向不需要密钥的本地服务（如 Ollama）：允许本机模式
-   * 不填 key，密文列留空。内置目录添加不传这个开关，仍然必须填 key。
+   * 自定义 API 可以先留空存成「缺失」草稿：保存本身不联网，卡片会明确写
+   * 「缺失」，发送或获取模型前仍必须补上密钥，绝不会匿名请求。内置目录
+   * 添加不传这个开关，仍然必须填 key。
    */
-  allowEmptyStoredKey?: boolean
+  allowMissingStoredKey?: boolean
 }
 
 export type PrepareCredentialResult =
@@ -111,7 +115,7 @@ export function prepareProviderCredential(
 
   const apiKey = input.apiKey?.trim() ?? ''
   if (apiKey === '') {
-    if (input.allowEmptyStoredKey === true) {
+    if (input.allowMissingStoredKey === true) {
       return { ok: true, authMode, envVar: envVar === '' ? null : envVar, secretCiphertext: null }
     }
     return { ok: false, reason: 'missing-key' }
