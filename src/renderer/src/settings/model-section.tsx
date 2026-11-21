@@ -4,6 +4,7 @@ import type {
   ProviderAuthMode
 } from '../../../shared/model-providers'
 import { listBuiltinProviderSetups, type BuiltinProviderId } from '../../../shared/model-builtin'
+import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
 import type { UpdateProviderCredentialRequest } from '../../../shared/provider-credentials'
 import type { SettingsOverview } from '../../../shared/settings'
 import {
@@ -20,8 +21,9 @@ import {
   checkText,
   credentialIssueText,
   keyStateText,
-  protocolText,
+  providerBaseUrlText,
   providerModelsText,
+  providerProtocolText,
   providerSourceText,
   verificationText
 } from './format'
@@ -194,7 +196,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
     <section className="settings-section" aria-labelledby="settings-model-title">
       <h2 id="settings-model-title">模型服务</h2>
       <p className="settings-desc">
-        {`从内置目录添加 ${builtinNames}，或自定义一套模型 API。内置入口自动带出地址、环境变量名与模型目录；两种入口都能改模型目录，也能用「获取可用模型」从当前地址与密钥取回候选、勾选后再加入。保存只写本机，不联网校验；真正生成成功一次后才标「已验证」。`}
+        {`从内置目录添加 ${builtinNames}，或自定义一套模型 API。内置入口自动带出地址、环境变量名与模型目录；单协议入口可改模型目录，也能用「获取可用模型」从当前地址与密钥取回候选、勾选后再加入。OpenCode GO 是聚合入口：协议与地址按模型给，目录首版只读，只能搜索与选默认模型。保存只写本机，不联网校验；真正生成成功一次后才标「已验证」。`}
       </p>
 
       {overview.providers.length === 0 ? (
@@ -283,12 +285,12 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                   </div>
                   <div>
                     <dt>协议</dt>
-                    <dd>{protocolText(provider.protocol)}</dd>
+                    <dd>{providerProtocolText(provider)}</dd>
                   </div>
                   <div>
                     <dt>接口地址</dt>
                     <dd>
-                      <code>{provider.baseUrl ?? '未填写'}</code>
+                      <code>{providerBaseUrlText(provider)}</code>
                     </dd>
                   </div>
                   <div>
@@ -431,7 +433,15 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                 <div>
                   <dt>接口地址</dt>
                   <dd>
-                    <code>{setup.baseUrl}</code>
+                    <code>
+                      {setup.baseUrl ?? '按模型给（无统一地址）'}
+                    </code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>协议</dt>
+                  <dd>
+                    {setup.protocol === null ? '按模型混合' : MODEL_PROTOCOL_LABELS[setup.protocol]}
                   </dd>
                 </div>
                 <div>
@@ -443,7 +453,11 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                 <div>
                   <dt>模型目录</dt>
                   <dd>
-                    <code>{setup.models.map((model) => model.id).join('、')}</code>
+                    <code>
+                      {setup.protocol === null
+                        ? `${setup.models.length} 个模型，各自带协议与地址`
+                        : setup.models.map((model) => model.id).join('、')}
+                    </code>
                   </dd>
                 </div>
                 <div>

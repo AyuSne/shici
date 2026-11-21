@@ -15,8 +15,17 @@ import type {
  * 1,000,000 上下文 / 128,000 输出 / text 兜底，不拿 DeepSeek 的目录冒充。
  */
 export type ChatModelDescriptor = {
-  /** pi 的 provider id；同厂商多套时用不可变的 Provider ID（deepseek-2 等）。 */
+  /** 配置层的稳定身份（Provider ID）；同厂商多套时是 deepseek-2、opencode-go-2 等。 */
   provider: string
+  /**
+   * 内置目录身份；自定义 provider 为 null。聚合入口（OpenCode GO）请求时用
+   * 它去找 pi 内置的多协议 Provider（其 id 与目录 id 一致），而 `provider`
+   * 继续作为配置与凭据的稳定身份，两者不混用。
+   *
+   * 从 provider 行构造的描述符总会带上它；测试/环境退路手搓的描述符可以省略，
+   * 省略即按单协议处理。
+   */
+  catalogProviderId?: string | null
   /** 请求里真正发送的模型名。 */
   model: string
   api: ModelProtocol
@@ -50,6 +59,7 @@ export function descriptorOfProvider(
   }
   return {
     provider: provider.providerKey,
+    catalogProviderId: provider.catalogProviderId,
     model: model.modelId,
     api: model.api,
     baseUrl: model.baseUrl ?? provider.baseUrl ?? '',
@@ -65,10 +75,12 @@ export function descriptorOfProvider(
 export function descriptorOfCatalogModel(
   model: CatalogModel,
   baseUrl: string,
-  providerId: string
+  providerId: string,
+  catalogProviderId: string | null = null
 ): ChatModelDescriptor {
   return {
     provider: providerId,
+    catalogProviderId,
     model: model.id,
     api: model.api,
     baseUrl,
@@ -92,6 +104,7 @@ export function fallbackDescriptor(input: {
 }): ChatModelDescriptor {
   return {
     provider: input.provider,
+    catalogProviderId: null,
     model: input.model,
     api: input.api,
     baseUrl: input.baseUrl,

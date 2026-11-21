@@ -20,6 +20,7 @@ import {
 import type { SecretStore } from './secret-store'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate, migrations } from '../db/migrations'
+import { AGGREGATE_PROTOCOL_STORAGE } from '../../shared/model-builtin'
 import { askQuestion, createThread, readThreadView, saveAnswer } from '../chat/threads'
 
 let directory: string
@@ -250,10 +251,95 @@ describe('addBuiltinProvider', () => {
     expect(glm?.models[0]).toMatchObject({ contextWindow: 204800, maxTokens: 131072 })
   })
 
-  it('拒绝目录之外的入口与空密钥，不写半条配置', () => {
+  it('OpenCode GO 作为聚合入口可添加：32 个模型各自带协议与地址，库内协议不冒充任何单一协议', () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const added = addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'opencode-go',
+      apiKey: 'sk-opencode-synthetic-0001'
+    })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+    expect(added).toMatchObject({ status: 'saved', providerKey: 'opencode-go' })
+    if (added.status !== 'saved') return
+
+    const provider = readModelProvider(database, added.providerId)
+    expect(provider).toMatchObject({
+      providerKey: 'opencode-go',
+      displayName: 'OpenCode GO',
+      // 读取层仍把「混合」协议按未知协议保护，不冒充 completions。
+      protocol: null,
+      baseUrl: null,
+      envVar: 'OPENCODE_GO_API_KEY',
+      source: 'builtin',
+      catalogProviderId: 'opencode-go'
+    })
+    const stored = database
+      .prepare('SELECT protocol, base_url FROM model_provider WHERE id = ?')
+      .get(added.providerId) as { protocol: string; base_url: string | null }
+    expect(stored.protocol).toBe(AGGREGATE_PROTOCOL_STORAGE)
+    expect(stored.protocol).not.toBe('openai-completions')
+    expect(stored.base_url).toBeNull()
+
+    const models = readProviderModels(database, added.providerId)
+    expect(models).toHaveLength(32)
+    expect(new Set(models.map((model) => model.api))).toEqual(
+      new Set([
+        'openai-completions',
+        'openai-responses',
+        'anthropic-messages',
+        'google-generative-ai'
+      ])
+    )
+    expect(models.every((model) => model.baseUrl !== null)).toBe(true)
+    expect(models.every((model) => model.source === 'catalog')).toBe(true)
+    expect(models.find((model) => model.modelId === 'gemini-4-argon')).toMatchObject({
+      api: 'google-generative-ai',
+      baseUrl: 'https://opencode.ai/inference/go/google/v1beta'
+    })
+
+    const summary = listModelProviders(database, { secrets, env: {} })[0]
+    expect(summary).toMatchObject({
+      protocol: null,
+      baseUrl: null,
+      keyState: 'stored',
+      catalogProviderId: 'opencode-go',
+      apiKeyMask: 'sk-·············0001'
+    })
+    expect(summary?.models).toHaveLength(32)
+    expect(JSON.stringify(summary)).not.toContain('sk-opencode-synthetic-0001')
+  })
+
+  it('OpenCode GO 可以保存第二套：Provider ID 唯一，目录身份仍是同一个聚合入口', () => {
+    addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'opencode-go',
+      apiKey: 'sk-go-one'
+    })
     expect(
       addBuiltinProvider(database, secrets, {
         catalogProviderId: 'opencode-go',
+        apiKey: 'sk-go-two'
+      })
+    ).toMatchObject({ status: 'saved', providerKey: 'opencode-go-2' })
+
+    const providers = listModelProviders(database, { secrets, env: {} })
+    expect(providers.map((provider) => provider.providerKey)).toEqual([
+      'opencode-go',
+      'opencode-go-2'
+    ])
+    expect(providers.map((provider) => provider.catalogProviderId)).toEqual([
+      'opencode-go',
+      'opencode-go'
+    ])
+    expect(providers.every((provider) => provider.models.length === 32)).toBe(true)
+    expect(
+      providers.every((provider) => provider.models.every((model) => model.api !== null))
+    ).toBe(true)
+  })
+
+  it('拒绝目录之外的入口与空密钥，不写半条配置', () => {
+    expect(
+      addBuiltinProvider(database, secrets, {
+        catalogProviderId: 'not-in-catalog',
         apiKey: 'sk-x'
       })
     ).toEqual({ status: 'rejected', reason: 'unknown-provider' })

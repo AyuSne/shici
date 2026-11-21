@@ -1,3 +1,4 @@
+import { isAggregateModelProvider } from '../../../shared/model-directory'
 import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
 import type {
   ModelProviderModelSummary,
@@ -41,6 +42,26 @@ export function protocolText(protocol: ProviderProtocol | null): string {
   return protocol === null ? '未识别协议' : MODEL_PROTOCOL_LABELS[protocol]
 }
 
+/**
+ * provider 卡片的协议文案。聚合入口（OpenCode GO）没有单一协议，说「按模型
+ * 混合」；只有真正的未知持久化值才说「未识别协议」。两者不能混成一句。
+ */
+export function providerProtocolText(
+  provider: Pick<ModelProviderSummary, 'protocol' | 'catalogProviderId'>
+): string {
+  return isAggregateModelProvider(provider) ? '按模型混合' : protocolText(provider.protocol)
+}
+
+/** 聚合入口没有统一地址；空地址只对单协议 provider 才是「未填写」。 */
+export function providerBaseUrlText(
+  provider: Pick<ModelProviderSummary, 'baseUrl' | 'catalogProviderId'>
+): string {
+  if (isAggregateModelProvider(provider)) {
+    return '按模型给（无统一地址）'
+  }
+  return provider.baseUrl ?? '未填写'
+}
+
 /** 密钥三态：本机（带掩码）、环境（带变量名）、缺失（带变量名）。 */
 export function keyStateText(provider: ModelProviderSummary): string {
   if (provider.keyState === 'stored') {
@@ -73,10 +94,16 @@ export function credentialIssueText(
   return '本机保存的密钥解不开（可能换了电脑或系统账户）。点「编辑凭据」重填，或改用环境变量；发送不会自动改用环境变量。'
 }
 
-/** 目录里的模型请求名，按保存顺序列出。 */
+/**
+ * 目录里的模型请求名，按保存顺序列出。聚合入口的 32 个模型不挤成一行：
+ * 只说数量，逐条协议与地址留给卡片里的模型目录。
+ */
 export function providerModelsText(provider: ModelProviderSummary): string {
   if (provider.models.length === 0) {
     return '还没有模型'
+  }
+  if (isAggregateModelProvider(provider)) {
+    return `${provider.models.length} 个模型（协议与地址按模型给）`
   }
   return provider.models.map((model) => model.modelId).join('、')
 }

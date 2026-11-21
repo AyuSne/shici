@@ -1,4 +1,9 @@
-import { MODEL_PROVIDERS, findCatalogModel, type CatalogModel } from './model-catalog'
+import {
+  MODEL_PROVIDERS,
+  findCatalogModel,
+  isAggregateCatalogProvider,
+  type CatalogModel
+} from './model-catalog'
 import type { ModelProtocol } from './model-protocols'
 
 /**
@@ -44,6 +49,16 @@ export function findProviderCatalogModel(
 }
 
 /**
+ * 聚合入口（OpenCode GO）：协议没有单一值，每个模型自带 `api` 与地址。
+ * 展示层据此说「按模型混合 / 按模型给」，而不是误报「未识别协议」。
+ */
+export function isAggregateModelProvider(provider: {
+  catalogProviderId: string | null
+}): boolean {
+  return isAggregateCatalogProvider(provider.catalogProviderId)
+}
+
+/**
  * OpenCode GO 这类聚合入口的模型目录首版只读：能选默认模型，不能手加、改、
  * 删或重排。主进程的写入口与渲染层的按钮状态共用这一条判定，避免两边各写
  * 一份、新增只读入口时漏掉一层。
@@ -51,5 +66,5 @@ export function findProviderCatalogModel(
 export function isModelDirectoryReadOnly(provider: {
   catalogProviderId: string | null
 }): boolean {
-  return provider.catalogProviderId === 'opencode-go'
+  return isAggregateModelProvider(provider)
 }

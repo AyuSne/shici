@@ -119,6 +119,19 @@ export function findCatalogModel(
   )
 }
 
+/**
+ * 聚合入口：目录里没有单一协议的入口（`protocol` 为 null），协议与地址都按模型给。
+ * 以目录数据本身为准，不在调用方各自写死入口 ID；当前只有 OpenCode GO。
+ */
+export function isAggregateCatalogProvider(
+  providerId: string | null | undefined
+): boolean {
+  if (providerId === null || providerId === undefined) {
+    return false
+  }
+  return findModelProvider(providerId)?.protocol === null
+}
+
 /** 模型的请求协议：单协议入口与模型行一致，聚合入口按模型自身的 api。 */
 export function resolveModelProtocol(model: CatalogModel): ModelProtocol {
   return model.api

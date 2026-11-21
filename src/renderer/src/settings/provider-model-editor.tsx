@@ -1,5 +1,8 @@
 import { useState, type DragEvent } from 'react'
-import { isModelDirectoryReadOnly } from '../../../shared/model-directory'
+import {
+  isAggregateModelProvider,
+  isModelDirectoryReadOnly
+} from '../../../shared/model-directory'
 import type { ModelProviderModelSummary, ModelProviderSummary } from '../../../shared/model-providers'
 import {
   addProviderModel,
@@ -9,9 +12,10 @@ import {
   updateProviderModel
 } from '../api'
 import { failureText } from '../errors'
-import { modelMetaText } from './format'
+import { modelMetaText, protocolText } from './format'
 import { readOnlyDirectoryHint } from './messages'
 import {
+  filterModelsByQuery,
   modelDirectoryHint,
   modelIdError,
   modelInDirectory,
@@ -47,8 +51,10 @@ export function ProviderModelEditor({
   const models = provider.models
   const modelIds = models.map((model) => model.modelId)
   const readOnly = isModelDirectoryReadOnly(provider)
+  const aggregate = isAggregateModelProvider(provider)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
   const [addModelId, setAddModelId] = useState('')
   const [addError, setAddError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -57,6 +63,13 @@ export function ProviderModelEditor({
   const [dropIndex, setDropIndex] = useState<number | null>(null)
 
   const addHint = modelDirectoryHint(provider, addModelId)
+  const searching = query.trim() !== ''
+  const visibleModels = filterModelsByQuery(models, query)
+  const defaultModel = models.find((model) => model.id === provider.defaultModelRowId)
+  const defaultHidden =
+    searching &&
+    defaultModel !== undefined &&
+    !visibleModels.some((model) => model.id === defaultModel.id)
 
   async function onSetDefault(model: ModelProviderModelSummary): Promise<void> {
     setBusy(`default:${model.id}`)
@@ -275,13 +288,34 @@ export function ProviderModelEditor({
     <div className="model-editor">
       <div className="model-picker" role="group" aria-label="默认模型">
         <span className="settings-field-label">
-          模型目录 · 拖动或用上移/下移排序；默认模型用单选
+          {readOnly
+            ? '模型目录 · 只读；可按 ID 或显示名搜索并选默认模型'
+            : '模型目录 · 拖动或用上移/下移排序；默认模型用单选'}
         </span>
+        <label className="settings-field model-search">
+          <span>搜索模型</span>
+          <input
+            type="search"
+            aria-label="搜索模型"
+            placeholder="按模型 ID 或显示名搜索"
+            autoComplete="off"
+            spellCheck={false}
+            value={query}
+            disabled={busy !== null}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
         {models.length === 0 ? (
           <p className="settings-hint">这套提供商还没有模型。</p>
+        ) : visibleModels.length === 0 ? (
+          <p className="settings-hint" data-model-search-empty="true">
+            没有匹配的模型；换一个 ID 或显示名。
+          </p>
         ) : (
           <ul className="model-options editable-model-list">
-            {models.map((model, index) => (
+            {visibleModels.map((model) => {
+              const index = models.findIndex((candidate) => candidate.id === model.id)
+              return (
               <li
                 key={model.id}
                 data-model-row={model.modelId}
@@ -294,7 +328,7 @@ export function ProviderModelEditor({
                     .filter(Boolean)
                     .join(' ')
                 }
-                draggable={busy === null && !readOnly}
+                draggable={busy === null && !readOnly && !searching}
                 onDragStart={(event) => onDragStart(event, index)}
                 onDragOver={(event) => onDragOver(event, index)}
                 onDrop={(event) => onDrop(event, index)}
@@ -322,6 +356,11 @@ export function ProviderModelEditor({
                       <span className="model-display">{model.displayName}</span>
                     )}
                     <span className="model-meta">{modelMetaText(model)}</span>
+                    {aggregate ? (
+                      <span className="model-chip is-protocol">
+                        {protocolText(model.api)}
+                      </span>
+                    ) : null}
                     {model.source === 'fetched' ? (
                       <span className="model-chip is-fetched">获取</span>
                     ) : null}
@@ -335,7 +374,7 @@ export function ProviderModelEditor({
                         type="button"
                         className="link-button"
                         aria-label={`上移模型 ${model.modelId}`}
-                        disabled={busy !== null || index === 0}
+                        disabled={busy !== null || searching || index === 0}
                         onClick={() => void move(index, index - 1)}
                       >
                         上移
@@ -344,7 +383,7 @@ export function ProviderModelEditor({
                         type="button"
                         className="link-button"
                         aria-label={`下移模型 ${model.modelId}`}
-                        disabled={busy !== null || index === models.length - 1}
+                        disabled={busy !== null || searching || index === models.length - 1}
                         onClick={() => void move(index, index + 1)}
                       >
                         下移
@@ -460,9 +499,20 @@ export function ProviderModelEditor({
                   </div>
                 ) : null}
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
+        {defaultHidden ? (
+          <p className="settings-hint" data-default-model-hidden="true">
+            {`默认模型 ${defaultModel?.modelId ?? ''} 不在当前搜索结果里；清空搜索可看到它的单选。`}
+          </p>
+        ) : null}
+        <p className="settings-hint" data-model-count="true">
+          {searching
+            ? `匹配 ${visibleModels.length} / ${models.length} 个模型。`
+            : `共 ${models.length} 个模型。`}
+        </p>
       </div>
 
       {error === null ? null : (
