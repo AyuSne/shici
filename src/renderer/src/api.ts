@@ -103,6 +103,10 @@ import type {
   UpdateProviderCredentialResult
 } from '../../shared/provider-credentials'
 import type {
+  FetchProviderModelsRequest,
+  FetchProviderModelsResult
+} from '../../shared/model-discovery'
+import type {
   AskThreadRequest,
   ChatThreadView,
   CreateThreadRequest,
@@ -579,6 +583,16 @@ export function updateProviderCredential(
   request: UpdateProviderCredentialRequest
 ): Promise<UpdateProviderCredentialResult> {
   return invoke('settings:provider-credential', request)
+}
+
+/**
+ * 获取可用模型：请求带表单当前地址/协议/凭据草稿，只读返回候选。
+ * 内置目录身份零 HTTP；勾选结果由调用方自己保存，本调用不写库。
+ */
+export function fetchProviderModels(
+  request: FetchProviderModelsRequest
+): Promise<FetchProviderModelsResult> {
+  return invoke('settings:provider-models-fetch', request)
 }
 
 /** 改全局阅读默认；单篇覆盖不受影响。 */

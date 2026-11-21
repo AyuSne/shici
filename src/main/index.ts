@@ -94,6 +94,7 @@ import {
 } from './pins/pins'
 import { createElectronSecretStore } from './settings/electron-secrets'
 import { updateProviderCredential } from './settings/credential-writes'
+import { fetchProviderModels } from './settings/model-discovery'
 import { readSettingsOverview } from './settings/operations'
 import {
   addProviderModel,
@@ -339,6 +340,8 @@ function start(): void {
     'settings:provider-delete': (payload) => deleteModelProvider(opened, payload.providerId),
     'settings:provider-credential': (payload) =>
       updateProviderCredential(opened, secrets, payload),
+    'settings:provider-models-fetch': (payload) =>
+      fetchProviderModels(opened, secrets, process.env, payload),
     'settings:reading-save': (payload) => saveReadingPreferences(opened, payload.preferences),
     'settings:theme-save': (payload) => {
       const result = saveThemePreference(opened, payload.theme)

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { FetchedModelCandidate } from '../../../shared/model-discovery'
 import {
   MODEL_PROTOCOLS,
   isCustomProviderProtocol
@@ -15,11 +16,14 @@ import {
   emptyCredentialDraft
 } from './credential-editor'
 import {
+  combineCustomProviderModels
+} from './model-discovery'
+import { ModelDiscoveryPanel } from './model-discovery-panel'
+import {
   baseUrlError,
   customProviderErrorText,
   displayNameError,
   modelDirectoryHint,
-  modelIdError,
   protocolOptionLabel,
   providerIdError
 } from './provider-editing'
@@ -62,6 +66,8 @@ export function CustomProviderForm({
   const [baseUrl, setBaseUrl] = useState('')
   const [credential, setCredential] = useState<ProviderCredentialDraft>(emptyCredentialDraft())
   const [modelId, setModelId] = useState('')
+  const [selectedFetched, setSelectedFetched] = useState<FetchedModelCandidate[]>([])
+  const [discoveryReset, setDiscoveryReset] = useState(0)
   const [errors, setErrors] = useState<FieldErrors>(NO_ERRORS)
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -70,13 +76,18 @@ export function CustomProviderForm({
     { source: 'custom', catalogProviderId: null, protocol },
     modelId
   )
+  const draftModels = combineCustomProviderModels(modelId, selectedFetched)
 
   function validate(): FieldErrors {
     return {
       providerId: providerIdError(providerId, existingProviderKeys),
       displayName: displayNameError(displayName),
       baseUrl: baseUrlError(baseUrl),
-      modelId: modelIdError(modelId, [])
+      // 手填首个模型可留空：勾选了候选也算至少一个模型；合并时按 ID 去重。
+      modelId:
+        draftModels.length === 0
+          ? '先填模型 ID，或先获取可用模型并勾选至少一个。'
+          : null
     }
   }
 
@@ -95,6 +106,11 @@ export function CustomProviderForm({
 
     setBusy(true)
     try {
+      const first = draftModels[0]
+      if (first === undefined) {
+        setErrors({ ...NO_ERRORS, modelId: '至少要有一个模型才能保存。' })
+        return
+      }
       const result = await createCustomProvider({
         providerId: providerId.trim(),
         displayName: displayName.trim(),
@@ -103,7 +119,9 @@ export function CustomProviderForm({
         authMode: credential.authMode,
         envVar: credential.envVar,
         apiKey: credential.apiKey,
-        model: { modelId: modelId.trim() }
+        // 首个模型 + 勾选候选在同一笔事务里写入，保存前绝不先建 provider 再补模型。
+        model: first,
+        ...(draftModels.length > 1 ? { additionalModels: draftModels.slice(1) } : {})
       })
       if (result.status === 'rejected') {
         const message = customProviderErrorText(result.reason)
@@ -116,7 +134,11 @@ export function CustomProviderForm({
           result.reason === 'invalid-base-url'
         ) {
           setErrors({ ...NO_ERRORS, baseUrl: message })
-        } else if (result.reason === 'missing-model') {
+        } else if (
+          result.reason === 'missing-model' ||
+          result.reason === 'duplicate-model-id' ||
+          result.reason === 'invalid-capacity'
+        ) {
           setErrors({ ...NO_ERRORS, modelId: message })
         } else {
           setFormError(message)
@@ -130,6 +152,8 @@ export function CustomProviderForm({
       setBaseUrl('')
       setCredential(emptyCredentialDraft())
       setModelId('')
+      setSelectedFetched([])
+      setDiscoveryReset((current) => current + 1)
       setErrors(NO_ERRORS)
       await refresh()
       notify(
@@ -255,14 +279,14 @@ export function CustomProviderForm({
       </p>
 
       <label className="settings-field">
-        <span>首个模型</span>
+        <span>首个模型（可留空）</span>
         <input
           aria-label="首个模型 ID"
           autoComplete="off"
           spellCheck={false}
           value={modelId}
           disabled={busy}
-          placeholder="relay-model"
+          placeholder="relay-model；也可以先获取并勾选候选"
           onChange={(event) => {
             setModelId(event.target.value)
             setErrors((current) => ({ ...current, modelId: null }))
@@ -272,7 +296,9 @@ export function CustomProviderForm({
       </label>
       {errors.modelId === null ? (
         modelHint === '' ? (
-          <p className="field-hint">自定义 provider 至少要有一个模型才能保存。</p>
+          <p className="field-hint">
+            手填可留空；勾选下面的候选后直接保存，首个勾选项会作为默认模型。
+          </p>
         ) : (
           <p className="field-hint model-add-hint" data-model-hint="custom">
             {modelHint}
@@ -283,6 +309,26 @@ export function CustomProviderForm({
           {errors.modelId}
         </p>
       )}
+
+      <ModelDiscoveryPanel
+        source="custom"
+        catalogProviderId={null}
+        providerId={null}
+        protocol={protocol}
+        baseUrl={baseUrl}
+        credential={credential}
+        onCredentialChange={setCredential}
+        showCredentialFields={false}
+        knownModelIds={modelId.trim() === '' ? [] : [modelId.trim()]}
+        onDraftSelectionChange={(selected) => {
+          setSelectedFetched([...selected])
+          if (selected.length > 0) {
+            setErrors((current) => ({ ...current, modelId: null }))
+          }
+        }}
+        resetToken={discoveryReset}
+        disabled={busy}
+      />
 
       {formError === null ? null : (
         <p className="field-error" role="alert">

@@ -41,7 +41,8 @@ type ModelSectionProps = {
  * - 模型目录支持手加、行内编辑、删除、默认模型单选、拖拽与上移/下移排序，
  *   内置与自定义 provider 都可用；OpenCode GO 的聚合目录首版只读；
  * - 保存不联网：填完密钥立即落库，状态是「未验证」；真正成功生成一次后才转「已验证」。
- *   测试连接与获取可用模型留给后续票，不在本票入口里。
+ *   获取可用模型是卡片里的显式动作：只读返回候选，勾选后再显式加入，不自动保存；
+ *   测试连接留给后续票，不在本票入口里。
  */
 export function ModelSection({ overview, onChange, notify }: ModelSectionProps) {
   const setups = listBuiltinProviderSetups()
@@ -204,8 +205,9 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
       <h2 id="settings-model-title">模型服务</h2>
       <p className="settings-desc">
         从内置目录添加 DeepSeek、Kimi 或智谱 GLM，或自定义一套模型 API。内置入口自动带出
-        地址、环境变量名与模型目录；两种入口都能改模型目录。保存只写本机，不联网校验；
-        真正生成成功一次后才标「已验证」。
+        地址、环境变量名与模型目录；两种入口都能改模型目录，也能用「获取可用模型」从
+        当前地址与密钥取回候选、勾选后再加入。保存只写本机，不联网校验；真正生成成功
+        一次后才标「已验证」。
       </p>
 
       {overview.providers.length === 0 ? (

@@ -94,6 +94,10 @@ import type {
   UpdateProviderCredentialResult
 } from './provider-credentials'
 import type {
+  FetchProviderModelsRequest,
+  FetchProviderModelsResult
+} from './model-discovery'
+import type {
   ReadingPreferences,
   ReadingProgressRequest,
   ReadingProgressResult,
@@ -304,6 +308,11 @@ export interface IpcContract {
     payload: UpdateProviderCredentialRequest
     result: UpdateProviderCredentialResult
   }
+  /** 获取可用模型：只读、不写库；内置身份读本地目录，自定义才联网。 */
+  'settings:provider-models-fetch': {
+    payload: FetchProviderModelsRequest
+    result: FetchProviderModelsResult
+  }
   'settings:reading-save': {
     payload: { preferences: ReadingPreferences }
     result: ReadingPreferencesResult
@@ -406,6 +415,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'settings:provider-activate': true,
   'settings:provider-delete': true,
   'settings:provider-credential': true,
+  'settings:provider-models-fetch': true,
   'settings:reading-save': true,
   'settings:theme-save': true,
   'settings:backup-create': true,
