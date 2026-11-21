@@ -6,11 +6,17 @@ import {
 } from './model-catalog'
 
 /**
- * #62 只开放从内置目录添加这三条 OpenAI Chat Completions 入口：
- * DeepSeek、Kimi（中国大陆区）与智谱 GLM。其余入口与协议留给后续批次，
+ * 从内置目录添加的入口。批 2 开了 DeepSeek、Kimi（中国大陆区）与智谱 GLM；
+ * 批 3 追加 OpenAI 与 xAI。其余入口由各自票据追加，最终取并集；
  * 这里不按「名字像 OpenAI」去猜，也不从别的厂商目录克隆模型。
  */
-export const BUILTIN_PROVIDER_IDS = ['deepseek', 'kimi', 'glm'] as const
+export const BUILTIN_PROVIDER_IDS = [
+  'deepseek',
+  'kimi',
+  'glm',
+  'openai',
+  'xai'
+] as const
 
 export type BuiltinProviderId = (typeof BUILTIN_PROVIDER_IDS)[number]
 

@@ -1,6 +1,7 @@
 import { findProviderCatalogModel } from '../../../shared/model-directory'
 import {
   MODEL_PROTOCOL_LABELS,
+  MODEL_PROTOCOLS,
   isCustomProviderProtocol,
   type ModelProtocol
 } from '../../../shared/model-protocols'
@@ -122,11 +123,21 @@ export function modelDirectoryHint(
   return '不在目录：仍可加入并发送；缺容量时按默认值兜底（上下文 1,000,000 · 输出 128,000 · text）。'
 }
 
-/** 协议选项仍由共享协议表生成；本票未开放的只加后缀并禁用。 */
+/** 协议选项仍由共享协议表生成；当前未开放的只加后缀并禁用。 */
 export function protocolOptionLabel(protocol: ModelProtocol): string {
   return isCustomProviderProtocol(protocol)
     ? MODEL_PROTOCOL_LABELS[protocol]
     : `${MODEL_PROTOCOL_LABELS[protocol]}（后续版本）`
+}
+
+/**
+ * 当前自定义入口真正开放的协议名，按共享表顺序拼成一句。
+ * 文案从 `OPEN_CUSTOM_PROTOCOLS` 生成，追加协议时不会留下「只开放一条」的旧话术。
+ */
+export function openCustomProtocolsText(): string {
+  return MODEL_PROTOCOLS.filter(isCustomProviderProtocol)
+    .map((protocol) => MODEL_PROTOCOL_LABELS[protocol])
+    .join('、')
 }
 
 export function moveModelId(
@@ -171,7 +182,7 @@ export function customProviderErrorText(reason: CustomProviderRejection): string
     case 'missing-display-name':
       return '先填显示名。'
     case 'unsupported-protocol':
-      return '本票只开放 OpenAI Chat Completions；其他协议请等后续版本。'
+      return `当前版本只开放 ${openCustomProtocolsText()}；其他协议请等后续版本。`
     case 'missing-base-url':
       return '先填接口地址。'
     case 'invalid-base-url':
