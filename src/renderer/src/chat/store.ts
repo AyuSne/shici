@@ -289,7 +289,7 @@ export async function removeChatThread(threadId: string): Promise<boolean> {
 }
 
 const openingThreads = new Map<string, Promise<string | null>>()
-type OpenThreadOptions = { forceNew?: boolean; ensureSentenceContext?: boolean }
+type OpenThreadOptions = { forceNew?: boolean; ensureSentenceContext?: boolean; contextItem?: ThreadContextItem }
 
 /** 从词条、原句或文章打开最近线程；明确要求时新开一条。 */
 export function openThreadForMain(
@@ -300,7 +300,8 @@ export function openThreadForMain(
   const key = JSON.stringify({
     main,
     forceNew: options.forceNew === true,
-    ensureSentenceContext: options.ensureSentenceContext === true
+    ensureSentenceContext: options.ensureSentenceContext === true,
+    contextItem: options.contextItem
   })
   const pending = openingThreads.get(key)
   if (pending) return pending
@@ -314,7 +315,7 @@ async function openMainThread(
   options: OpenThreadOptions
 ): Promise<string | null> {
   try {
-    const result = await openThreadForMainRequest({ main, ...options })
+    const result = await openThreadForMainRequest({ main, forceNew: options.forceNew, ensureSentenceContext: options.ensureSentenceContext })
     if (result.status === 'rejected') {
       const message = result.reason === 'context-full'
         ? '这条线程的上下文已满。请新开一条，或先到对话页移除部分上下文。'
@@ -323,9 +324,18 @@ async function openMainThread(
       return null
     }
     if (isDeletedChatThread(result.thread.id)) return null
-    activateThread(result.thread)
-    navigate('chat', { threadId: result.thread.id })
-    return result.thread.id
+    let thread = result.thread
+    if (options.contextItem) {
+      const saved = await updateThreadContext({ threadId: thread.id, items: [...thread.context, options.contextItem] })
+      if (saved.status !== 'saved') {
+        fail('摘录没有带上，再试一次。', '摘录没有带上，再试一次。', null)
+        return null
+      }
+      thread = saved.thread
+    }
+    activateThread(thread)
+    navigate('chat', { threadId: thread.id })
+    return thread.id
   } catch (error) {
     fail(error, '没能开线程，再试一次。', () => {
       void openThreadForMain(main, options)

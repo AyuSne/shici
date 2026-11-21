@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fixtureArticle, writeCorpusDirectory } from '../../src/testing/corpus-fixture'
 import { expect, test } from '../fixtures/app'
+import { startSseStub } from '../../src/testing/sse-stub'
 import { clickAway, openArticle, selectText } from '../fixtures/reading'
 
 const articleTitle = '2026年6月 · 第1套 · 仔细阅读 Passage One'
@@ -38,6 +39,57 @@ async function openTestArticle(page: Page): Promise<void> {
 }
 
 test.describe('选词与原句', () => {
+  test('跨句摘录带进文章对话，发送给模型且不收词', async ({ launch }) => {
+    const stub = await startSseStub({ kind: 'stream', text: ['收到'] })
+    try {
+      const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory, DEEPSEEK_BASE_URL: stub.baseUrl, DEEPSEEK_API_KEY: 'test', DEEPSEEK_MODEL: 'deepseek-flash' } })
+      await openTestArticle(page)
+      const excerpt = 'hiring differently. Approaching a new desk'
+      await selectText(page, 0, excerpt)
+      await expect(page.getByRole('button', { name: '带这段去对话' })).toBeVisible()
+      await expect(page.locator('.reading-selected')).toHaveCount(0)
+      await page.getByRole('button', { name: '带这段去对话' }).click()
+      await expect(page.getByTestId('context-summary')).toContainText('1 条摘录')
+      const chip = page.locator('.context-chip').filter({ hasText: '摘录' })
+      await expect(chip).toContainText('摘录')
+      await page.getByRole('textbox', { name: '输入问题' }).fill('解释这段')
+      await page.getByRole('button', { name: '发送' }).click()
+      await expect.poll(() => stub.requests.length).toBe(1)
+      expect(JSON.stringify(stub.requests[0]?.body.messages)).toContain(excerpt)
+      await chip.getByRole('button', { name: /移除上下文/ }).click()
+      await expect(page.getByTestId('context-summary')).not.toContainText('摘录')
+      await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '词条' }).click()
+      await expect(page.getByText('还没有词条', { exact: true })).toBeVisible()
+    } finally { await stub.close() }
+  })
+
+  test('跨段摘录复用文章对话并保留两段正文与出处', async ({ launch }) => {
+    const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
+    await openTestArticle(page)
+    await page.getByRole('button', { name: '与这篇文章对话' }).click()
+    await expect(page.getByTestId('context-summary')).toBeVisible()
+    const threadHash = await page.evaluate(() => window.location.hash)
+    await openTestArticle(page)
+    await page.evaluate(() => {
+      const paragraphs = document.querySelectorAll('.reading-paragraph')
+      const first = paragraphs[0]?.lastChild
+      const second = paragraphs[1]?.firstChild
+      if (!first || !second) throw new Error('没有正文段落')
+      const range = document.createRange()
+      range.setStartBefore(first)
+      range.setEndAfter(second)
+      const selection = window.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+      document.querySelector('.reading-body')?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    })
+    await page.getByRole('button', { name: '带这段去对话' }).click()
+    await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(threadHash)
+    const chip = page.locator('.context-chip').filter({ hasText: '摘录' })
+    await expect(chip.locator('.context-chip-label')).toHaveAttribute('title', /段 1、段 2/)
+    await expect(page.getByTestId('context-summary')).toContainText('1 条摘录')
+  })
+
   test('圈一个词当场高亮，收成原句与词条，重读时弱高亮', async ({ launch }) => {
     const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openTestArticle(page)

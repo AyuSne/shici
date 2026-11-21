@@ -63,7 +63,7 @@ function view(overrides: Partial<ChatThreadView> = {}): ChatThreadView {
       articleCount: 2
     },
     context: [contextItem],
-    contextSummary: { articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 1, charCount: 56 },
+    contextSummary: { articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 1, excerptCount: 0, charCount: 56 },
     turns: [],
     createdAt: '2026-11-18T08:00:00.000Z',
     updatedAt: '2026-11-18T08:00:00.000Z',
@@ -73,10 +73,10 @@ function view(overrides: Partial<ChatThreadView> = {}): ChatThreadView {
 
 describe('contextSummaryText', () => {
   it('按「N 个词 · M 条原句 · 约 K 字」显示，词与原句各自计数', () => {
-    expect(contextSummaryText({ articleCount: 0, paragraphCount: 0, wordCount: 2, sentenceCount: 3, charCount: 420 })).toBe(
+    expect(contextSummaryText({ articleCount: 0, paragraphCount: 0, wordCount: 2, sentenceCount: 3, excerptCount: 0, charCount: 420 })).toBe(
       '3 条原句 · 2 个词 · 约 420 字'
     )
-    expect(contextSummaryText({ articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, charCount: 0 })).toBe(
+    expect(contextSummaryText({ articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, excerptCount: 0, charCount: 0 })).toBe(
       '约 0 字'
     )
   })
@@ -103,6 +103,7 @@ describe('contextSummaryText', () => {
       paragraphCount: 0,
       wordCount: 1,
       sentenceCount: 1,
+      excerptCount: 0,
       charCount: Array.from(contextItem.text).length + 6 + 4
     })
   })

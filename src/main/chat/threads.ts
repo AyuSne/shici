@@ -87,7 +87,8 @@ const CONTEXT_KINDS: readonly ThreadContextKind[] = [
   'sentence',
   'paragraph',
   'note',
-  'article'
+  'article',
+  'excerpt'
 ]
 const ANSWER_PHASES: readonly AnswerPhase[] = ['done', 'stopped', 'error']
 /** 一条线程最多带这么多条上下文，防止界面把整本书塞进去。 */

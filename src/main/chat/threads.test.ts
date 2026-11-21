@@ -349,7 +349,7 @@ describe('createThread', () => {
     expect(blank.thread.title).toBe('新的学习')
     expect(blank.thread.main).toEqual({ kind: 'none' })
     expect(blank.thread.context).toEqual([])
-    expect(blank.thread.contextSummary).toEqual({ articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, charCount: 0 })
+    expect(blank.thread.contextSummary).toEqual({ articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, excerptCount: 0, charCount: 0 })
 
     expect(
       createThread(database, { main: { kind: 'entry', entryId: 'nope' } }, { now: T4 })
@@ -394,6 +394,7 @@ describe('用一组词开线程', () => {
       paragraphCount: 0,
       wordCount: 2,
       sentenceCount: 2,
+      excerptCount: 0,
       charCount: 75
     })
 
@@ -866,6 +867,16 @@ describe('继续生成', () => {
 })
 
 describe('上下文', () => {
+  it('自由摘录保存并恢复原文和出处，不计入词数', () => {
+    const created = createThread(database, { main: { kind: 'article', articleId: firstArticle.id } })
+    if (created.status !== 'created') throw new Error('create failed')
+    const excerpt: ThreadContextItem = { id: 'excerpt:one', kind: 'excerpt', label: '摘录', text: 'First sentence. Second sentence.', source: '文章 · 第 1 段' }
+    const saved = updateThreadContext(database, { threadId: created.thread.id, items: [excerpt] })
+    if (saved.status !== 'saved') throw new Error('save failed')
+    expect(readThreadView(database, created.thread.id)?.context).toEqual([excerpt])
+    expect(saved.thread.contextSummary).toMatchObject({ wordCount: 0, excerptCount: 1, charCount: 32 })
+  })
+
   it('可以整体替换，坏条目与重复 id 被丢掉，计数跟着变', () => {
     const seeded = seed()
     const created = createThread(database, { main: { kind: 'entry', entryId: seeded.approachEntryId } }, { now: T4 })
@@ -905,6 +916,7 @@ describe('上下文', () => {
       paragraphCount: 0,
       wordCount: 0,
       sentenceCount: 1,
+      excerptCount: 0,
       charCount: Array.from('Employers approach hiring differently.').length
     })
   })
@@ -1089,6 +1101,7 @@ describe('上下文', () => {
       paragraphCount: 0,
       wordCount: 2,
       sentenceCount: 2,
+      excerptCount: 0,
       charCount: 75
     })
   })

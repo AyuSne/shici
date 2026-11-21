@@ -46,7 +46,7 @@ export type ThreadMain =
       wordCount: number
     }
 
-export type ThreadContextKind = 'word' | 'sentence' | 'paragraph' | 'note' | 'article'
+export type ThreadContextKind = 'word' | 'sentence' | 'paragraph' | 'note' | 'article' | 'excerpt'
 
 /**
  * 一条学习上下文。`text` 是真正交给模型的正文，`source` 是给人看的出处；
@@ -87,20 +87,22 @@ export type ThreadContextSummary = {
   paragraphCount: number
   wordCount: number
   sentenceCount: number
+  excerptCount: number
   charCount: number
 }
 
 /** 根据实际携带的正文统计材料。 */
 export function summarizeContextItems(items: readonly ThreadContextItem[]): ThreadContextSummary {
-  let articleCount = 0, paragraphCount = 0, wordCount = 0, sentenceCount = 0, charCount = 0
+  let articleCount = 0, paragraphCount = 0, wordCount = 0, sentenceCount = 0, excerptCount = 0, charCount = 0
   for (const item of items) {
     if (item.kind === 'article') articleCount++
     if (item.kind === 'paragraph') paragraphCount++
     if (item.kind === 'word') wordCount++
     if (item.kind === 'sentence') sentenceCount++
+    if (item.kind === 'excerpt') excerptCount++
     charCount += Array.from(item.text).length
   }
-  return { articleCount, paragraphCount, wordCount, sentenceCount, charCount }
+  return { articleCount, paragraphCount, wordCount, sentenceCount, excerptCount, charCount }
 }
 
 /** 同一位置的候选版本：重新生成的回答、改口后的提问。 */

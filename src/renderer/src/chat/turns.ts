@@ -32,7 +32,8 @@ export const CONTEXT_KIND_LABEL: Record<ThreadContextKind, string> = {
   sentence: '原句',
   paragraph: '段落',
   note: '学习内容',
-  article: '文章'
+  article: '文章',
+  excerpt: '摘录'
 }
 
 export function contextSummaryText(summary: ThreadContextSummary): string {
@@ -40,6 +41,7 @@ export function contextSummaryText(summary: ThreadContextSummary): string {
   if (summary.articleCount) parts.push(`${summary.articleCount} 篇全文`)
   if (summary.paragraphCount) parts.push(`${summary.paragraphCount} 段`)
   if (summary.sentenceCount) parts.push(`${summary.sentenceCount} 条原句`)
+  if (summary.excerptCount) parts.push(`${summary.excerptCount} 条摘录`)
   if (summary.wordCount) parts.push(`${summary.wordCount} 个词`)
   parts.push(`约 ${summary.charCount} 字`)
   return parts.join(' · ')

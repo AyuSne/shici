@@ -1250,7 +1250,7 @@ export function ChatPage({
             {
               <ContextPanel
                 items={current?.context ?? []}
-                summary={current?.contextSummary ?? { articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, charCount: 0 }}
+                summary={current?.contextSummary ?? { articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, excerptCount: 0, charCount: 0 }}
                 candidates={candidates}
                 pickerOpen={pickerOpen}
                 onTogglePicker={togglePicker}

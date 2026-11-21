@@ -51,7 +51,7 @@ import {
 } from '../reading/entry-panel'
 import { ReadingParagraphView } from '../reading/paragraph'
 import { scrollTargetIntoReading } from '../reading/scroll'
-import { readParagraphSelection, type ReadingSelection } from '../reading/selection'
+import { readParagraphSelection, readReadingExcerpt, type ReadingSelection, type ReadingExcerpt } from '../reading/selection'
 import { ReadingSettingsPanel } from '../reading/settings-panel'
 import { useReadingPosition } from '../reading/use-reading-position'
 import type { ReadingSource } from '../routes'
@@ -124,6 +124,7 @@ export function ReadingPage({
   const [hint, setHint] = useState<string | null>(null)
   const [collectError, setCollectError] = useState<string | null>(null)
   const [openingThread, setOpeningThread] = useState(false)
+  const [excerpt, setExcerpt] = useState<(ReadingExcerpt & { rect: DOMRect }) | null>(null)
   const later = useLaterMark()
 
   const { scrollRef, position, writeError, retryWrite } = useReadingPosition(view)
@@ -150,6 +151,7 @@ export function ReadingPage({
     setSettingsError(null)
     setCollected([])
     setActiveSelection(null)
+    setExcerpt(null)
     setPanel(null)
     setFocus(null)
     setHint(null)
@@ -256,6 +258,11 @@ export function ReadingPage({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.isComposing) return
+      if (excerpt !== null) {
+        setExcerpt(null)
+        window.getSelection()?.removeAllRanges()
+        return
+      }
       if (focus !== null) {
         setFocus(null)
         return
@@ -273,7 +280,7 @@ export function ReadingPage({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [focus, panel, settingsOpen, readingFrom, entrySentenceId, onOpenSearch])
+  }, [excerpt, focus, panel, settingsOpen, readingFrom, entrySentenceId, onOpenSearch])
 
   useEffect(() => {
     if (!settingsOpen) return
@@ -297,6 +304,8 @@ export function ReadingPage({
       const target = event.target as Element | null
       if (target === null) return
       if (searchUiOwns(target)) return
+      if (target.closest('.reading-excerpt-toolbar')) return
+      setExcerpt(null)
       if (panelRef.current?.contains(target)) return
       if (target.closest('.reading-settings') !== null) return
       if (settingsButtonRef.current?.contains(target)) return
@@ -472,7 +481,16 @@ export function ReadingPage({
   function collectCurrentSelection(): void {
     if (!view || collecting.current) return
     const read = readParagraphSelection(view.paragraphs)
+    setExcerpt(null)
     if (read === null) {
+      const passage = readReadingExcerpt(view.paragraphs)
+      if (passage && focus?.mode !== 'reselect') {
+        setHint(null)
+        setPanel(null)
+        setActiveSelection(null)
+        setExcerpt(passage)
+        return
+      }
       if ((window.getSelection()?.toString().trim().length ?? 0) > 0) {
         setHint('一次圈一个词或短语（同一句内）。')
       }
@@ -998,6 +1016,21 @@ export function ReadingPage({
           </div>
         </div>
       )}
+
+      {excerpt !== null && view !== null ? (
+        <div className="reading-excerpt-toolbar" role="toolbar" aria-label="摘录操作" style={{ left: Math.max(110, Math.min(window.innerWidth - 110, excerpt.rect.left + excerpt.rect.width / 2)), top: Math.max(8, excerpt.rect.top - 48) }}>
+          <button type="button" disabled={openingThread} onClick={() => {
+            setOpeningThread(true)
+            void openThreadForMain({ kind: 'article', articleId: view.article.id }, { contextItem: {
+              id: `excerpt:${crypto.randomUUID()}`, kind: 'excerpt', label: '摘录', text: excerpt.text,
+              source: `${view.article.title} · ${excerpt.source}`
+            } }).then((id) => {
+              if (id === null) { setOpeningThread(false); setCollectError(getChatStore().error ?? '摘录没有带上，再试一次。') }
+            })
+          }}>带这段去对话</button>
+          <button type="button" onClick={() => { void navigator.clipboard.writeText(excerpt.text).then(() => { setHint('已复制'); setExcerpt(null); window.getSelection()?.removeAllRanges() }, () => setCollectError('复制失败，请再试一次。')) }}>复制</button>
+        </div>
+      ) : null}
 
       {panel === null ? null : panel.kind === 'collected' ? (
         <CollectedPanelView

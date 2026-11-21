@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ReadingParagraph } from '../../../shared/reading'
-import { locateSelection } from './selection'
+import { assembleExcerpt, locateSelection } from './selection'
 
 function paragraph(): ReadingParagraph {
   const text = 'First sentence here. Second sentence follows.'
@@ -57,5 +57,16 @@ describe('locateSelection', () => {
     expect(locateSelection(paragraph(), 5, 6)).toBeNull()
     expect(locateSelection(paragraph(), 0, 999)).toBeNull()
     expect(locateSelection(paragraph(), -1, 4)).toBeNull()
+  })
+})
+
+
+describe('自由摘录', () => {
+  it('按原文拼接跨句与跨段选区并保留段落出处', () => {
+    const first = paragraph()
+    const second = { ...paragraph(), id: '2', ordinal: 1, letter: 'B', text: 'A second paragraph.', sentences: [{ ordinal: 0, text: 'A second paragraph.', start: 0, end: 19, page: 1 }] }
+    expect(assembleExcerpt([first, second], { paragraphId: '1', offset: 6 }, { paragraphId: '1', offset: 36 })).toMatchObject({ text: 'sentence here. Second sentence', paragraphIds: ['1'] })
+    expect(assembleExcerpt([first, second], { paragraphId: '1', offset: 28 }, { paragraphId: '2', offset: 8 })).toMatchObject({ text: 'sentence follows.\n\nA second', paragraphIds: ['1', '2'] })
+    expect(assembleExcerpt([first, second], { paragraphId: '1', offset: 6 }, { paragraphId: '1', offset: 14 })).toBeNull()
   })
 })

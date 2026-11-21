@@ -703,3 +703,9 @@
     transition: none;
   }
 }
+
+.reading-excerpt-toolbar {
+  position: fixed; z-index: 60; display: flex; gap: 4px; padding: 5px;
+  transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line-pin);
+  border-radius: 10px; box-shadow: 0 6px 20px rgba(60, 48, 30, 0.12);
+}
