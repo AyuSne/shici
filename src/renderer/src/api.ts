@@ -84,10 +84,19 @@ import type {
   ActivateProviderResult,
   AddBuiltinProviderRequest,
   AddBuiltinProviderResult,
+  AddProviderModelRequest,
+  CreateCustomProviderRequest,
+  CreateCustomProviderResult,
+  DeleteProviderModelRequest,
   DeleteProviderRequest,
   DeleteProviderResult,
+  ProviderModelWriteResult,
+  ReorderProviderModelsRequest,
   SetDefaultProviderModelRequest,
-  SetDefaultProviderModelResult
+  SetDefaultProviderModelResult,
+  UpdateProviderModelRequest,
+  UpdateProviderRequest,
+  UpdateProviderResult
 } from '../../shared/model-providers'
 import type {
   AskThreadRequest,
@@ -495,7 +504,49 @@ export function addBuiltinProvider(
   return invoke('settings:provider-add', request)
 }
 
-/** 选这个 provider 的默认模型；目录本身只读，不在这里增删模型。 */
+/** 从「自定义 API」入口创建一套 provider；至少要带一个模型。 */
+export function createCustomProvider(
+  request: CreateCustomProviderRequest
+): Promise<CreateCustomProviderResult> {
+  return invoke('settings:provider-create', request)
+}
+
+/** 只改显示名与地址；Provider ID 与协议创建后不可改。 */
+export function updateProvider(
+  request: UpdateProviderRequest
+): Promise<UpdateProviderResult> {
+  return invoke('settings:provider-update', request)
+}
+
+/** 手加一条模型行；目录外的 ID 也允许。 */
+export function addProviderModel(
+  request: AddProviderModelRequest
+): Promise<ProviderModelWriteResult> {
+  return invoke('settings:provider-model-add', request)
+}
+
+/** 改模型行的 ID、显示名与容量。 */
+export function updateProviderModel(
+  request: UpdateProviderModelRequest
+): Promise<ProviderModelWriteResult> {
+  return invoke('settings:provider-model-update', request)
+}
+
+/** 删一条模型行：默认模型与最后一条会被主进程拒绝。 */
+export function deleteProviderModel(
+  request: DeleteProviderModelRequest
+): Promise<ProviderModelWriteResult> {
+  return invoke('settings:provider-model-delete', request)
+}
+
+/** 保存完整模型顺序；缺行或过期顺序会被拒绝。 */
+export function reorderProviderModels(
+  request: ReorderProviderModelsRequest
+): Promise<ProviderModelWriteResult> {
+  return invoke('settings:provider-model-reorder', request)
+}
+
+/** 选这个 provider 的默认模型；模型行的增删改由上面的独立 channel 处理。 */
 export function setDefaultProviderModel(
   request: SetDefaultProviderModelRequest
 ): Promise<SetDefaultProviderModelResult> {

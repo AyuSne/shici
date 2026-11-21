@@ -194,6 +194,84 @@ describe('createBridge', () => {
     ])
   })
 
+  it('自定义 provider 与模型目录的写入都走同一份白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+
+    await bridge.invoke('settings:provider-create', {
+      providerId: 'my-relay',
+      displayName: '我的中转',
+      protocol: 'openai-completions',
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-write-only',
+      model: { modelId: 'relay-model' }
+    })
+    await bridge.invoke('settings:provider-update', {
+      providerId: 'provider-1',
+      displayName: '新名字',
+      baseUrl: 'https://relay.example.com/v2'
+    })
+    await bridge.invoke('settings:provider-model-add', {
+      providerId: 'provider-1',
+      model: { modelId: 'new-model' }
+    })
+    await bridge.invoke('settings:provider-model-update', {
+      providerId: 'provider-1',
+      modelRowId: 'model-1',
+      model: { modelId: 'renamed-model' }
+    })
+    await bridge.invoke('settings:provider-model-delete', {
+      providerId: 'provider-1',
+      modelRowId: 'model-2'
+    })
+    await bridge.invoke('settings:provider-model-reorder', {
+      providerId: 'provider-1',
+      modelRowIds: ['model-2', 'model-1']
+    })
+
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      {
+        channel: 'settings:provider-create',
+        payload: {
+          providerId: 'my-relay',
+          displayName: '我的中转',
+          protocol: 'openai-completions',
+          baseUrl: 'https://relay.example.com/v1',
+          apiKey: 'sk-write-only',
+          model: { modelId: 'relay-model' }
+        }
+      },
+      {
+        channel: 'settings:provider-update',
+        payload: {
+          providerId: 'provider-1',
+          displayName: '新名字',
+          baseUrl: 'https://relay.example.com/v2'
+        }
+      },
+      {
+        channel: 'settings:provider-model-add',
+        payload: { providerId: 'provider-1', model: { modelId: 'new-model' } }
+      },
+      {
+        channel: 'settings:provider-model-update',
+        payload: {
+          providerId: 'provider-1',
+          modelRowId: 'model-1',
+          model: { modelId: 'renamed-model' }
+        }
+      },
+      {
+        channel: 'settings:provider-model-delete',
+        payload: { providerId: 'provider-1', modelRowId: 'model-2' }
+      },
+      {
+        channel: 'settings:provider-model-reorder',
+        payload: { providerId: 'provider-1', modelRowIds: ['model-2', 'model-1'] }
+      }
+    ])
+  })
+
   it('未知 channel 立即报错，且不发给主进程', async () => {
     const { ipc, invocations } = fakeRenderer()
     const bridge = createBridge(ipc)
