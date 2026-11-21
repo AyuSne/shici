@@ -4,6 +4,7 @@ import type {
   ProviderAuthMode
 } from '../../../shared/model-providers'
 import { listBuiltinProviderSetups, type BuiltinProviderId } from '../../../shared/model-builtin'
+import { isAggregateModelProvider } from '../../../shared/model-directory'
 import type { UpdateProviderCredentialRequest } from '../../../shared/provider-credentials'
 import type { SettingsOverview } from '../../../shared/settings'
 import {
@@ -457,7 +458,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                   <dt>模型目录</dt>
                   <dd>
                     <code>
-                      {setup.protocol === null
+                      {isAggregateModelProvider({ catalogProviderId: setup.id })
                         ? `${setup.models.length} 个模型，各自带协议与地址`
                         : setup.models.map((model) => model.id).join('、')}
                     </code>

@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import type { FetchedModelCandidate } from '../../../shared/model-discovery'
-import { MODEL_PROTOCOLS } from '../../../shared/model-protocols'
+import {
+  MODEL_PROTOCOL_LABELS,
+  MODEL_PROTOCOLS
+} from '../../../shared/model-protocols'
 import type { ProviderProtocol } from '../../../shared/model-providers'
 import {
   isValidEnvVarName,
@@ -23,7 +26,6 @@ import {
   displayNameError,
   modelDirectoryHint,
   openCustomProtocolsText,
-  protocolOptionLabel,
   providerIdError
 } from './provider-editing'
 
@@ -232,7 +234,7 @@ export function CustomProviderForm({
         >
           {MODEL_PROTOCOLS.map((value) => (
             <option key={value} value={value}>
-              {protocolOptionLabel(value)}
+              {MODEL_PROTOCOL_LABELS[value]}
             </option>
           ))}
         </select>

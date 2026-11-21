@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isModelDirectoryReadOnly } from '../../../shared/model-directory'
+import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
 import {
   baseUrlError,
   customProviderErrorText,
@@ -13,7 +14,6 @@ import {
   moveModelId,
   openCustomProtocolsText,
   parseCapacity,
-  protocolOptionLabel,
   providerIdError,
   providerUpdateErrorText
 } from './provider-editing'
@@ -146,11 +146,11 @@ describe('moveModelId', () => {
 })
 
 describe('协议下拉文案', () => {
-  it('选项名来自共享协议表，四条都可直接选用、不带未开放后缀', () => {
-    expect(protocolOptionLabel('openai-completions')).toBe('OpenAI Chat Completions')
-    expect(protocolOptionLabel('openai-responses')).toBe('OpenAI Responses')
-    expect(protocolOptionLabel('anthropic-messages')).toBe('Anthropic Messages')
-    expect(protocolOptionLabel('google-generative-ai')).toBe('Gemini API')
+  it('四种协议名直接来自共享 map，均为已确认文案', () => {
+    expect(MODEL_PROTOCOL_LABELS['openai-completions']).toBe('OpenAI Chat Completions')
+    expect(MODEL_PROTOCOL_LABELS['openai-responses']).toBe('OpenAI Responses')
+    expect(MODEL_PROTOCOL_LABELS['anthropic-messages']).toBe('Anthropic Messages')
+    expect(MODEL_PROTOCOL_LABELS['google-generative-ai']).toBe('Gemini API')
   })
 
   it('开放协议文案按共享表生成，不写死单一协议', () => {

@@ -2,8 +2,7 @@ import { findProviderCatalogModel } from '../../../shared/model-directory'
 import {
   MODEL_PROTOCOL_LABELS,
   MODEL_PROTOCOLS,
-  isCustomProviderProtocol,
-  type ModelProtocol
+  isCustomProviderProtocol
 } from '../../../shared/model-protocols'
 import type {
   CustomProviderRejection,
@@ -122,11 +121,6 @@ export function modelDirectoryHint(
     return `目录收录：${modelCapacityText(catalog)} · ${modelThinkingText(catalog)}`
   }
   return '不在目录：仍可加入并发送；缺容量时按默认值兜底（上下文 1,000,000 · 输出 128,000 · text）。'
-}
-
-/** 协议选项名直接来自共享协议表；四种协议当前都可用，不附加未开放后缀。 */
-export function protocolOptionLabel(protocol: ModelProtocol): string {
-  return MODEL_PROTOCOL_LABELS[protocol]
 }
 
 /**
