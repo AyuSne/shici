@@ -103,7 +103,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
           result.reason === 'missing-key'
             ? '先填 API 密钥再保存。'
             : result.reason === 'invalid-env-var'
-              ? '环境变量名要字母或下划线开头，只含字母、数字与下划线。'
+              ? credentialRejectionText('invalid-env-var')
               : '这个入口不在本版的内置目录里。'
         )
         return

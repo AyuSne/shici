@@ -12,7 +12,7 @@ import type {
 } from '../../../shared/model-providers'
 import { isValidProviderId } from '../../../shared/model-providers'
 import { modelCapacityText, modelThinkingText } from './format'
-import { READ_ONLY_DIRECTORY_REJECTION } from './messages'
+import { READ_ONLY_DIRECTORY_REJECTION, credentialRejectionText } from './messages'
 
 /**
  * 设置页「自定义 provider / 模型目录编辑」的纯显示与校验逻辑。
@@ -183,9 +183,10 @@ export function customProviderErrorText(reason: CustomProviderRejection): string
     case 'invalid-capacity':
       return '容量要填正整数。'
     case 'missing-key':
-      return '本机模式要填一个 API 密钥；或改用环境变量。'
+      // 与凭据编辑共用同一句，避免两处文案漂移。
+      return credentialRejectionText('missing-key')
     case 'invalid-env-var':
-      return '环境变量名要字母或下划线开头，只含字母、数字与下划线。'
+      return credentialRejectionText('invalid-env-var')
   }
 }
 
