@@ -9,17 +9,17 @@ import type { CredentialRejectionReason } from '../../../shared/provider-credent
 
 /** 模型服务页顶部说明；内置名单由页面传入，组件只引用不重抄。 */
 export function modelSectionDescription(builtinNames: string): string {
-  return `从内置目录添加 ${builtinNames}，或自定义一套模型 API。内置入口自动带出地址、环境变量名与模型目录；单协议入口可改模型目录，也能用「获取可用模型」从当前地址与密钥取回候选、勾选后再加入。OpenCode GO 是聚合入口：协议与地址按模型给，目录首版只读，只能搜索与选默认模型。保存只写本机，不联网校验；卡片上的「测试连接」按这套提供商的协议发一次最小请求（8 秒超时），通过就标「已验证」，失败保留原配置与原密钥并说明原因与 request id。真实生成成功一次后也会自动转「已验证」。`
+  return `添加 ${builtinNames} 等内置提供商，或配置自定义 API。保存后可测试连接。`
 }
 
 /** 只读目录的统一前缀：主进程拒绝与界面提示用同一句。 */
-export const OPENCODE_GO_READ_ONLY = 'OpenCode GO 的模型目录首版只读'
+export const OPENCODE_GO_READ_ONLY = 'OpenCode GO 的模型目录不可编辑'
 
 /** 目录编辑器 / 获取候选面板的说明；动作范围不同，后缀不同。 */
 export function readOnlyDirectoryHint(scene: 'edit' | 'discovery'): string {
   return scene === 'edit'
-    ? `${OPENCODE_GO_READ_ONLY}：可以选默认模型，不能手加、修改、删除或排序。`
-    : `${OPENCODE_GO_READ_ONLY}：可以获取查看，不能加入。`
+    ? `${OPENCODE_GO_READ_ONLY}：可以搜索并选择默认模型。`
+    : `${OPENCODE_GO_READ_ONLY}：可以查看可用模型。`
 }
 
 /** 主进程拒绝写只读目录时的原因文案。 */

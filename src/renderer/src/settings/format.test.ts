@@ -196,7 +196,7 @@ describe('测试连接的结果文案', () => {
   it('测试期间配置变了：如实说这次结果没有写回', () => {
     const text = providerTestFailureText({ ...failed, persisted: false })
     expect(text).toContain('请求 ID req-401')
-    expect(text).toContain('测试期间配置已改动，这次结果没有写回；请重新测试')
+    expect(text).toContain('测试期间配置已改动，结果未保存；请重新测试')
   })
 
   function failure(
@@ -262,7 +262,7 @@ describe('测试连接的结果文案', () => {
     ).toBe('测试连接通过，已标为已验证。')
     expect(
       providerTestVerifiedText({ status: 'verified', checkedAt, persisted: false })
-    ).toBe('测试连接通过，但测试期间配置已改动，没有写回；请重新测试。')
+    ).toBe('测试连接通过，但测试期间配置已改动，结果未保存；请重新测试。')
   })
 })
 
@@ -287,8 +287,8 @@ describe('providerProtocolText 与 providerBaseUrlText', () => {
       source: 'builtin',
       catalogProviderId: 'opencode-go'
     })
-    expect(providerProtocolText(aggregate)).toBe('按模型混合')
-    expect(providerBaseUrlText(aggregate)).toBe('按模型给（无统一地址）')
+    expect(providerProtocolText(aggregate)).toBe('多种协议')
+    expect(providerBaseUrlText(aggregate)).toBe('各模型分别提供')
   })
 
   it('真正的未知协议仍如实说；单协议与空地址照旧', () => {
@@ -396,7 +396,7 @@ describe('providerModelsText', () => {
           ]
         })
       )
-    ).toBe('2 个模型（协议与地址按模型给）')
+    ).toBe('2 个模型')
   })
 })
 
@@ -416,9 +416,9 @@ describe('模型元数据文案', () => {
   })
 
   it('迁移来的模型没有容量信息时不编造 DeepSeek 数字，说清按通用上限兜底', () => {
-    expect(modelCapacityText(model)).toBe('目录未提供容量 · 按通用上限兜底')
+    expect(modelCapacityText(model)).toBe('目录未提供容量')
     expect(modelThinkingText(model)).toBe('不支持思考')
-    expect(modelMetaText(model)).toBe('目录未提供容量 · 按通用上限兜底 · 不支持思考')
+    expect(modelMetaText(model)).toBe('目录未提供容量 · 不支持思考')
   })
 
   it('获取的候选没给思考能力时写「未知」，不冒充不支持思考', () => {

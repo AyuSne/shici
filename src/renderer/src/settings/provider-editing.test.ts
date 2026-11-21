@@ -85,7 +85,7 @@ describe('modelDirectoryHint 与 modelInDirectory', () => {
   it('目录外的 ID 明确说不在目录，但仍说明可以加入并发送、容量有兜底', () => {
     expect(modelInDirectory(builtinDeepSeek, 'brand-new-model')).toBe(false)
     expect(modelDirectoryHint(builtinDeepSeek, 'brand-new-model')).toBe(
-      '不在目录：仍可加入并发送；缺容量时按默认值兜底（上下文 1,000,000 · 输出 128,000 · text）。'
+      '不在目录，仍可加入使用。'
     )
     expect(modelDirectoryHint(builtinDeepSeek, '   ')).toBe('')
   })

@@ -129,8 +129,7 @@ describe('候选勾选与草稿合并', () => {
 describe('失败与来源文案', () => {
   it('内置目录明确说不联网；自定义说用当前表单值', () => {
     expect(discoverySourceHint('builtin')).toContain('本地目录')
-    expect(discoverySourceHint('builtin')).toContain('不联网')
-    expect(discoverySourceHint('custom')).toContain('当前地址')
+    expect(discoverySourceHint('custom')).toContain('当前填写的地址')
     expect(discoverySourceHint('custom')).toContain('密钥')
   })
 

@@ -6,13 +6,10 @@ export function AboutSection({ overview }: { overview: SettingsOverview }) {
     <section className="settings-section" aria-labelledby="settings-about-title">
       <h2 id="settings-about-title">关于</h2>
       <p className="settings-desc">
-        版本 {overview.appVersion} · Electron {overview.electronVersion}
+        版本 {overview.appVersion}
       </p>
       <p className="settings-hint">
         词典数据来自 ECDICT（MIT License），版权归其作者所有。
-      </p>
-      <p className="settings-hint">
-        桌面形态与本机数据边界见 ADR 0001；会话存储见 ADR 0003。
       </p>
     </section>
   )

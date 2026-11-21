@@ -116,7 +116,7 @@ test.describe('设置与密钥', () => {
     await expect(first).toContainText('缺失')
     await expect(first).toContainText('自定义')
     // 迁移来的模型没有容量元数据：不冒充 DeepSeek 的 1,000,000 / 384,000。
-    await expect(first).toContainText('目录未提供容量 · 按通用上限兜底')
+    await expect(first).toContainText('目录未提供容量')
 
     const second = cards.filter({ hasText: 'Backup API' })
     await expect(second).not.toContainText('使用中')
@@ -133,14 +133,13 @@ test.describe('设置与密钥', () => {
     await expect(page.getByLabel('名称')).toHaveCount(0)
 
     // 切换使用中只写选择；卡片上的「使用中」跟着走。
-    await second.getByRole('button', { name: '使用这个' }).click()
+    await second.getByRole('button', { name: '设为当前' }).click()
     await expect(second).toContainText('使用中')
     await expect(first).not.toContainText('使用中')
 
     // 删除使用中的迁移 provider：先明确警告，删完留下「没有使用中」的提示。
     await second.getByRole('button', { name: '删除' }).click()
-    await expect(second).toContainText('这是使用中的提供商')
-    await expect(second).toContainText('历史线程与钉住不受影响')
+    await expect(second).toContainText('删除当前提供商后，需要另选一套才能继续对话')
     await second.getByRole('button', { name: '确认删除' }).click()
     await expect(page.locator('.profile-card')).toHaveCount(1)
     await expect(page.locator('.settings-hint.is-warning')).toContainText(
@@ -195,7 +194,7 @@ test.describe('设置与密钥', () => {
       await page.getByLabel('内置提供商').selectOption(catalogId)
       await page.getByLabel('API 密钥').fill(apiKey)
       await page.getByRole('button', { name: '保存提供商' }).click()
-      await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+      await expect(page.getByRole('status')).toContainText('已保存')
       await expect(page.getByLabel('API 密钥')).toHaveValue('')
     }
 
@@ -219,7 +218,7 @@ test.describe('设置与密钥', () => {
 
     // 真实用这套「本机保存」的密钥聊天：先选为使用中，再把地址指到本地 stub，
     // 验证 safeStorage 解出的是刚存的密钥。
-    await firstDeepSeek.getByRole('button', { name: '使用这个' }).click()
+    await firstDeepSeek.getByRole('button', { name: '设为当前' }).click()
     await expect(firstDeepSeek).toContainText('使用中')
     const liveDatabase = new Database(join(userDataDirectory, 'english-learning.db'))
     try {
@@ -367,22 +366,22 @@ test.describe('设置与密钥', () => {
     await expect(card.locator('.profile-check')).toContainText('通过')
   })
 
-  test('关于页列出程序版本、Electron 版本与词典版权', async ({ launch }) => {
+  test('关于页列出程序版本与词典版权', async ({ launch }) => {
     const { page } = await launch({ env: noEnvironmentConfig })
     await openSettings(page)
     await settingsNav(page).getByRole('button', { name: '关于' }).click()
 
     const about = page.getByRole('region', { name: '关于' })
-    await expect(about).toContainText(/版本 0\.1\.0 · Electron 4\d/)
+    await expect(about).toContainText('版本 0.1.0')
     await expect(about).toContainText('ECDICT（MIT License）')
-    await expect(about).toContainText('ADR 0001')
-    await expect(about).toContainText('ADR 0003')
+    await expect(about).not.toContainText('ADR')
   })
 
   test('主题浅色 / 深色 / 跟随系统立即生效，刷新后仍是选过的那档', async ({ launch }) => {
     const { page } = await launch({ env: noEnvironmentConfig })
     await openSettings(page)
     await settingsNav(page).getByRole('button', { name: '外观' }).click()
+    await expect(page.getByRole('region', { name: '外观' })).not.toContainText(/token|#[0-9A-Fa-f]{6}/)
 
     const theme = page.getByRole('group', { name: '主题' })
     await expect(theme.getByRole('button', { name: '浅色' })).toHaveAttribute(

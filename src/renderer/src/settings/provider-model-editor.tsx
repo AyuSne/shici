@@ -88,7 +88,7 @@ export function ProviderModelEditor({
         return
       }
       await refresh()
-      notify('已换默认模型；正在生成的回答不受影响')
+      notify('已换默认模型')
     } catch (caught) {
       setError(failureText(caught, '默认模型没有换成，再试一次。'))
     } finally {
@@ -185,7 +185,7 @@ export function ProviderModelEditor({
       setEditingId(null)
       setDraft(null)
       await refresh()
-      notify('已保存模型；之后的调用按新值发送')
+      notify('已保存模型')
     } catch (caught) {
       setError(failureText(caught, '这个模型没有保存成功，再试一次。'))
     } finally {
@@ -540,7 +540,7 @@ export function ProviderModelEditor({
           </label>
           {addError === null ? (
             addHint === '' ? (
-              <p className="field-hint">目录外的 ID 也可以加入，发送时按默认容量兜底。</p>
+              <p className="field-hint">目录外的模型也可以加入。</p>
             ) : (
               <p className="field-hint model-add-hint">{addHint}</p>
             )

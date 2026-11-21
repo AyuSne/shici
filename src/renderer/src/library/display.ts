@@ -90,3 +90,11 @@ export function continueReadingDisplay(article: LibraryArticle): ContinueReading
 
   return { eyebrow, title, meta: meta.join(' · ') }
 }
+
+/** 套内省略默认篇名里的场次和套数，自定义篇名原样保留。 */
+export function librarySetRowTitle(article: LibraryArticle): string {
+  const defaultTitle = [article.sessionLabel, article.setLabel, article.kindLabel].join(' · ')
+  return article.sourceType === 'exam' && article.title === defaultTitle
+    ? article.kindLabel
+    : article.title
+}

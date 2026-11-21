@@ -135,7 +135,7 @@ test.describe('自定义 provider 与模型目录', () => {
     await expect(relay.locator('[data-model-row="relay-mystery-model"]')).toBeVisible()
 
     // 切为使用中后，未知模型 ID 照常发送；缺容量由主进程兜底。
-    await relay.getByRole('button', { name: '使用这个' }).click()
+    await relay.getByRole('button', { name: '设为当前' }).click()
     await expect(relay).toContainText('使用中')
     await openChat(page)
     await ask(page, '用自定义中转回答')

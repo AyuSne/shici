@@ -42,7 +42,7 @@ export function AppearanceSection({
   return (
     <section className="settings-section" aria-labelledby="settings-appearance-title">
       <h2 id="settings-appearance-title">外观</h2>
-      <p className="settings-desc">主题跟着自己走，不影响阅读设置。</p>
+      <p className="settings-desc">选择喜欢的主题。</p>
 
       <div className="settings-field" role="group" aria-label="主题">
         <span>主题</span>
@@ -62,8 +62,7 @@ export function AppearanceSection({
       </div>
 
       <p className="settings-hint">
-        深色取 token 表里的一套值，底用 #1A1A1E，不用纯黑。跟随系统时，
-        Windows 切了深浅，界面会直接跟着换。
+        跟随系统时，界面会随 Windows 的浅色或深色设置切换。
       </p>
     </section>
   )

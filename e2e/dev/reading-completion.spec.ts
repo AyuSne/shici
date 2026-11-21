@@ -65,7 +65,11 @@ async function nav(page: Page, label: string): Promise<void> {
 }
 
 async function selectArticle(page: Page, title: string): Promise<ReturnType<Page['locator']>> {
-  const row = page.locator('.library-row').filter({ hasText: title })
+  if (title === TITLE_THREE) {
+    const toggle = page.getByRole('button', { name: /第2套/ })
+    if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click()
+  }
+  const row = page.locator('.library-row').filter({ hasText: title.split(' · ').at(-1) })
   await row.click()
   const detail = page.getByRole('complementary', { name: '文章详情' })
   await expect(detail.getByRole('heading', { name: title, level: 2 })).toBeVisible()
@@ -128,7 +132,7 @@ test('从阅读页页脚进入本篇选词即已读完：文章库与首页一�
 
   // 回到文章库：列表与详情用同一句「已读完 · 100%」。
   await toLibrary(page)
-  const row = page.locator('.library-row').filter({ hasText: TITLE_ONE })
+  const row = page.locator('.library-row').filter({ hasText: TITLE_ONE.split(' · ').at(-1) })
   await expect(row.locator('.library-row-progress')).toHaveText('已读完 · 100%')
   const detail = page.getByRole('complementary', { name: '文章详情' })
   await expect(detail).toContainText('已读完 · 100%')
@@ -157,7 +161,7 @@ test('从阅读页页脚进入本篇选词即已读完：文章库与首页一�
   expect(await readingFontSize(page)).toBe('22px')
   await toLibrary(page)
   await expect(
-    page.locator('.library-row').filter({ hasText: TITLE_ONE }).locator('.library-row-progress')
+    page.locator('.library-row').filter({ hasText: TITLE_ONE.split(' · ').at(-1) }).locator('.library-row-progress')
   ).toHaveText('已读完 · 100%')
 })
 
@@ -168,11 +172,11 @@ test('从文章库「打开本篇选词」也标记已读完，没打开过的�
   await toLibrary(page)
 
   await expect(
-    page.locator('.library-row').filter({ hasText: TITLE_TWO }).locator('.library-row-progress')
+    page.locator('.library-row').filter({ hasText: TITLE_TWO.split(' · ').at(-1) }).locator('.library-row-progress')
   ).toHaveText('已读完 · 100%')
   // 没打开过的别篇：没有完成，也不冒充已读完。
   await expect(
-    page.locator('.library-row').filter({ hasText: TITLE_ONE }).locator('.library-row-progress')
+    page.locator('.library-row').filter({ hasText: TITLE_ONE.split(' · ').at(-1) }).locator('.library-row-progress')
   ).toHaveText('未读')
 
   await nav(page, '首页')
@@ -191,8 +195,10 @@ test('直接打开本篇选词地址也标记已读完，并沿用 #41 的存在
   await expect(page.locator('.article-words-empty')).toBeVisible()
 
   await toLibrary(page)
+  const setTwo = page.getByRole('button', { name: /第2套/ })
+  if (await setTwo.getAttribute('aria-expanded') === 'false') await setTwo.click()
   await expect(
-    page.locator('.library-row').filter({ hasText: TITLE_THREE }).locator('.library-row-progress')
+    page.locator('.library-row').filter({ hasText: TITLE_THREE.split(' · ').at(-1) }).locator('.library-row-progress')
   ).toHaveText('已读完 · 100%')
 })
 

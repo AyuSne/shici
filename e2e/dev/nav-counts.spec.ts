@@ -116,10 +116,20 @@ test('全局栏显示词条/文章/未归档计数；0 显示 0，读回来之�
   await expectCounts(page, { entries: 5, articles: 2, unfiled: 3 })
 })
 
+async function selectLibraryArticle(page: Page, label: string): Promise<void> {
+  const [session, set, kind] = label.split(' · ')
+  const sessionSection = page.locator('.library-session').filter({ has: page.getByRole('button', { name: new RegExp(`^${session} `) }) })
+  const sessionToggle = sessionSection.locator('.library-session-head button')
+  if (await sessionToggle.getAttribute('aria-expanded') === 'false') await sessionToggle.click()
+  const setToggle = sessionSection.getByRole('button', { name: new RegExp(`^${set} `) })
+  if (await setToggle.getAttribute('aria-expanded') === 'false') await setToggle.click()
+  await sessionSection.locator('.library-row').filter({ hasText: kind }).click()
+}
+
 /** 从文章库按篇名打开一篇；阅读页收起全局栏，所以先走文章库再进正文。 */
 async function openArticleByLabel(page: Page, label: string): Promise<void> {
   await nav(page).getByRole('button', { name: '文章库' }).click()
-  await page.locator('.library-row').filter({ hasText: label }).click()
+  await selectLibraryArticle(page, label)
   await page
     .getByRole('complementary', { name: '文章详情' })
     .getByRole('button', { name: '继续阅读' })
@@ -406,10 +416,7 @@ test('删除文章时文章数减一、消失的词条数减一、挂在本篇�
     await expectCounts(page, { entries: 1, articles: 2, unfiled: 0 })
 
     await nav(page).getByRole('button', { name: '文章库' }).click()
-    await page
-      .locator('.library-row')
-      .filter({ hasText: '2024年6月 · 第1套 · 仔细阅读 Passage One' })
-      .click()
+    await selectLibraryArticle(page, '2024年6月 · 第1套 · 仔细阅读 Passage One')
     const detail = page.getByRole('complementary', { name: '文章详情' })
     await detail.getByRole('button', { name: '删除文章' }).click()
     const dialog = page.getByRole('alertdialog', { name: '删除文章' })
@@ -508,10 +515,7 @@ test('从备份恢复后三个计数按恢复的整库重读', async ({ launch, 
 
     // 备份后删掉一篇文章：文章数与词条数都少了。
     await nav(page).getByRole('button', { name: '文章库' }).click()
-    await page
-      .locator('.library-row')
-      .filter({ hasText: '2024年6月 · 第1套 · 仔细阅读 Passage One' })
-      .click()
+    await selectLibraryArticle(page, '2024年6月 · 第1套 · 仔细阅读 Passage One')
     await page
       .getByRole('complementary', { name: '文章详情' })
       .getByRole('button', { name: '删除文章' })

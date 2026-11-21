@@ -115,7 +115,7 @@ test.describe('内置提供商的聊天链路', () => {
     // 切到 Kimi：之后的消息走 Kimi，前面两轮回答原样留着。
     await openSettings(page)
     const kimi = page.locator('[data-provider-key="kimi"]')
-    await kimi.getByRole('button', { name: '使用这个' }).click()
+    await kimi.getByRole('button', { name: '设为当前' }).click()
     await expect(kimi).toContainText('使用中')
     await expect(deepseek).not.toContainText('使用中')
 
@@ -221,7 +221,7 @@ test.describe('删除使用中的提供商', () => {
     const deepseek = page.locator('[data-provider-key="deepseek"]')
     await expect(deepseek).toContainText('使用中')
     await deepseek.getByRole('button', { name: '删除' }).click()
-    await expect(deepseek).toContainText('这是使用中的提供商')
+    await expect(deepseek).toContainText('删除当前提供商后，需要另选一套才能继续对话')
     await deepseek.getByRole('button', { name: '确认删除' }).click()
 
     await expect(page.getByRole('status')).toContainText('已删除使用中的提供商')

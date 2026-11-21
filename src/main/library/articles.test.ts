@@ -181,7 +181,7 @@ describe('renameArticle', () => {
     })
 
     expect(readArticleDetail(db, articleA.id)?.title).toBe('我的文章')
-    expect(readLibrary(db).sessions[0]?.articles.find((article) => article.id === articleA.id)?.title).toBe(
+    expect(readLibrary(db).sessions[0]?.sets.flatMap((set) => set.articles).find((article) => article.id === articleA.id)?.title).toBe(
       '我的文章'
     )
     expect(
@@ -260,7 +260,7 @@ describe('deleteArticle', () => {
       articleId: articleA.id,
       preview: originalPreview
     })
-    expect(readLibrary(db).sessions[0]?.articles.map((article) => article.id)).toEqual([articleB.id])
+    expect(readLibrary(db).sessions[0]?.sets.flatMap((set) => set.articles).map((article) => article.id)).toEqual([articleB.id])
     expect(readArticleDetail(db, articleA.id)).toBeNull()
     expect(readEntryPage(db, alpha.id)).toBeNull()
     expect(readLearningNotes(db, alpha.id)).toEqual([])

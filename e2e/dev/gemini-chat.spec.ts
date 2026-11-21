@@ -47,7 +47,7 @@ test.describe('Google Gemini 内置入口与聊天', () => {
 
     await page.getByLabel('API 密钥').fill(syntheticKey)
     await page.getByRole('button', { name: '保存提供商' }).click()
-    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+    await expect(page.getByRole('status')).toContainText('已保存')
 
     const card = page.locator('[data-provider-key="gemini"]')
     await expect(card).toContainText('Google Gemini')
@@ -65,7 +65,7 @@ test.describe('Google Gemini 内置入口与聊天', () => {
     await flash.click()
     await expect(flash).toBeChecked()
 
-    await card.getByRole('button', { name: '使用这个' }).click()
+    await card.getByRole('button', { name: '设为当前' }).click()
     await expect(card).toContainText('使用中')
 
     // 真实 Electron 里的真流式：思维链先到、正文后到，结束后折成「已思考 N 秒」。

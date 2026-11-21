@@ -26,6 +26,7 @@ type ArticleRow = {
   session_key: string
   session_label: string
   set_label: string
+  exam_set: number
   word_count: number
   body_text: string
   page_start: number | null
@@ -38,7 +39,7 @@ type ArticleRow = {
 }
 
 const ARTICLE_COLUMNS = `rowid AS row_id, id, title, kind, source_type, source_entry_ids,
-  kind_label, session_key, session_label, set_label,
+  kind_label, session_key, session_label, set_label, exam_set,
   word_count, body_text, page_start, page_end, ordinal,
   last_opened_at, last_paragraph_id, last_sentence_index, completed_at`
 
@@ -128,7 +129,7 @@ export function readLibraryArticle(
 }
 
 /**
- * 文章库：真题按场次从新到旧分组，组内打开过的按最近打开排前，其余按库内顺序；
+ * 文章库：真题按场次、套数和题型固定排序；
  * 生成文章单独一列，按保存顺序从新到旧，不占场次、也不混进真题分组。
  */
 export function readLibrary(database: AppDatabase): LibraryListing {
@@ -136,8 +137,6 @@ export function readLibrary(database: AppDatabase): LibraryListing {
     .prepare(
       `SELECT ${ARTICLE_COLUMNS} FROM article
        ORDER BY session_key DESC,
-         CASE WHEN last_opened_at IS NULL THEN 1 ELSE 0 END,
-         last_opened_at DESC,
          exam_set ASC,
          CASE kind WHEN 'long_match' THEN 0 ELSE 1 END,
          ordinal ASC`
@@ -149,10 +148,15 @@ export function readLibrary(database: AppDatabase): LibraryListing {
   for (const row of rows) {
     if (sourceTypeOf(row) === 'ai') continue
     if (current === null || current.id !== row.session_key) {
-      current = { id: row.session_key, label: row.session_label, articles: [] }
+      current = { id: row.session_key, label: row.session_label, sets: [] }
       sessions.push(current)
     }
-    current.articles.push(toArticle(database, row))
+    let set = current.sets.at(-1)
+    if (!set || set.id !== row.exam_set) {
+      set = { id: row.exam_set, label: row.set_label, articles: [] }
+      current.sets.push(set)
+    }
+    set.articles.push(toArticle(database, row))
   }
 
   const aiArticles = rows

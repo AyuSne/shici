@@ -137,7 +137,7 @@ export function providerTestFailureText(result: ProviderTestFailure): string {
     parts.push(`请求 ID ${result.requestId}`)
   }
   if (!result.persisted) {
-    parts.push('测试期间配置已改动，这次结果没有写回；请重新测试')
+    parts.push('测试期间配置已改动，结果未保存；请重新测试')
   }
   return parts.join(' · ')
 }
@@ -148,7 +148,7 @@ export function providerTestVerifiedText(
 ): string {
   return result.persisted
     ? '测试连接通过，已标为已验证。'
-    : '测试连接通过，但测试期间配置已改动，没有写回；请重新测试。'
+    : '测试连接通过，但测试期间配置已改动，结果未保存；请重新测试。'
 }
 
 /**
@@ -173,8 +173,8 @@ export function protocolText(protocol: ProviderProtocol | null): string {
  * 聚合入口的固定文案。卡片与「从内置目录添加」的预览都引用这两句，
  * 判定则统一走 `isAggregateModelProvider`，不要再按 `protocol === null` 各写一份。
  */
-export const AGGREGATE_PROTOCOL_TEXT = '按模型混合'
-export const AGGREGATE_BASE_URL_TEXT = '按模型给（无统一地址）'
+export const AGGREGATE_PROTOCOL_TEXT = '多种协议'
+export const AGGREGATE_BASE_URL_TEXT = '各模型分别提供'
 
 /**
  * provider 的协议文案。聚合入口（OpenCode GO）没有单一协议，说「按模型
@@ -238,7 +238,7 @@ export function providerModelsText(provider: ModelProviderSummary): string {
     return '还没有模型'
   }
   if (isAggregateModelProvider(provider)) {
-    return `${provider.models.length} 个模型（协议与地址按模型给）`
+    return `${provider.models.length} 个模型`
   }
   return provider.models.map((model) => model.modelId).join('、')
 }
@@ -248,7 +248,7 @@ export function modelCapacityText(
   model: Pick<ModelProviderModelSummary, 'contextWindow' | 'maxTokens'>
 ): string {
   if (model.contextWindow === null || model.maxTokens === null) {
-    return '目录未提供容量 · 按通用上限兜底'
+    return '目录未提供容量'
   }
   return `上下文 ${model.contextWindow.toLocaleString('en-US')} · 输出 ${model.maxTokens.toLocaleString('en-US')}`
 }

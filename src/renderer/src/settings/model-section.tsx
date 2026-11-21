@@ -123,11 +123,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
       }
       setApiKey('')
       await refresh()
-      notify(
-        addAuthMode === 'env'
-          ? `已保存 ${setup.displayName}（使用环境变量）；未验证（保存时不联网）`
-          : `已保存 ${setup.displayName}；未验证（保存时不联网）`
-      )
+      notify(`已保存 ${setup.displayName}`)
     })
   }
 
@@ -221,10 +217,10 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
       await refresh()
       notify(
         result.clearedStored
-          ? '已清除本机已存密钥；历史线程与钉住不受影响'
+          ? '已清除本机密钥'
           : result.authMode === 'env'
-            ? '已保存环境变量设置；本机不保存密文'
-            : '已更新本机密钥；历史线程与钉住不受影响'
+            ? '已保存环境变量设置'
+            : '已更新本机密钥'
       )
     } catch (error) {
       setCredentialError(failureText(error, '凭据没有保存成功，再试一次。'))
@@ -246,7 +242,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
         <>
           {noActiveProvider ? (
             <p className="settings-hint is-warning">
-              现在没有使用中的提供商。选一套点「使用这个」，之后的对话才会用它。
+              现在没有使用中的提供商，请选择一套。
             </p>
           ) : null}
           <ul className="profile-list">
@@ -279,7 +275,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                         disabled={busy !== null}
                         onClick={() => void onActivate(provider)}
                       >
-                        使用这个
+                        设为当前
                       </button>
                     )}
                     <button
@@ -410,8 +406,8 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                   <div className="profile-confirm">
                     <span>
                       {provider.active
-                        ? '这是使用中的提供商。删除后会清空使用中选择，之后的对话要先另选一套；历史线程与钉住不受影响。'
-                        : '删除这套提供商？历史线程与钉住不受影响。'}
+                        ? '删除当前提供商后，需要另选一套才能继续对话。'
+                        : '确定删除这套提供商？'}
                     </span>
                     <button
                       type="button"
@@ -441,7 +437,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
         <h3>添加模型提供商</h3>
         <p className="settings-desc">
           内置目录自动带出地址与模型；自定义 API 由你自己填 Provider ID、协议与地址。
-          保存时不联网，断网也能存成「未验证」。密钥可以加密存在本机，也可以只引用环境变量。
+          选择密钥保存在本机，或使用环境变量。
         </p>
 
         <div className="settings-segments" role="group" aria-label="添加方式">
@@ -576,8 +572,8 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
             </label>
             <p className="field-hint">
               {addAuthMode === 'env'
-                ? `只从环境变量 ${addEnvVar.trim() === '' ? (setup?.envVar ?? '') : addEnvVar.trim()} 读取，不加密、不写入本机。`
-                : '环境变量名可改；现在存本机，切到环境变量时再用这个名字。'}
+                ? `使用环境变量 ${addEnvVar.trim() === '' ? (setup?.envVar ?? '') : addEnvVar.trim()}。`
+                : '切换到环境变量时使用这个名称。'}
             </p>
 
             {addAuthMode === 'stored' ? (
@@ -610,9 +606,6 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
               >
                 保存提供商
               </button>
-              <span className="settings-hint">
-                保存后仍是未验证；可点卡片上的「测试连接」，或成功对话一次后自动转已验证。
-              </span>
             </div>
           </div>
         ) : (

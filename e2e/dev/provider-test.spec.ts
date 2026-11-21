@@ -44,7 +44,7 @@ test.describe('保存与测试连接分离', () => {
 
     // 保存是纯本地动作：不发任何请求，保存完仍是未验证。
     await form.getByRole('button', { name: '保存自定义提供商' }).click()
-    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+    await expect(page.getByRole('status')).toContainText('已保存')
     const card = page.locator('[data-provider-key="provider-test-relay"]')
     await expect(card).toContainText('未验证')
     await expect(card).toContainText('环境 · E2E_TEST_KEY')

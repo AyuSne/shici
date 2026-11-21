@@ -76,7 +76,7 @@ export function CredentialEditor({
   const keyPlaceholder = storedKeyUnreadable
     ? '本机密钥解不开，请重新填写'
     : hasStoredKey
-      ? '留空保持不变（只写不读）'
+      ? '留空保持原密钥'
       : '填写 API 密钥'
 
   function choose(authMode: ProviderAuthMode): void {
@@ -127,8 +127,8 @@ export function CredentialEditor({
       </label>
       <p className="field-hint">
         {stored
-          ? `改用环境变量时会读这个名字；现在存本机，不读它。留空默认 ${envPlaceholder}。`
-          : `只从环境变量 ${value.envVar.trim() === '' ? envPlaceholder : value.envVar.trim()} 读取；不加密、不写入本机，也不读已存密文。`}
+          ? `切换到环境变量时使用这个名称，留空默认为 ${envPlaceholder}。`
+          : `使用环境变量 ${value.envVar.trim() === '' ? envPlaceholder : value.envVar.trim()}。`}
       </p>
 
       {stored ? (
@@ -149,10 +149,10 @@ export function CredentialEditor({
           <p className="field-hint">
             {keyHint ??
               (storedKeyUnreadable
-                ? '库里的旧密文解不开，只有重填一个新密钥才能恢复使用；不会自动改用环境变量。'
+                ? '保存的密钥无法使用，请重新填写。'
                 : hasStoredKey
-                  ? '已保存的密钥只显示掩码，不会回传到界面；留空表示继续用原来那把。'
-                  : '密钥只经系统密钥库加密保存，保存时不联网。')}
+                  ? '留空可继续使用原密钥。'
+                  : '密钥会加密保存在本机。')}
           </p>
         </>
       ) : null}
@@ -261,7 +261,7 @@ export function ProviderCredentialEditor({
       {pending?.kind === 'switch-env' ? (
         <div className="profile-confirm">
           <span>
-            切到环境变量会清除这套本机已存的密钥，之后只读环境变量；取消则保持原配置。历史线程与钉住不受影响。
+            切换到环境变量会清除本机保存的密钥。
           </span>
           <button
             type="button"
@@ -287,7 +287,7 @@ export function ProviderCredentialEditor({
       ) : pending?.kind === 'clear-key' ? (
         <div className="profile-confirm">
           <span>
-            清除本机密钥后，这套会显示「缺失」，发送时会明确报错；历史线程与钉住不受影响。
+            清除本机密钥后，需要重新填写才能使用。
           </span>
           <button
             type="button"
