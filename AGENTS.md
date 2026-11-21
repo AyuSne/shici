@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues and specs live in GitHub Issues for `AyuSne/english-learning`. Before reading, creating, or updating tickets, read `docs/agents/issue-tracker.md`.
+Issues and specs live in GitHub Issues for `AyuSne/shici`. Before reading, creating, or updating tickets, read `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

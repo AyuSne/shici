@@ -1,7 +1,20 @@
-import { BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserWindow, nativeTheme } from 'electron'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { THEME_PAPER } from '../shared/theme'
 import { resolveTheme, type Theme, type ThemePreference } from '../shared/types'
+
+/**
+ * 开发态窗口宿主仍是通用 electron.exe，需显式指到随产物复制的 icon.ico；
+ * 打包产物已把 build/icon.ico 嵌进拾词.exe 资源段，无需再从 asar 读文件路径。
+ */
+function resolveWindowIcon(): string | undefined {
+  if (app.isPackaged) {
+    return undefined
+  }
+  const devIcon = join(__dirname, 'icon.ico')
+  return existsSync(devIcon) ? devIcon : undefined
+}
 
 /**
  * 主题偏好落到原生侧：themeSource、窗口底色，返回解析后的实际配色。
@@ -20,6 +33,7 @@ export function createMainWindow(themePreference: ThemePreference): BrowserWindo
   // 先让 Electron 按偏好解析系统配色，窗口底色与界面首帧才一致。
   const theme = applyThemePreference(themePreference)
 
+  const icon = resolveWindowIcon()
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
@@ -27,7 +41,8 @@ export function createMainWindow(themePreference: ThemePreference): BrowserWindo
     minWidth: 900,
     minHeight: 640,
     show: false,
-    title: '素读',
+    title: '拾词',
+    ...(icon === undefined ? {} : { icon }),
     backgroundColor: THEME_PAPER[theme],
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

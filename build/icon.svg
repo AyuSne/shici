@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <clipPath id="paper-clip">
+      <path d="M 153.51999999999998 88 L 358.48 88 C 408.9304 88, 424 103.0696, 424 153.51999999999998 L 424 358.48 C 424 408.9304, 408.9304 424, 358.48 424 L 153.51999999999998 424 C 103.0696 424, 88 408.9304, 88 358.48 L 88 153.51999999999998 C 88 103.0696, 103.0696 88, 153.51999999999998 88 Z"/>
+    </clipPath>
+    <linearGradient id="bg" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%" stop-color="#2B2922"/>
+      <stop offset="50%" stop-color="#1B1A16"/>
+      <stop offset="100%" stop-color="#11100D"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF6DF" stop-opacity="0.28"/>
+      <stop offset="35%" stop-color="#FFF6DF" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.38"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0.18" y1="0" x2="0.82" y2="1">
+      <stop offset="0%" stop-color="#FFFDF8"/>
+      <stop offset="58%" stop-color="#F7F1E4"/>
+      <stop offset="100%" stop-color="#EAE1CE"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0.04" y1="0.12" x2="0.96" y2="0.88">
+      <stop offset="0%" stop-color="#D4952A"/>
+      <stop offset="28%" stop-color="#F8DA85"/>
+      <stop offset="54%" stop-color="#E7B147"/>
+      <stop offset="82%" stop-color="#CE8C23"/>
+      <stop offset="100%" stop-color="#AA6912"/>
+    </linearGradient>
+    <linearGradient id="gold-edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF6D6" stop-opacity="0.78"/>
+      <stop offset="100%" stop-color="#804906" stop-opacity="0.58"/>
+    </linearGradient>
+    <filter id="drop" x="-16%" y="-16%" width="132%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#0A0907" flood-opacity="0.36"/>
+    </filter>
+    <filter id="card-drop" x="-18%" y="-18%" width="136%" height="146%">
+      <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#000000" flood-opacity="0.40"/>
+    </filter>
+    <filter id="pill-drop" x="-28%" y="-38%" width="156%" height="196%">
+      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#6B3C05" flood-opacity="0.48"/>
+    </filter>
+    <filter id="paper-grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" result="noise"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.025"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+
+  <g filter="url(#drop)">
+    <path d="M 137.28 32 L 374.72 32 C 455.7856 32, 480 56.2144, 480 137.28 L 480 374.72 C 480 455.7856, 455.7856 480, 374.72 480 L 137.28 480 C 56.2144 480, 32 455.7856, 32 374.72 L 32 137.28 C 32 56.2144, 56.2144 32, 137.28 32 Z" fill="url(#bg)"/>
+    <path d="M 138.075 33.5 L 373.925 33.5 C 454.44775 33.5, 478.5 57.55225, 478.5 138.075 L 478.5 373.925 C 478.5 454.44775, 454.44775 478.5, 373.925 478.5 L 138.075 478.5 C 57.55225 478.5, 33.5 454.44775, 33.5 373.925 L 33.5 138.075 C 33.5 57.55225, 57.55225 33.5, 138.075 33.5 Z" fill="none" stroke="url(#rim)" stroke-width="2.5"/>
+  </g>
+
+  <g filter="url(#card-drop)">
+    <path d="M 153.51999999999998 88 L 358.48 88 C 408.9304 88, 424 103.0696, 424 153.51999999999998 L 424 358.48 C 424 408.9304, 408.9304 424, 358.48 424 L 153.51999999999998 424 C 103.0696 424, 88 408.9304, 88 358.48 L 88 153.51999999999998 C 88 103.0696, 103.0696 88, 153.51999999999998 88 Z" fill="url(#paper)"/>
+    <rect x="88" y="88" width="336" height="336" clip-path="url(#paper-clip)" filter="url(#paper-grain)"/>
+    <path d="M 154.435 89.5 L 357.565 89.5 C 407.56495 89.5, 422.5 104.43505, 422.5 154.435 L 422.5 357.565 C 422.5 407.56495, 407.56495 422.5, 357.565 422.5 L 154.435 422.5 C 104.43505 422.5, 89.5 407.56495, 89.5 357.565 L 89.5 154.435 C 89.5 104.43505, 104.43505 89.5, 154.435 89.5 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.92" stroke-width="2"/>
+  </g>
+
+  
+    <!-- Recessed letterpress prose bars with crisp rounded inner shade -->
+    <defs>
+      <linearGradient id="bar-fill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#3E3A32"/>
+        <stop offset="22%" stop-color="#555046"/>
+        <stop offset="100%" stop-color="#5E584D"/>
+      </linearGradient>
+    </defs>
+
+    <rect x="136" y="160" width="240" height="31" rx="15.5" fill="#FFFFFF" opacity="0.72"/>
+    <rect x="136" y="158" width="240" height="31" rx="15.5" fill="url(#bar-fill)"/>
+
+    <rect x="310" y="243" width="66" height="31" rx="15.5" fill="#FFFFFF" opacity="0.72"/>
+    <rect x="310" y="241" width="66" height="31" rx="15.5" fill="url(#bar-fill)"/>
+
+    <rect x="136" y="327" width="186" height="31" rx="15.5" fill="#FFFFFF" opacity="0.72"/>
+    <rect x="136" y="325" width="186" height="31" rx="15.5" fill="url(#bar-fill)" opacity="0.94"/>
+
+    <!-- Lifted satin brushed-gold picked word block -->
+    <g filter="url(#pill-drop)">
+      <rect x="130" y="229" width="160" height="55" rx="19" fill="url(#gold)"/>
+      <rect x="131" y="230" width="158" height="53" rx="18" fill="none" stroke="url(#gold-edge)" stroke-width="1.8"/>
+    </g>
+  
+</svg>

@@ -18,7 +18,7 @@ const electronVersion = JSON.parse(
 // node_modules 经 junction 指向共享依赖，里面的 .vitest-cache / .vite 是
 // 测试与构建缓存，不是运行依赖，不能跟着进 app.asar。
 const ignore = [
-  /^\/(?:src|e2e|docs|tools|scripts|assets|out\/main\/dictionary|\.agents|\.git|\.vscode|\.tmp-[^/]*|test-results|playwright-report|release-installer|release|promo|真题PDF)(?:\/|$)/,
+  /^\/(?:src|e2e|docs|tools|scripts|assets|build|out\/main\/dictionary|\.agents|\.git|\.vscode|\.tmp-[^/]*|test-results|playwright-report|release-installer|release|promo|真题PDF)(?:\/|$)/,
   /^\/node_modules\/(?:\.vitest-cache|\.vite)(?:\/|$)/,
   /^\/(?:\.env[^/]*|\.gitignore|\.tmp-[^/]*|[^/]+\.md|[^/]+\.pdf|package-lock\.json|skills-lock\.json|playwright\.config\.ts|vitest\.config\.ts|electron\.vite\.config\.ts|tsconfig[^/]*\.json)$/
 ]
@@ -29,9 +29,10 @@ const extraResource = [join(root, 'assets', 'dictionary')]
 const packagedPaths = await packager({
   dir: root,
   out: outputDirectory,
-  name: 'english-learning',
-  productName: '素读',
-  executableName: '素读',
+  name: 'shici',
+  productName: '拾词',
+  executableName: '拾词',
+  icon: join(root, 'build', 'icon.ico'),
   electronVersion,
   overwrite: true,
   asar: { unpack: '**/*.node' },
@@ -50,6 +51,8 @@ const archivePath = join(appPath, 'resources', 'app.asar')
 const entries = listPackage(archivePath).map((entry) => entry.replaceAll('\\', '/'))
 const forbidden = entries.filter(
   (entry) =>
+    entry === '/build' ||
+    entry.startsWith('/build/') ||
     entry === '/release-installer' ||
     entry.startsWith('/release-installer/') ||
     entry === '/promo' ||
@@ -70,10 +73,10 @@ if (!entries.includes('/out/main/index.js')) {
 
 const executablePath =
   process.platform === 'win32'
-    ? join(appPath, '素读.exe')
+    ? join(appPath, '拾词.exe')
     : process.platform === 'darwin'
-      ? join(appPath, '素读.app', 'Contents', 'MacOS', '素读')
-      : join(appPath, '素读')
+      ? join(appPath, '拾词.app', 'Contents', 'MacOS', '拾词')
+      : join(appPath, '拾词')
 
 const manifestPath = join(outputDirectory, 'packaged-app.json')
 await writeFile(manifestPath, `${JSON.stringify({ appPath, executablePath }, null, 2)}\n`, 'utf8')

@@ -86,9 +86,25 @@ function dictionaryAssets(): Plugin {
   }
 }
 
+/**
+ * 应用图标复制到 out/main/icon.ico，供开发态 BrowserWindow 指定窗口与任务栏图标；
+ * 打包后由 @electron/packager / electron-builder 直接把 build/icon.ico 嵌进可执行文件。
+ */
+function iconAssets(): Plugin {
+  return {
+    name: 'app-icon-assets',
+    writeBundle() {
+      const source = resolve(process.cwd(), 'build/icon.ico')
+      const target = resolve(process.cwd(), 'out/main')
+      mkdirSync(target, { recursive: true })
+      cpSync(source, join(target, 'icon.ico'))
+    }
+  }
+}
+
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin(), corpusAssets(), dictionaryAssets()],
+    plugins: [externalizeDepsPlugin(), corpusAssets(), dictionaryAssets(), iconAssets()],
     build: {
       rollupOptions: {
         output: {

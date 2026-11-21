@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live in [AyuSne/english-learning](https://github.com/AyuSne/english-learning/issues). Use the `gh` CLI for tracker operations.
+Issues and specs for this repo live in [AyuSne/shici](https://github.com/AyuSne/shici/issues). Use the `gh` CLI for tracker operations.
 
 ## Conventions
 

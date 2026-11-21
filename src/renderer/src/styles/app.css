@@ -91,17 +91,19 @@ button:focus-visible {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
+  flex: 0 0 auto;
   width: 18px;
   height: 18px;
-  border-radius: 4px;
-  background: var(--ink);
-  color: var(--paper);
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
+}
+
+.brand-mark-frame {
+  fill: #1a1a17;
+}
+
+[data-theme="dark"] .brand-mark-frame {
+  stroke: rgba(255, 248, 230, 0.24);
+  stroke-width: 1;
 }
 
 .nav {

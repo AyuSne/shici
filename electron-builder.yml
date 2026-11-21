@@ -1,5 +1,5 @@
 appId: com.ayusne.english-learning
-productName: 素读
+productName: 拾词
 copyright: Copyright © 2026 AyuSne
 
 directories:
@@ -25,6 +25,7 @@ extraResources:
     to: dictionary
 
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
@@ -32,7 +33,7 @@ win:
     - target: zip
       arch:
         - x64
-  artifactName: sudu-${version}-${arch}.${ext}
+  artifactName: shici-${version}-${arch}.${ext}
 
 nsis:
   oneClick: false
@@ -41,5 +42,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: 素读
-  uninstallDisplayName: 素读
+  shortcutName: 拾词
+  uninstallDisplayName: 拾词
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico

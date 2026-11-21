@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import Database from 'better-sqlite3'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -367,12 +368,15 @@ test.describe('设置与密钥', () => {
   })
 
   test('关于页列出程序版本与词典版权', async ({ launch }) => {
+    const { version } = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+      version: string
+    }
     const { page } = await launch({ env: noEnvironmentConfig })
     await openSettings(page)
     await settingsNav(page).getByRole('button', { name: '关于' }).click()
 
     const about = page.getByRole('region', { name: '关于' })
-    await expect(about).toContainText('版本 0.1.0')
+    await expect(about).toContainText(`版本 ${version}`)
     await expect(about).toContainText('ECDICT（MIT License）')
     await expect(about).not.toContainText('ADR')
   })
