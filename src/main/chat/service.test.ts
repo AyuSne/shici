@@ -23,6 +23,7 @@ import type { ChatConfig } from './config'
 import { resolveChatConfig } from './config'
 import { descriptorOfCatalogModel, type ChatModelDescriptor } from './model-descriptor'
 import { streamChatCompletion } from './pi-stream'
+import type { RetryTiming } from './retry'
 import { createChatService } from './service'
 
 const stubs: SseStub[] = []
@@ -103,6 +104,26 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 3000): Promise<vo
 
 const userTurn = { role: 'user' as const, content: '你好' }
 
+/** 只替换等待与抖动的系统边界：策略（5 次上限、退避表）仍由生产代码决定。 */
+const fastRetry: RetryTiming = {
+  random: () => 0.5,
+  sleep: async () => true
+}
+
+function recordedRetry(): { timing: RetryTiming; delays: number[] } {
+  const delays: number[] = []
+  return {
+    delays,
+    timing: {
+      random: () => 0.5,
+      sleep: async (ms) => {
+        delays.push(ms)
+        return true
+      }
+    }
+  }
+}
+
 describe('createChatService', () => {
   it('思维链先、正文后，事件按抵达顺序归一，请求显式带思考强度', async () => {
     const target = await stub({
@@ -173,7 +194,10 @@ describe('createChatService', () => {
     [400, 'unknown', 'INVALID_REQUEST']
   ] as const)('HTTP %i 归为 %s，并保留稳定分类与状态码', async (status, code, kind) => {
     const target = await stub({ kind: 'status', status })
-    const service = createChatService({ resolveConfig: () => configFor(target) })
+    const service = createChatService({
+      resolveConfig: () => configFor(target),
+      retryTiming: fastRetry
+    })
     const { events, send, waitFor } = collector()
 
     service.start({ threadId: 'thread-1', streamId: `stream-${status}`, messages: [userTurn] }, send)
@@ -193,7 +217,10 @@ describe('createChatService', () => {
       message: 'too many requests',
       headers: { 'x-request-id': 'req-header-429', 'retry-after': '3' }
     })
-    const service = createChatService({ resolveConfig: () => configFor(target) })
+    const service = createChatService({
+      resolveConfig: () => configFor(target),
+      retryTiming: fastRetry
+    })
     const { events, send, waitFor } = collector()
 
     service.start({ threadId: 'thread-1', streamId: 'stream-header', messages: [userTurn] }, send)
@@ -248,7 +275,10 @@ describe('createChatService', () => {
 
   it('成功响应但一个内容块都没有时归为 EMPTY_RESPONSE，不假装 done', async () => {
     const target = await stub({ kind: 'stream', text: [] })
-    const service = createChatService({ resolveConfig: () => configFor(target) })
+    const service = createChatService({
+      resolveConfig: () => configFor(target),
+      retryTiming: fastRetry
+    })
     const { events, send, waitFor } = collector()
 
     service.start({ threadId: 'thread-1', streamId: 'stream-empty', messages: [userTurn] }, send)
@@ -273,7 +303,10 @@ describe('createChatService', () => {
       text: [],
       headers: { 'x-request-id': 'req-empty', 'retry-after': '3' }
     })
-    const service = createChatService({ resolveConfig: () => configFor(target) })
+    const service = createChatService({
+      resolveConfig: () => configFor(target),
+      retryTiming: fastRetry
+    })
     const { events, send, waitFor } = collector()
 
     service.start(
@@ -301,6 +334,7 @@ describe('createChatService', () => {
 
   it('连不上模型服务时归为网络异常，稳定分类是 TRANSPORT', async () => {
     const service = createChatService({
+      retryTiming: fastRetry,
       resolveConfig: () => ({
         apiKey: 'test-key',
         baseUrl: 'http://127.0.0.1:1',
@@ -455,16 +489,26 @@ describe('createChatService', () => {
     service.stop('stream-duplicate')
   })
 
-  it('失败的一次调用只发一次请求，maxRetries 为 0', async () => {
+  it('service 层的 normal 对 500 最多重试 5 次：只显示最终错误，退避是 500ms→8s', async () => {
     const target = await stub({ kind: 'status', status: 500 })
-    const service = createChatService({ resolveConfig: () => configFor(target) })
-    const { send, waitFor } = collector()
+    const recorded = recordedRetry()
+    const service = createChatService({
+      resolveConfig: () => configFor(target),
+      retryTiming: recorded.timing
+    })
+    const { events, send, waitFor } = collector()
 
     service.start({ threadId: 'thread-1', streamId: 'stream-once', messages: [userTurn] }, send)
     await waitFor((current) => current.some((event) => event.type === 'error'))
-    await new Promise((resolve) => setTimeout(resolve, 100))
 
-    expect(target.requests).toHaveLength(1)
+    expect(target.requests).toHaveLength(6)
+    expect(recorded.delays).toEqual([500, 1000, 2000, 4000, 8000])
+    expect(events).toEqual([
+      {
+        type: 'error',
+        error: expect.objectContaining({ code: 'server-busy', kind: 'SERVER', status: 500 })
+      }
+    ])
   })
 })
 
@@ -489,7 +533,8 @@ describe('配置回写与切换', () => {
     const verified: string[] = []
     const service = createChatService({
       resolveConfig: () => ({ ...configFor(target), providerId: 'provider-1' }),
-      onVerified: (providerId) => verified.push(providerId)
+      onVerified: (providerId) => verified.push(providerId),
+      retryTiming: fastRetry
     })
     const { send, waitFor } = collector()
 

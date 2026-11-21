@@ -216,17 +216,20 @@ export type CreateCustomProviderResult =
   | { status: 'saved'; providerId: string; providerKey: string }
   | { status: 'rejected'; reason: CustomProviderRejection }
 
-/** 只允许改显示名与地址：Provider ID 与协议创建后不可改。 */
+/** 只允许改显示名、地址与重试策略：Provider ID 与协议创建后不可改。 */
 export type UpdateProviderRequest = {
   providerId: string
   displayName: string
   baseUrl: string
+  /** 不传表示保持原策略；传了就必须是 normal / always，否则整笔拒绝。 */
+  retryPolicy?: ProviderRetryPolicy
 }
 
 export type UpdateProviderRejection =
   | 'missing-display-name'
   | 'missing-base-url'
   | 'invalid-base-url'
+  | 'invalid-retry-policy'
 
 export type UpdateProviderResult =
   | { status: 'saved' }

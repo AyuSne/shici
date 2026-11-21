@@ -16,6 +16,7 @@ import type {
   ModelInput,
   ProviderModelDraft,
   ProviderModelWriteResult,
+  ProviderRetryPolicy,
   UpdateProviderRequest,
   UpdateProviderResult
 } from '../../shared/model-providers'
@@ -367,7 +368,24 @@ export function createCustomProvider(
   return { status: 'saved', providerId, providerKey }
 }
 
-/** 只改显示名与地址；Provider ID 与协议没有入参，创建后不可改。 */
+/**
+ * 入参的重试策略只认 normal / always。`undefined` 表示这次不动策略；
+ * 其余形状（缺 mode、未知 mode、非对象）整笔拒绝，不静默改回默认。
+ */
+function retryPolicyOfRequest(
+  value: unknown
+): ProviderRetryPolicy | 'invalid' | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== 'object' || value === null) {
+    return 'invalid'
+  }
+  const mode = (value as { mode?: unknown }).mode
+  return mode === 'normal' || mode === 'always' ? { mode } : 'invalid'
+}
+
+/** 只改显示名、地址与重试策略；Provider ID 与协议没有入参，创建后不可改。 */
 export function updateModelProvider(
   database: AppDatabase,
   request: UpdateProviderRequest,
@@ -376,6 +394,10 @@ export function updateModelProvider(
   const provider = readModelProvider(database, request.providerId)
   if (provider === null) {
     return { status: 'missing' }
+  }
+  const retryPolicy = retryPolicyOfRequest(request.retryPolicy)
+  if (retryPolicy === 'invalid') {
+    return { status: 'rejected', reason: 'invalid-retry-policy' }
   }
   const displayName = request.displayName.trim()
   if (displayName === '') {
@@ -396,14 +418,16 @@ export function updateModelProvider(
 
   const now = nowOf(options)
   const addressChanged = (storedBaseUrl ?? '') !== (provider.baseUrl ?? '').trim()
+  // 重试策略与验证状态无关：只改策略不动「已验证/未验证」，也不改上次校验时间。
+  const storedRetryPolicy = retryPolicy ?? provider.retryPolicy
   const update = database.transaction(() => {
     database
       .prepare(
         `UPDATE model_provider
-            SET display_name = ?, base_url = ?, updated_at = ?
+            SET display_name = ?, base_url = ?, retry_policy = ?, updated_at = ?
           WHERE id = ?`
       )
-      .run(displayName, storedBaseUrl, now, provider.id)
+      .run(displayName, storedBaseUrl, JSON.stringify(storedRetryPolicy), now, provider.id)
     if (addressChanged) {
       // 地址变了，此前的「已验证」不再代表这套配置；下次真实调用/测试连接再转回来。
       database

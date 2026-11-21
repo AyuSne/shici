@@ -3,7 +3,8 @@ import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
 import type {
   ModelProviderModelSummary,
   ModelProviderSummary,
-  ProviderProtocol
+  ProviderProtocol,
+  ProviderRetryPolicy
 } from '../../../shared/model-providers'
 import type { ReadingPreferences } from '../../../shared/reading'
 import type { BackupSummary, RestoreRejection } from '../../../shared/settings'
@@ -35,6 +36,19 @@ export function checkText(provider: ModelProviderSummary): string {
         ? '接口地址或模型名不对'
         : '未能完成'
   return `上次校验 ${moment} 未通过 · ${reason}`
+}
+
+/**
+ * 重试策略的一句话说明。normal 是默认：只重试临时错误；always 覆盖所有
+ * 模型请求失败（401/402/413 这类重试没用的情况也会再试）。两者都最多 5 次，
+ * 且一旦有正文或思维链就停止自动重试。
+ */
+export function retryPolicyText(
+  policy: Pick<ProviderRetryPolicy, 'mode'>
+): string {
+  return policy.mode === 'always'
+    ? '所有失败都重试（最多 5 次）'
+    : '只重试临时错误（默认，最多 5 次）'
 }
 
 export function protocolText(protocol: ProviderProtocol | null): string {

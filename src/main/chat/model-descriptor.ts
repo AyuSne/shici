@@ -1,6 +1,10 @@
 import type { CatalogModel, ModelProtocol } from '../../shared/model-catalog'
 import { findCatalogModel } from '../../shared/model-catalog'
 import { readEnvValue } from '../process-env'
+import {
+  DEFAULT_RETRY_POLICY,
+  type ProviderRetryPolicy
+} from '../../shared/model-providers'
 import type {
   ModelProviderModelRecord,
   ModelProviderRecord,
@@ -120,6 +124,8 @@ export type EnvChatConfig = {
   baseUrl: string
   model: string
   descriptor: ChatModelDescriptor
+  /** 没有 provider 行可读时按 normal：临时错误最多重试 5 次。 */
+  retryPolicy: ProviderRetryPolicy
 }
 
 /**
@@ -143,5 +149,5 @@ export function readEnvChatConfig(env: NodeJS.ProcessEnv): EnvChatConfig | null 
           api: 'openai-completions',
           baseUrl
         })
-  return { apiKey, baseUrl, model, descriptor }
+  return { apiKey, baseUrl, model, descriptor, retryPolicy: { ...DEFAULT_RETRY_POLICY } }
 }

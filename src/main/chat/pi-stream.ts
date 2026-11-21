@@ -42,7 +42,8 @@ const REQUEST_KEY_AUTH: ProviderAuth = {
  *
  * 协议实现按描述符的 `api` 从注册表懒加载；请求级 fetch 捕获 HTTP 状态、
  * request id 与 Retry-After，pi 之后怎么拍平异常都不影响稳定分类。
- * `maxRetries: 0` 表示一次调用只发一次请求：本批没有重试层，失败交给界面决定。
+ * `maxRetries: 0` 表示一次调用只发一次请求：重试由服务层的共享执行层按
+ * provider 策略负责，模型层绝不偷偷叠加第二层重试。
  *
  * Gemini 的 SDK 不接受自定义 fetch，改由 `native-fetch-capture` 旁路观察 undici
  * 诊断通道；其余协议仍走请求级 fetch 包装。两条路径共用同一个 capture。
@@ -88,7 +89,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
       apiKey: options.apiKey,
       ...(reasoning === undefined ? {} : { reasoning }),
       signal: options.signal,
-      // 一次调用一次尝试；重试属于后续批次，绝不在模型层偷偷叠加。
+      // 一次调用一次尝试；自动重试只在服务层的共享执行层里发生。
       maxRetries: 0,
       ...(nativeFetchProtocol ? {} : { fetch: capture.fetch })
     }
