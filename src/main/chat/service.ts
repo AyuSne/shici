@@ -2,7 +2,8 @@ import type {
   ChatStartRequest,
   ChatStartResult,
   ChatStopResult,
-  ChatStreamUpdate
+  ChatStreamUpdate,
+  ChatCredentialProblem
 } from '../../shared/chat'
 import { type ChatConfig } from './config'
 import { streamChatCompletion } from './pi-stream'
@@ -105,7 +106,13 @@ async function runStream(
       streamId: request.streamId,
       event: {
         type: 'error',
-        error: { code: 'not-configured', detail: '本机密钥缺失或解不开' }
+        error: {
+          code: 'not-configured',
+          detail: credentialDetail(config.credentialProblem),
+          ...(config.credentialProblem === undefined
+            ? {}
+            : { credential: config.credentialProblem })
+        }
       }
     })
     return
@@ -119,4 +126,21 @@ async function runStream(
     signal: controller.signal,
     onEvent: (event) => send({ streamId: request.streamId, event })
   })
+}
+
+/** 给日志与排障用的说明；界面文案另从结构化原因生成。 */
+function credentialDetail(problem: ChatCredentialProblem | undefined): string {
+  if (problem === undefined) {
+    return '本机密钥缺失或解不开'
+  }
+  switch (problem.kind) {
+    case 'stored-decrypt-failed':
+      return '本机保存的密钥解不开'
+    case 'stored-missing':
+      return '这套提供商没有保存密钥'
+    case 'env-missing':
+      return `环境变量 ${problem.envVar} 没有设置`
+    case 'env-var-unset':
+      return '环境模式没有填写环境变量名'
+  }
 }

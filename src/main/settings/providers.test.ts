@@ -238,6 +238,56 @@ describe('listModelProviders', () => {
     expect(present).toMatchObject({ keyState: 'env', apiKeyMask: null })
   })
 
+  it('本机密文解不开时列表照常打开：来源仍是本机，另给动作提示，不静默当缺失', () => {
+    migratedDatabase(twoProfiles, 'profile-deepseek')
+    database
+      .prepare(`UPDATE model_provider SET secret_ciphertext = 'broken-ciphertext' WHERE id = ?`)
+      .run('profile-deepseek')
+
+    const providers = listModelProviders(database, {
+      secrets,
+      env: { DEEPSEEK_API_KEY: 'sk-env-must-not-be-used' }
+    })
+
+    // 设置页整页仍读得出来：一张坏凭据不影响另一张卡片。
+    expect(providers).toHaveLength(2)
+    expect(providers[0]).toMatchObject({
+      id: 'profile-deepseek',
+      authMode: 'stored',
+      keyState: 'stored',
+      hasStoredCiphertext: true,
+      credentialError: 'stored-decrypt-failed',
+      apiKeyMask: null
+    })
+    expect(providers[1]).toMatchObject({
+      id: 'profile-backup',
+      keyState: 'stored',
+      credentialError: null
+    })
+    expect(JSON.stringify(providers)).not.toContain('sk-env-must-not-be-used')
+  })
+
+  it('环境变量模式遗留旧密文时摘要不冒充本机，也不给掩码', () => {
+    migratedDatabase(twoProfiles)
+    database
+      .prepare(
+        `UPDATE model_provider
+            SET auth_mode = 'env', env_var = 'MY_PROVIDER_KEY', secret_ciphertext = 'sealed:stale'
+          WHERE id = 'profile-deepseek'`
+      )
+      .run()
+
+    const provider = listModelProviders(database, { secrets, env: {} })[0]
+    expect(provider).toMatchObject({
+      keyState: 'missing',
+      authMode: 'env',
+      hasStoredCiphertext: true,
+      credentialError: null,
+      apiKeyMask: null
+    })
+    expect(JSON.stringify(provider)).not.toContain('sealed:')
+  })
+
   it('四个已知协议读库都原样返回，不会被降级成别的协议', () => {
     migratedDatabase([twoProfiles[0]!])
 

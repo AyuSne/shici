@@ -6,12 +6,13 @@ import {
   type ElectronApplication,
   type Page
 } from '@playwright/test'
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createOwnedProcessShutdown } from '../../src/testing/process-shutdown'
 
 const repositoryRoot = process.cwd()
 
@@ -74,21 +75,23 @@ async function launchDevelopmentApp(
   const page = await electronApp.firstWindow()
   await page.waitForLoadState('domcontentloaded')
 
-  let closed = false
-  const child = electronApp.process()
+  // 只处理 Playwright 为这条用例拉起的 Electron 进程：先有界等它自己退，
+  // 超时后只对它的进程树强制结束；等真的退出后才交给 fixture 删临时目录。
+  const shutdown = createOwnedProcessShutdown(electronApp.process(), {
+    graceful: () => electronApp.close(),
+    gracefulTimeoutMs: 10_000,
+    forceTimeoutMs: 10_000
+  })
   return {
     page,
     userDataDirectory,
     electronApp,
     async kill() {
-      if (closed) return
-      closed = true
-      await forceStop(child)
+      // 崩溃/断电语义：不经过 before-quit 与 SQLite close，直接结束进程树。
+      await shutdown.kill()
     },
     async close() {
-      if (closed) return
-      closed = true
-      await electronApp.close()
+      await shutdown.close()
     }
   }
 }
@@ -116,41 +119,6 @@ async function findFreePort(): Promise<number> {
   })
 }
 
-function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
-  if (child.exitCode !== null) return Promise.resolve()
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, timeoutMs)
-    child.once('exit', () => {
-      clearTimeout(timer)
-      resolve()
-    })
-  })
-}
-
-async function stopProcess(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return
-  child.kill()
-  await waitForExit(child, 5_000)
-  if (child.exitCode === null && child.pid !== undefined) {
-    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-    await waitForExit(child, 5_000)
-  }
-}
-
-/** 不给应用任何收尾机会：任务管理器「结束进程树」的效果。 */
-async function forceStop(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return
-  if (child.pid === undefined) {
-    throw new Error('拿不到被测应用的进程 id')
-  }
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-  } else {
-    child.kill('SIGKILL')
-  }
-  await waitForExit(child, 10_000)
-}
-
 /**
  * 打包产物不能用 Playwright 的 Electron 启动器（它只在用 npm 里那份 Electron 时才注入
  * 自己的主进程 loader），所以按远程调试端口连上去，渲染出来的 DOM 一样能断言。
@@ -168,40 +136,53 @@ async function launchPackagedApp(
     { stdio: 'ignore', env: environment }
   )
 
+  /** 启动失败时也只用强制结束清掉这条用例拉起的进程树。 */
+  async function killOnFailure(): Promise<void> {
+    await createOwnedProcessShutdown(child, {
+      graceful: async () => {
+        child.kill()
+      }
+    }).kill()
+  }
+
   let browser: Browser
   try {
     browser = await waitForBrowser(endpoint)
   } catch (error) {
-    await stopProcess(child)
+    await killOnFailure()
     throw error
   }
 
   const context = browser.contexts()[0]
   if (!context) {
     await browser.close().catch(() => undefined)
-    await stopProcess(child)
+    await killOnFailure()
     throw new Error('打包产物没有可用的渲染上下文')
   }
 
   const page = context.pages()[0] ?? (await context.waitForEvent('page', { timeout: 30_000 }))
   await page.waitForLoadState('domcontentloaded')
 
-  let closed = false
+  const shutdown = createOwnedProcessShutdown(child, {
+    graceful: async () => {
+      await Promise.all([
+        browser.close().catch(() => undefined),
+        Promise.resolve().then(() => child.kill())
+      ])
+    },
+    gracefulTimeoutMs: 10_000,
+    forceTimeoutMs: 10_000
+  })
   return {
     page,
     userDataDirectory,
     electronApp: null,
     async kill() {
-      if (closed) return
-      closed = true
-      await forceStop(child)
+      await shutdown.kill()
       await browser.close().catch(() => undefined)
     },
     async close() {
-      if (closed) return
-      closed = true
-      await browser.close().catch(() => undefined)
-      await stopProcess(child)
+      await shutdown.close()
     }
   }
 }
@@ -241,8 +222,18 @@ export const test = base.extend<Fixtures>({
       launched.push(handle)
       return handle
     })
+    const errors: unknown[] = []
     for (const handle of launched.reverse()) {
-      await handle.close().catch(() => undefined)
+      try {
+        await handle.close()
+      } catch (error) {
+        errors.push(error)
+      }
+    }
+    // 清理失败不能静默吞掉：让 teardown 明确失败，而不是留一个还在跑的
+    // Electron 子进程去和临时目录删除赛跑。
+    if (errors.length > 0) {
+      throw new AggregateError(errors, '关闭这条用例拉起的被测应用时失败')
     }
   }
 })

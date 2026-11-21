@@ -86,6 +86,7 @@ test.describe('备份、恢复与导出', () => {
     userDataDirectory
   }) => {
     const backupFile = join(workspace, 'chosen', 'english-learning-backup.db')
+    const stub = await createStub({ kind: 'stream', text: ['恢复后不该匿名发出。'] })
     // 升级前的旧库：模型配置躺在 model_profile 里，密钥是密文。
     seedLegacyModelProfiles(
       join(userDataDirectory, 'english-learning.db'),
@@ -174,6 +175,29 @@ test.describe('备份、恢复与导出', () => {
     const card = page.locator('.profile-card').filter({ hasText: 'DeepSeek 官方' })
     await expect(card).toContainText('未验证')
     await expect(card).toContainText('缺失')
+
+    // 缺失的密钥不能匿名发送，也不能改读环境变量：先在本地明确报错。
+    // 把地址指到本机 stub，证明请求确实没有发出去（而不是碰真服务）。
+    const restoredDatabase = new Database(
+      join(handle.userDataDirectory, 'english-learning.db')
+    )
+    try {
+      restoredDatabase
+        .prepare("UPDATE model_provider SET base_url = ? WHERE provider_key = 'deepseek'")
+        .run(stub.baseUrl)
+    } finally {
+      restoredDatabase.close()
+    }
+    await page
+      .getByRole('navigation', { name: '全局导航' })
+      .getByRole('button', { name: '对话' })
+      .click()
+    await expect(page.getByRole('textbox', { name: '输入问题' })).toBeVisible()
+    await page.getByRole('textbox', { name: '输入问题' }).fill('恢复后发送')
+    await page.getByRole('button', { name: '发送' }).click()
+    const error = page.locator('.message-error')
+    await expect(error).toContainText('这套提供商还没有密钥')
+    expect(stub.requests).toHaveLength(0)
 
     // 数据区也记得这次恢复留下的快照，以及刚用过的这份备份。
     await openData(page)

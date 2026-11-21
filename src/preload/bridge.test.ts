@@ -165,7 +165,7 @@ describe('createBridge', () => {
     ])
   })
 
-  it('提供商新增、默认模型、激活与删除都走同一份白名单', async () => {
+  it('提供商新增、默认模型、激活、删除与凭据编辑都走同一份白名单', async () => {
     const { ipc, invocations } = fakeRenderer()
     const bridge = createBridge(ipc)
 
@@ -179,6 +179,13 @@ describe('createBridge', () => {
     })
     await bridge.invoke('settings:provider-activate', { providerId: 'provider-1' })
     await bridge.invoke('settings:provider-delete', { providerId: 'provider-1' })
+    await bridge.invoke('settings:provider-credential', {
+      providerId: 'provider-1',
+      authMode: 'env',
+      envVar: 'MY_PROVIDER_KEY',
+      apiKey: '',
+      confirmClearStored: true
+    })
 
     expect(JSON.parse(JSON.stringify(invocations))).toEqual([
       {
@@ -190,7 +197,120 @@ describe('createBridge', () => {
         payload: { providerId: 'provider-1', modelRowId: 'model-1' }
       },
       { channel: 'settings:provider-activate', payload: { providerId: 'provider-1' } },
-      { channel: 'settings:provider-delete', payload: { providerId: 'provider-1' } }
+      { channel: 'settings:provider-delete', payload: { providerId: 'provider-1' } },
+      {
+        channel: 'settings:provider-credential',
+        payload: {
+          providerId: 'provider-1',
+          authMode: 'env',
+          envVar: 'MY_PROVIDER_KEY',
+          apiKey: '',
+          confirmClearStored: true
+        }
+      }
+    ])
+  })
+
+  it('自定义 provider 与模型目录的写入都走同一份白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+
+    await bridge.invoke('settings:provider-create', {
+      providerKey: 'my-relay',
+      displayName: '我的中转',
+      protocol: 'openai-completions',
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-write-only',
+      model: { modelId: 'relay-model', source: 'fetched' },
+      additionalModels: [{ modelId: 'deepseek-v4-pro', source: 'fetched' }]
+    })
+    await bridge.invoke('settings:provider-models-fetch', {
+      source: 'custom',
+      catalogProviderId: null,
+      providerId: null,
+      protocol: 'openai-completions',
+      baseUrl: 'https://relay.example.com/v1',
+      authMode: 'stored',
+      apiKey: 'sk-write-only',
+      knownModelIds: ['relay-model']
+    })
+    await bridge.invoke('settings:provider-update', {
+      providerId: 'provider-1',
+      displayName: '新名字',
+      baseUrl: 'https://relay.example.com/v2'
+    })
+    await bridge.invoke('settings:provider-model-add', {
+      providerId: 'provider-1',
+      model: { modelId: 'new-model' }
+    })
+    await bridge.invoke('settings:provider-model-update', {
+      providerId: 'provider-1',
+      modelRowId: 'model-1',
+      model: { modelId: 'renamed-model' }
+    })
+    await bridge.invoke('settings:provider-model-delete', {
+      providerId: 'provider-1',
+      modelRowId: 'model-2'
+    })
+    await bridge.invoke('settings:provider-model-reorder', {
+      providerId: 'provider-1',
+      modelRowIds: ['model-2', 'model-1']
+    })
+
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      {
+        channel: 'settings:provider-create',
+        payload: {
+          providerKey: 'my-relay',
+          displayName: '我的中转',
+          protocol: 'openai-completions',
+          baseUrl: 'https://relay.example.com/v1',
+          apiKey: 'sk-write-only',
+          model: { modelId: 'relay-model', source: 'fetched' },
+          additionalModels: [{ modelId: 'deepseek-v4-pro', source: 'fetched' }]
+        }
+      },
+      {
+        channel: 'settings:provider-models-fetch',
+        payload: {
+          source: 'custom',
+          catalogProviderId: null,
+          providerId: null,
+          protocol: 'openai-completions',
+          baseUrl: 'https://relay.example.com/v1',
+          authMode: 'stored',
+          apiKey: 'sk-write-only',
+          knownModelIds: ['relay-model']
+        }
+      },
+      {
+        channel: 'settings:provider-update',
+        payload: {
+          providerId: 'provider-1',
+          displayName: '新名字',
+          baseUrl: 'https://relay.example.com/v2'
+        }
+      },
+      {
+        channel: 'settings:provider-model-add',
+        payload: { providerId: 'provider-1', model: { modelId: 'new-model' } }
+      },
+      {
+        channel: 'settings:provider-model-update',
+        payload: {
+          providerId: 'provider-1',
+          modelRowId: 'model-1',
+          model: { modelId: 'renamed-model' }
+        }
+      },
+      {
+        channel: 'settings:provider-model-delete',
+        payload: { providerId: 'provider-1', modelRowId: 'model-2' }
+      },
+      {
+        channel: 'settings:provider-model-reorder',
+        payload: { providerId: 'provider-1', modelRowIds: ['model-2', 'model-1'] }
+      }
     ])
   })
 

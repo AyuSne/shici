@@ -1,3 +1,4 @@
+import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
 import type {
   ModelProviderModelSummary,
   ModelProviderSummary,
@@ -35,21 +36,17 @@ export function checkText(provider: ModelProviderSummary): string {
   return `上次校验 ${moment} 未通过 · ${reason}`
 }
 
-const PROTOCOL_TEXT: Record<ProviderProtocol, string> = {
-  'openai-completions': 'OpenAI Chat Completions',
-  'openai-responses': 'OpenAI Responses',
-  'anthropic-messages': 'Anthropic Messages',
-  'google-generative-ai': 'Gemini API'
-}
-
 export function protocolText(protocol: ProviderProtocol | null): string {
   // 库里存了本版不认识的协议时如实说，不冒充另一种协议。
-  return protocol === null ? '未识别协议' : PROTOCOL_TEXT[protocol]
+  return protocol === null ? '未识别协议' : MODEL_PROTOCOL_LABELS[protocol]
 }
 
 /** 密钥三态：本机（带掩码）、环境（带变量名）、缺失（带变量名）。 */
 export function keyStateText(provider: ModelProviderSummary): string {
   if (provider.keyState === 'stored') {
+    if (provider.credentialError === 'stored-decrypt-failed') {
+      return '本机 · 解不开'
+    }
     return provider.apiKeyMask === null
       ? '本机'
       : `本机 · ${provider.apiKeyMask}`
@@ -61,6 +58,19 @@ export function keyStateText(provider: ModelProviderSummary): string {
     return variable === '' ? '环境' : `环境 · ${variable}`
   }
   return variable === '' ? '缺失' : `缺失 · ${variable}`
+}
+
+/**
+ * 本机密文解不开时的动作提示。只针对这一种情况：环境变量缺失时界面已经
+ * 在密钥一栏写了变量名，不需要再叠一段。
+ */
+export function credentialIssueText(
+  provider: Pick<ModelProviderSummary, 'credentialError'>
+): string | null {
+  if (provider.credentialError !== 'stored-decrypt-failed') {
+    return null
+  }
+  return '本机保存的密钥解不开（可能换了电脑或系统账户）。点「编辑凭据」重填，或改用环境变量；发送不会自动改用环境变量。'
 }
 
 /** 目录里的模型请求名，按保存顺序列出。 */
@@ -82,13 +92,20 @@ export function modelCapacityText(
 }
 
 export function modelThinkingText(
-  model: Pick<ModelProviderModelSummary, 'reasoning'>
+  model: Pick<ModelProviderModelSummary, 'reasoning'> | { reasoning: boolean | null }
 ): string {
+  if (model.reasoning === null) {
+    return '思考能力未知'
+  }
   return model.reasoning ? '支持思考' : '不支持思考'
 }
 
 /** 模型选择器每行的元数据；目录只读，这里只负责说清。 */
-export function modelMetaText(model: ModelProviderModelSummary): string {
+export function modelMetaText(
+  model: Pick<ModelProviderModelSummary, 'contextWindow' | 'maxTokens'> & {
+    reasoning: boolean | null
+  }
+): string {
   return `${modelCapacityText(model)} · ${modelThinkingText(model)}`
 }
 

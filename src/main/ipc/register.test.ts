@@ -270,6 +270,16 @@ function settingsHandlers() {
       providerId: 'provider-1',
       providerKey: 'deepseek'
     }),
+    'settings:provider-create': () => ({
+      status: 'saved' as const,
+      providerId: 'provider-2',
+      providerKey: 'my-relay'
+    }),
+    'settings:provider-update': () => ({ status: 'saved' as const }),
+    'settings:provider-model-add': () => ({ status: 'saved' as const }),
+    'settings:provider-model-update': () => ({ status: 'saved' as const }),
+    'settings:provider-model-delete': () => ({ status: 'deleted' as const }),
+    'settings:provider-model-reorder': () => ({ status: 'saved' as const }),
     'settings:provider-default-model': () => ({
       status: 'saved' as const,
       defaultModelRowId: 'model-1'
@@ -281,6 +291,15 @@ function settingsHandlers() {
     'settings:provider-delete': () => ({
       status: 'deleted' as const,
       activeCleared: false
+    }),
+    'settings:provider-credential': () => ({
+      status: 'saved' as const,
+      authMode: 'stored' as const,
+      clearedStored: false
+    }),
+    'settings:provider-models-fetch': () => ({
+      status: 'fetched' as const,
+      candidates: []
     }),
     'settings:reading-save': () => ({
       saved: true,
@@ -334,26 +353,29 @@ describe('registerIpcHandlers', () => {
     expect(events).toEqual([event])
   })
 
-  it('模型服务写入只走 provider 表，没有旧 profile 写入，也没有模型 CRUD', () => {
+  it('模型服务写入只走 provider 表：自定义创建与模型 CRUD 都在契约里；#64 获取模型已接入，测试连接仍留给后续票', () => {
     expect(IPC_CHANNELS).toContain('settings:overview')
     expect(IPC_CHANNELS).toEqual(
       expect.arrayContaining([
         'settings:provider-add',
+        'settings:provider-create',
+        'settings:provider-update',
+        'settings:provider-model-add',
+        'settings:provider-model-update',
+        'settings:provider-model-delete',
+        'settings:provider-model-reorder',
         'settings:provider-default-model',
         'settings:provider-activate',
-        'settings:provider-delete'
+        'settings:provider-delete',
+        'settings:provider-credential',
+        'settings:provider-models-fetch'
       ])
     )
     expect(
       IPC_CHANNELS.filter((channel) => channel.startsWith('settings:profile-'))
     ).toEqual([])
     expect(
-      IPC_CHANNELS.filter(
-        (channel) =>
-          channel.startsWith('settings:model-') ||
-          channel.includes('discover') ||
-          channel.includes('test-connection')
-      )
+      IPC_CHANNELS.filter((channel) => channel.includes('test-connection'))
     ).toEqual([])
   })
 

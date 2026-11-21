@@ -357,6 +357,68 @@ describe('createChatService', () => {
     expect(target.requests).toHaveLength(0)
   })
 
+  it('环境变量缺失的错误里点名变量，并带上结构化原因供界面展示', async () => {
+    const target = await stub({ kind: 'stream', text: ['不该出现'] })
+    const service = createChatService({
+      resolveConfig: () => ({
+        ...configFor(target),
+        apiKey: '',
+        missingCredential: true,
+        credentialProblem: { kind: 'env-missing', envVar: 'MISSING_PROVIDER_KEY' }
+      })
+    })
+    const { events, send, waitFor } = collector()
+
+    service.start(
+      { threadId: 'thread-1', streamId: 'stream-env-missing', messages: [userTurn] },
+      send
+    )
+    await waitFor((current) => current.length > 0)
+
+    expect(events).toEqual([
+      {
+        type: 'error',
+        error: {
+          code: 'not-configured',
+          detail: expect.stringContaining('MISSING_PROVIDER_KEY'),
+          credential: { kind: 'env-missing', envVar: 'MISSING_PROVIDER_KEY' }
+        }
+      }
+    ])
+    expect(target.requests).toHaveLength(0)
+  })
+
+  it('本机密文解不开的错误不再笼统说「缺失」', async () => {
+    const target = await stub({ kind: 'stream', text: ['不该出现'] })
+    const service = createChatService({
+      resolveConfig: () => ({
+        ...configFor(target),
+        apiKey: '',
+        missingCredential: true,
+        credentialProblem: { kind: 'stored-decrypt-failed' }
+      })
+    })
+    const { events, send, waitFor } = collector()
+
+    service.start(
+      { threadId: 'thread-1', streamId: 'stream-decrypt-failed', messages: [userTurn] },
+      send
+    )
+    await waitFor((current) => current.length > 0)
+
+    expect(events).toEqual([
+      {
+        type: 'error',
+        error: {
+          code: 'not-configured',
+          detail: '本机保存的密钥解不开',
+          credential: { kind: 'stored-decrypt-failed' }
+        }
+      }
+    ])
+    expect(target.requests).toHaveLength(0)
+  })
+
   it('停止会中断请求，已收到的内容保留，且不再补发 done 或 error', async () => {
     const target = await stub({ kind: 'hang', thinking: ['想'], text: ['半句'] })
     const service = createChatService({ resolveConfig: () => configFor(target) })
@@ -656,7 +718,11 @@ describe('内置 provider 与描述符进请求', () => {
     expect(events).toEqual([
       {
         type: 'error',
-        error: { code: 'not-configured', detail: expect.any(String) }
+        error: {
+          code: 'not-configured',
+          detail: expect.any(String),
+          credential: { kind: 'stored-missing' }
+        }
       }
     ])
     expect(target.requests).toHaveLength(0)

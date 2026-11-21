@@ -222,6 +222,12 @@
   color: var(--danger);
 }
 
+/* 禁用态只用 ink-3，不加透明度：避免对比度二次衰减（token 表 §7）。 */
+.link-button:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
 .profile-facts {
   display: flex;
   flex-direction: column;
@@ -310,6 +316,12 @@
   accent-color: var(--amber);
 }
 
+/* 模型行单选、候选复选框都走键盘焦点：2px 琥珀描边，不用默认蓝框。 */
+.model-option input:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
 .model-id {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12px;
@@ -320,6 +332,183 @@
   color: var(--ink-2);
   font-size: 12px;
   line-height: 16px;
+}
+
+/* 模型目录编辑（#63）：拖动排序、上移/下移、未知 ID 标记与行内编辑。 */
+
+.model-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.model-row + .model-row {
+  border-top: 1px dashed var(--rule);
+}
+
+.model-row.is-dragging {
+  background: var(--hover);
+  outline: 1px dashed var(--rule-hover);
+  outline-offset: -1px;
+}
+
+.model-row.is-drop-target {
+  box-shadow: inset 0 2px 0 var(--amber);
+}
+
+.model-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.model-row .model-option {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.model-drag-handle {
+  cursor: grab;
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 20px;
+  user-select: none;
+}
+
+.model-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.model-row-actions .link-button {
+  padding: 2px 0;
+}
+
+.model-display {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.model-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.model-chip.is-unknown {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--rule));
+  color: var(--danger);
+  background: var(--danger-bed);
+}
+
+.model-edit-form {
+  margin: 4px 0 8px 24px;
+  padding: 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--sunken);
+}
+
+.model-edit-capacities {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.model-edit-capacities .settings-field {
+  flex: 1 1 140px;
+  margin-bottom: 0;
+}
+
+.model-add-form {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--rule);
+}
+
+/* 获取可用模型（#64）：候选只活在这里，勾选后由显式动作/保存写入。 */
+
+.model-discovery {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--rule);
+  min-width: 0;
+}
+
+.model-discovery-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.discovery-candidates {
+  max-height: 280px;
+  margin-top: 8px;
+  padding: 4px 0;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.discovery-candidates > li {
+  min-width: 0;
+}
+
+.discovery-candidates .model-option {
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.discovery-candidates .model-option > code,
+.discovery-candidates .model-display,
+.discovery-candidates .model-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.model-chip.is-fetched {
+  border-color: var(--line-pin);
+  color: var(--amber);
+  background: var(--bed-pin);
+}
+
+.model-discovery .credential-editor {
+  margin-top: 8px;
+}
+
+.builtin-provider-form,
+.custom-provider-form {
+  margin-top: 16px;
+}
+
+.custom-provider-form h3 {
+  margin: 0 0 12px;
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.profile-edit-form {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--sunken);
+}
+
+.profile-edit-form .profile-facts {
+  margin-bottom: 8px;
 }
 
 .builtin-preview {
@@ -349,6 +538,31 @@
   padding: 4px 8px;
   font-size: 12px;
   line-height: 16px;
+}
+
+/* ---------- 凭据编辑 ---------- */
+
+.credential-editor-panel {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--sunken);
+}
+
+.credential-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.credential-mode .model-option {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 
 /* ---------- 配置表单 ---------- */

@@ -84,11 +84,28 @@ import type {
   ActivateProviderResult,
   AddBuiltinProviderRequest,
   AddBuiltinProviderResult,
+  AddProviderModelRequest,
+  CreateCustomProviderRequest,
+  CreateCustomProviderResult,
+  DeleteProviderModelRequest,
   DeleteProviderRequest,
   DeleteProviderResult,
+  ProviderModelWriteResult,
+  ReorderProviderModelsRequest,
   SetDefaultProviderModelRequest,
-  SetDefaultProviderModelResult
+  SetDefaultProviderModelResult,
+  UpdateProviderModelRequest,
+  UpdateProviderRequest,
+  UpdateProviderResult
 } from '../../shared/model-providers'
+import type {
+  UpdateProviderCredentialRequest,
+  UpdateProviderCredentialResult
+} from '../../shared/provider-credentials'
+import type {
+  FetchProviderModelsRequest,
+  FetchProviderModelsResult
+} from '../../shared/model-discovery'
 import type {
   AskThreadRequest,
   ChatThreadView,
@@ -495,7 +512,49 @@ export function addBuiltinProvider(
   return invoke('settings:provider-add', request)
 }
 
-/** 选这个 provider 的默认模型；目录本身只读，不在这里增删模型。 */
+/** 从「自定义 API」入口创建一套 provider；至少要带一个模型。 */
+export function createCustomProvider(
+  request: CreateCustomProviderRequest
+): Promise<CreateCustomProviderResult> {
+  return invoke('settings:provider-create', request)
+}
+
+/** 只改显示名与地址；Provider ID 与协议创建后不可改。 */
+export function updateProvider(
+  request: UpdateProviderRequest
+): Promise<UpdateProviderResult> {
+  return invoke('settings:provider-update', request)
+}
+
+/** 手加一条模型行；目录外的 ID 也允许。 */
+export function addProviderModel(
+  request: AddProviderModelRequest
+): Promise<ProviderModelWriteResult> {
+  return invoke('settings:provider-model-add', request)
+}
+
+/** 改模型行的 ID、显示名与容量。 */
+export function updateProviderModel(
+  request: UpdateProviderModelRequest
+): Promise<ProviderModelWriteResult> {
+  return invoke('settings:provider-model-update', request)
+}
+
+/** 删一条模型行：默认模型与最后一条会被主进程拒绝。 */
+export function deleteProviderModel(
+  request: DeleteProviderModelRequest
+): Promise<ProviderModelWriteResult> {
+  return invoke('settings:provider-model-delete', request)
+}
+
+/** 保存完整模型顺序；缺行或过期顺序会被拒绝。 */
+export function reorderProviderModels(
+  request: ReorderProviderModelsRequest
+): Promise<ProviderModelWriteResult> {
+  return invoke('settings:provider-model-reorder', request)
+}
+
+/** 选这个 provider 的默认模型；模型行的增删改由上面的独立 channel 处理。 */
 export function setDefaultProviderModel(
   request: SetDefaultProviderModelRequest
 ): Promise<SetDefaultProviderModelResult> {
@@ -514,6 +573,26 @@ export function deleteProvider(
   request: DeleteProviderRequest
 ): Promise<DeleteProviderResult> {
   return invoke('settings:provider-delete', request)
+}
+
+/**
+ * 编辑一套 provider 的密钥来源：本机 / 环境变量、变量名、新密钥，
+ * 以及从本机切到环境时清除已存密文的显式确认。
+ */
+export function updateProviderCredential(
+  request: UpdateProviderCredentialRequest
+): Promise<UpdateProviderCredentialResult> {
+  return invoke('settings:provider-credential', request)
+}
+
+/**
+ * 获取可用模型：请求带表单当前地址/协议/凭据草稿，只读返回候选。
+ * 内置目录身份零 HTTP；勾选结果由调用方自己保存，本调用不写库。
+ */
+export function fetchProviderModels(
+  request: FetchProviderModelsRequest
+): Promise<FetchProviderModelsResult> {
+  return invoke('settings:provider-models-fetch', request)
 }
 
 /** 改全局阅读默认；单篇覆盖不受影响。 */

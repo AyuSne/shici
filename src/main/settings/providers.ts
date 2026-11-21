@@ -16,7 +16,11 @@ import { isModelProtocol } from '../../shared/model-protocols'
 import { DEFAULT_RETRY_POLICY } from '../../shared/model-providers'
 import type { AppDatabase } from '../db/database'
 import { readSetting, writeSetting } from '../db/settings'
-import type { SecretStore } from './secret-store'
+import {
+  resolveProviderCredential,
+  type CredentialReadOptions,
+  type ResolvedCredential
+} from './credentials'
 
 /** 使用中的 provider 存在 setting 表里；切换只写这一个键，不改历史。 */
 export const ACTIVE_PROVIDER_KEY = 'chat.activeProviderId'
@@ -82,12 +86,11 @@ export type ActiveProviderConfig = {
   provider: ModelProviderRecord
   model: ModelProviderModelRecord
   apiKey: string
+  /** 三态解析结果；缺失原因单独留着，发送时据此点名变量或报解不开。 */
+  credential: ResolvedCredential
 }
 
-export type ProviderReadOptions = {
-  secrets: SecretStore
-  env?: NodeJS.ProcessEnv
-}
+export type ProviderReadOptions = CredentialReadOptions
 
 type ProviderRow = {
   id: string
@@ -271,38 +274,6 @@ export function maskApiKey(key: string): string {
   return `${prefix}${MASK_DOTS}${visible}`
 }
 
-/** 主进程内部用：按密钥来源解析出明文。解密失败不静默退回环境变量。 */
-export function readProviderApiKey(
-  provider: ModelProviderRecord,
-  options: ProviderReadOptions
-): string {
-  if (provider.authMode === 'env') {
-    const name = provider.envVar?.trim() ?? ''
-    return name === '' ? '' : (options.env?.[name]?.trim() ?? '')
-  }
-  if (provider.secretCiphertext === null) {
-    return ''
-  }
-  try {
-    return options.secrets.decrypt(provider.secretCiphertext) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-function keyStateOf(
-  provider: ModelProviderRecord,
-  options: ProviderReadOptions
-): ProviderKeyState {
-  if (provider.authMode === 'env') {
-    return readProviderApiKey(provider, options) === '' ? 'missing' : 'env'
-  }
-  if (provider.secretCiphertext === null) {
-    return 'missing'
-  }
-  return readProviderApiKey(provider, options) === '' ? 'missing' : 'stored'
-}
-
 export function readModelProvider(
   database: AppDatabase,
   id: string
@@ -387,7 +358,21 @@ export function listModelProviders(
       provider.defaultModelRowId === null
         ? (models[0] ?? null)
         : (models.find((model) => model.id === provider.defaultModelRowId) ?? models[0] ?? null)
-    const apiKey = readProviderApiKey(provider, options)
+    const credential = resolveProviderCredential(provider, options)
+    // 来源仍是三态：本机存着密文但解不开时，来源还是「本机」，另用
+    // credentialError 说明它不可用——不能把损坏的密文静默说成「缺失」。
+    const keyState: ProviderKeyState =
+      provider.authMode === 'env'
+        ? credential.state === 'env'
+          ? 'env'
+          : 'missing'
+        : provider.secretCiphertext === null
+          ? 'missing'
+          : 'stored'
+    const credentialError =
+      credential.state === 'missing' && credential.problem.kind === 'stored-decrypt-failed'
+        ? ('stored-decrypt-failed' as const)
+        : null
     return {
       id: provider.id,
       providerKey: provider.providerKey,
@@ -396,9 +381,10 @@ export function listModelProviders(
       baseUrl: provider.baseUrl,
       authMode: provider.authMode,
       envVar: provider.envVar,
-      apiKeyMask:
-        provider.authMode === 'env' || apiKey === '' ? null : maskApiKey(apiKey),
-      keyState: keyStateOf(provider, options),
+      apiKeyMask: credential.state === 'stored' ? maskApiKey(credential.apiKey) : null,
+      keyState,
+      hasStoredCiphertext: provider.secretCiphertext !== null,
+      credentialError,
       retryPolicy: provider.retryPolicy,
       verification: provider.verification,
       lastError: provider.lastError,
@@ -430,7 +416,13 @@ export function readActiveChatProvider(
   if (model === null) {
     return null
   }
-  return { provider, model, apiKey: readProviderApiKey(provider, options) }
+  const credential = resolveProviderCredential(provider, options)
+  return {
+    provider,
+    model,
+    apiKey: credential.state === 'missing' ? '' : credential.apiKey,
+    credential
+  }
 }
 
 /**

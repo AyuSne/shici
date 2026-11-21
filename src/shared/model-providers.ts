@@ -71,6 +71,13 @@ export type ModelProviderSummary = {
   apiKeyMask: string | null
   /** 主进程解析出的密钥来源三态。 */
   keyState: ProviderKeyState
+  /** 库里是否存着本机密文（不论能否解开）；环境模式可能由历史遗留。 */
+  hasStoredCiphertext: boolean
+  /**
+   * 本机有密文但解不开。此时 `keyState` 仍是 `stored`（来源没变），
+   * 界面要给出「重新填写 / 改用环境变量」的动作提示，发送也必须明确报错。
+   */
+  credentialError: 'stored-decrypt-failed' | null
   retryPolicy: ProviderRetryPolicy
   verification: ProviderVerification
   lastError: ProviderCheckError | null
@@ -91,13 +98,26 @@ export type ModelProviderSummary = {
 export type AddBuiltinProviderRequest = {
   /** 目录入口 id：deepseek / kimi / glm。 */
   catalogProviderId: string
-  /** 写一次就加密保存，保存时不联网校验；结果里不会再回传。 */
-  apiKey: string
+  /** 密钥来源；不传按本机处理（兼容只传 apiKey 的旧调用）。 */
+  authMode?: ProviderAuthMode
+  /**
+   * 环境变量名：环境模式必填（不传用目录默认值）；本机模式也保存下来，
+   * 供以后切换到环境变量时直接带出。空串等于使用目录值。
+   */
+  envVar?: string | null
+  /**
+   * 只在本机模式使用。环境模式即使带了也直接忽略：不加密、不落密文，
+   * 保存时不联网。
+   */
+  apiKey?: string | null
 }
 
 export type AddBuiltinProviderResult =
   | { status: 'saved'; providerId: string; providerKey: string }
-  | { status: 'rejected'; reason: 'unknown-provider' | 'missing-key' }
+  | {
+      status: 'rejected'
+      reason: 'unknown-provider' | 'missing-key' | 'invalid-env-var'
+    }
 
 export type SetDefaultProviderModelRequest = {
   providerId: string
@@ -129,3 +149,145 @@ export type DeleteProviderResult =
       activeCleared: boolean
     }
   | { status: 'missing' }
+
+/* ---------- #63：自定义 provider 与模型目录编辑 ---------- */
+
+/** Provider ID 的精确形状：小写字母开头，单词之间只用一个连字符。 */
+export const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
+
+export function isValidProviderId(value: string): boolean {
+  return PROVIDER_ID_PATTERN.test(value)
+}
+
+/** 自定义 provider 保存时至少要带一个模型；模型行可带容量等已解析元数据。 */
+export type CustomProviderModelDraft = {
+  modelId: string
+  displayName?: string
+  contextWindow?: number | null
+  maxTokens?: number | null
+  reasoning?: boolean
+  /** 获取可用模型勾选进来的行记 fetched；手填默认 manual。 */
+  source?: 'manual' | 'fetched'
+}
+
+export type CreateCustomProviderRequest = {
+  /**
+   * 唯一且创建后不可改的 Provider ID：落库到 `provider_key` 列，是配置与
+   * 凭据引用的稳定身份。返回结果里的 `providerId` 是库内 UUID，两者不同。
+   */
+  providerKey: string
+  displayName: string
+  /** 本票只开放 OpenAI Chat Completions，但值仍来自共享协议表。 */
+  protocol: ProviderProtocol
+  baseUrl: string
+  /** 密钥来源；不传按本机处理。环境模式不需要先存本机密钥。 */
+  authMode?: ProviderAuthMode
+  /** 环境变量名：环境模式必填；本机模式也保留下来备用。 */
+  envVar?: string | null
+  /**
+   * 本机模式下保存的密钥。空串表示先存成「缺失」草稿：保存不联网，卡片会
+   * 明确显示缺失；发送或获取模型前必须补上密钥，绝不会匿名请求。
+   * 环境模式即使带了也忽略：不加密、不落密文。
+   */
+  apiKey?: string
+  /** 自定义 provider 至少要有一个模型才能保存。 */
+  model: CustomProviderModelDraft
+  /**
+   * 「获取可用模型」勾选后、保存时才一起入库的其它模型。
+   * 与 `model` 同属一次事务：任一行非法就整笔拒绝，不会先建 provider 再逐条补。
+   */
+  additionalModels?: CustomProviderModelDraft[]
+}
+
+export type CustomProviderRejection =
+  | 'invalid-provider-id'
+  | 'duplicate-provider-id'
+  | 'missing-display-name'
+  | 'unsupported-protocol'
+  | 'missing-base-url'
+  | 'invalid-base-url'
+  | 'missing-model'
+  | 'duplicate-model-id'
+  | 'invalid-capacity'
+  | 'missing-key'
+  | 'invalid-env-var'
+
+export type CreateCustomProviderResult =
+  | { status: 'saved'; providerId: string; providerKey: string }
+  | { status: 'rejected'; reason: CustomProviderRejection }
+
+/** 只允许改显示名与地址：Provider ID 与协议创建后不可改。 */
+export type UpdateProviderRequest = {
+  providerId: string
+  displayName: string
+  baseUrl: string
+}
+
+export type UpdateProviderRejection =
+  | 'missing-display-name'
+  | 'missing-base-url'
+  | 'invalid-base-url'
+
+export type UpdateProviderResult =
+  | { status: 'saved' }
+  | { status: 'missing' }
+  | { status: 'rejected'; reason: UpdateProviderRejection }
+
+/** 手填模型行：容量留空表示按目录/兜底处理。 */
+export type ProviderModelDraft = {
+  modelId: string
+  displayName?: string
+  contextWindow?: number | null
+  maxTokens?: number | null
+  reasoning?: boolean
+  /**
+   * 保存后的来源：手动加入或「获取可用模型」勾选。只在新增时使用；
+   * 目录内置行仍由目录写入路径标 catalog。
+   */
+  source?: 'manual' | 'fetched'
+}
+
+export type AddProviderModelRequest = {
+  providerId: string
+  model: ProviderModelDraft
+  /** 与 `model` 同一事务加入的其它候选；用于「加入所选模型」一次提交。 */
+  additionalModels?: ProviderModelDraft[]
+}
+
+export type UpdateProviderModelRequest = {
+  providerId: string
+  modelRowId: string
+  /** 没给的容量字段保持原值；显式 null 表示清空。 */
+  model: ProviderModelDraft
+}
+
+export type DeleteProviderModelRequest = {
+  providerId: string
+  modelRowId: string
+}
+
+export type ReorderProviderModelsRequest = {
+  providerId: string
+  /** 完整的模型行顺序；必须与当前目录一一对应，否则拒绝。 */
+  modelRowIds: string[]
+}
+
+export type ProviderModelRejection =
+  | 'missing-model-id'
+  | 'duplicate-model-id'
+  | 'unknown-model'
+  | 'unknown-protocol'
+  | 'invalid-capacity'
+  /** 还是默认模型：先另选一个默认模型再删。 */
+  | 'default-model'
+  /** 目录至少留一条模型。 */
+  | 'last-model'
+  | 'order-mismatch'
+  /** OpenCode GO 这类聚合入口的目录首版只读，只能选默认模型。 */
+  | 'read-only'
+
+export type ProviderModelWriteResult =
+  | { status: 'saved' }
+  | { status: 'deleted' }
+  | { status: 'missing' }
+  | { status: 'rejected'; reason: ProviderModelRejection }
