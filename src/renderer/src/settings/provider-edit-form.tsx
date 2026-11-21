@@ -198,7 +198,7 @@ export function ProviderEditForm({
         </>
       )}
 
-      <fieldset className="credential-mode" data-retry-policy={retryMode}>
+      <fieldset className="retry-mode" data-retry-policy={retryMode}>
         <legend className="settings-field-label">重试策略</legend>
         <label className="model-option">
           <input

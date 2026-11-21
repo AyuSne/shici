@@ -1,5 +1,6 @@
 import { isAggregateModelProvider } from '../../../shared/model-directory'
 import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
+import type { ChatCredentialProblem } from '../../../shared/chat'
 import type {
   ModelProviderModelSummary,
   ModelProviderSummary,
@@ -68,15 +69,70 @@ export function providerCheckReasonText(reason: ProviderCheckError | null): stri
     case 'no-model':
       return '没有可用的模型'
     case 'network':
+      return '网络异常'
     case 'unknown':
     case null:
       return '未能完成'
   }
 }
 
-/** 一次失败测试的卡片文案：原因 + request id；没写回时说明为什么。 */
+/**
+ * 测试失败后的下一步动作。只读结构化原因（reason / kind / status）与主进程
+ * 已经解析好的本地凭据问题，不把服务端 `detail` 带进界面——那里可能有
+ * 任意上游文本甚至密钥片段。
+ */
+export function providerTestActionText(result: ProviderTestFailure): string | null {
+  switch (result.reason) {
+    case 'invalid-key':
+      return '到设置 → 模型服务 → 编辑凭据里换一个有效的密钥。'
+    case 'quota':
+      return '这套密钥没有可用余额了；充值或换一个有余额的密钥。'
+    case 'invalid-config':
+      return result.error.kind === 'CONTEXT_WINDOW' || result.error.status === 413
+        ? '这次请求的内容太长；删减上下文后再试。'
+        : '检查接口地址与模型名后再试。'
+    case 'rate-limit':
+      return '稍等几秒再试。'
+    case 'server':
+      return '模型服务暂时不可用，稍后重试。'
+    case 'timeout':
+    case 'network':
+      return '检查网络或接口地址后再试。'
+    case 'empty-response':
+      return '稍后重试；如果一直是空回答，检查接口地址与模型名。'
+    case 'missing-credential':
+      return credentialActionText(result.error.credential)
+    case 'unsupported-protocol':
+      return '到设置 → 模型服务里新建一套使用本版支持协议的提供商，再切换使用。'
+    case 'no-model':
+      return '先在这套提供商的模型目录里加一条模型。'
+    case 'unknown':
+      return null
+  }
+}
+
+function credentialActionText(problem: ChatCredentialProblem | undefined): string {
+  switch (problem?.kind) {
+    case 'env-missing':
+      return `在系统环境里补上 ${problem.envVar}，或到设置 → 模型服务 → 编辑凭据里改用本机保存的密钥。`
+    case 'env-var-unset':
+      return '到设置 → 模型服务 → 编辑凭据里填上环境变量名。'
+    case 'stored-decrypt-failed':
+      return '到设置 → 模型服务 → 编辑凭据里重新填一个密钥。'
+    case 'stored-missing':
+      return '到设置 → 模型服务 → 编辑凭据里填一个密钥。'
+    default:
+      return '到设置 → 模型服务 → 编辑凭据里补上密钥。'
+  }
+}
+
+/** 一次失败测试的卡片文案：原因 + 下一步动作 + request id；没写回时说明为什么。 */
 export function providerTestFailureText(result: ProviderTestFailure): string {
   const parts = [`测试没通过：${providerCheckReasonText(result.reason)}`]
+  const action = providerTestActionText(result)
+  if (action !== null) {
+    parts.push(action)
+  }
   if (result.requestId !== undefined && result.requestId.trim() !== '') {
     parts.push(`请求 ID ${result.requestId}`)
   }

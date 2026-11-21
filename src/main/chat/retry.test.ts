@@ -2,19 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { ChatStreamEvent, ChatStreamUpdate } from '../../shared/chat'
 import { findCatalogModel } from '../../shared/model-catalog'
 import type { ProviderRetryPolicy } from '../../shared/model-providers'
-import {
-  startAnthropicStub,
-  type AnthropicStubResponse
-} from '../../testing/anthropic-sse-stub'
-import {
-  startGeminiSseStub,
-  type GeminiStubResponse
-} from '../../testing/gemini-sse-stub'
-import {
-  startResponsesStub,
-  type ResponsesStubResponse
-} from '../../testing/responses-sse-stub'
-import { startSseStub, type StubResponse } from '../../testing/sse-stub'
+import { startAnthropicStub } from '../../testing/anthropic-sse-stub'
+import { startGeminiSseStub } from '../../testing/gemini-sse-stub'
+import { startResponsesStub } from '../../testing/responses-sse-stub'
+import { startSseStub } from '../../testing/sse-stub'
 import type { ChatConfig } from './config'
 import { descriptorOfCatalogModel, type ChatModelDescriptor } from './model-descriptor'
 import type { RetryTiming } from './retry'
@@ -63,7 +54,7 @@ const OPENAI_CHAT: Harness = {
     ),
   async start(steps) {
     return track(
-      await startSseStub({ kind: 'sequence', scripts: steps.map(openAiResponse) })
+      await startSseStub({ kind: 'sequence', scripts: steps.map(stubResponseOf) })
     )
   }
 }
@@ -80,7 +71,7 @@ const OPENAI_RESPONSES: Harness = {
     return track(
       await startResponsesStub({
         kind: 'sequence',
-        scripts: steps.map(responsesResponse)
+        scripts: steps.map(stubResponseOf)
       })
     )
   }
@@ -98,7 +89,7 @@ const ANTHROPIC: Harness = {
     return track(
       await startAnthropicStub({
         kind: 'sequence',
-        scripts: steps.map(anthropicResponse)
+        scripts: steps.map(stubResponseOf)
       })
     )
   }
@@ -116,7 +107,7 @@ const GEMINI: Harness = {
     return track(
       await startGeminiSseStub({
         kind: 'sequence',
-        scripts: steps.map(geminiResponse)
+        scripts: steps.map(stubResponseOf)
       })
     )
   }
@@ -124,70 +115,17 @@ const GEMINI: Harness = {
 
 const HARNESSES = [OPENAI_CHAT, OPENAI_RESPONSES, ANTHROPIC, GEMINI] as const
 
-function openAiResponse(step: Step): StubResponse {
-  switch (step.kind) {
-    case 'fail':
-      return { kind: 'status', status: step.status, headers: step.headers }
-    case 'success':
-      return {
-        kind: 'stream',
-        text: [step.text],
-        ...(step.thinking === undefined ? {} : { thinking: step.thinking })
-      }
-    case 'empty':
-      return { kind: 'stream', text: [] }
-    case 'truncate':
-      return {
-        kind: 'truncate',
-        ...(step.text === undefined ? {} : { text: step.text }),
-        ...(step.thinking === undefined ? {} : { thinking: step.thinking })
-      }
-  }
-}
+/**
+ * 四个协议的脚本形状在「失败 / 成功 / 截断」这三类上结构一致；一份适配器
+ * 就够，各 harness 的返回类型仍按自己的协议检查。额外字段（usage 等）不参与
+ * 本文件用例。
+ */
+type StepResponse =
+  | { kind: 'status'; status: number; headers?: Readonly<Record<string, string>> }
+  | { kind: 'stream'; text: readonly string[]; thinking?: readonly string[] }
+  | { kind: 'truncate'; text?: readonly string[]; thinking?: readonly string[] }
 
-function responsesResponse(step: Step): ResponsesStubResponse {
-  switch (step.kind) {
-    case 'fail':
-      return { kind: 'status', status: step.status, headers: step.headers }
-    case 'success':
-      return {
-        kind: 'stream',
-        text: [step.text],
-        ...(step.thinking === undefined ? {} : { thinking: step.thinking })
-      }
-    case 'empty':
-      return { kind: 'stream', text: [] }
-    case 'truncate':
-      return {
-        kind: 'truncate',
-        ...(step.text === undefined ? {} : { text: step.text }),
-        ...(step.thinking === undefined ? {} : { thinking: step.thinking })
-      }
-  }
-}
-
-function anthropicResponse(step: Step): AnthropicStubResponse {
-  switch (step.kind) {
-    case 'fail':
-      return { kind: 'status', status: step.status, headers: step.headers }
-    case 'success':
-      return {
-        kind: 'stream',
-        text: [step.text],
-        ...(step.thinking === undefined ? {} : { thinking: step.thinking })
-      }
-    case 'empty':
-      return { kind: 'stream', text: [] }
-    case 'truncate':
-      return {
-        kind: 'truncate',
-        ...(step.text === undefined ? {} : { text: step.text }),
-        ...(step.thinking === undefined ? {} : { thinking: step.thinking })
-      }
-  }
-}
-
-function geminiResponse(step: Step): GeminiStubResponse {
+function stubResponseOf(step: Step): StepResponse {
   switch (step.kind) {
     case 'fail':
       return { kind: 'status', status: step.status, headers: step.headers }
@@ -551,6 +489,61 @@ describe('重试策略的边界', () => {
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(target.requests).toHaveLength(1)
     expect(collected.events).toEqual([])
+  })
+
+  it('always 重试已发出但分类为 UNKNOWN 的 HTTP 3xx；normal 仍只认临时错误', async () => {
+    // 3xx 没有 Location 时请求确实发出并拿到了 HTTP 响应，只是分类落在
+    // UNKNOWN。always 的语义是「所有失败都重试」，不能把 UNKNOWN 一概当成
+    // 「请求没发出去」而跳过。
+    const alwaysTarget = track(
+      await startSseStub({
+        kind: 'sequence',
+        scripts: [
+          { kind: 'status', status: 302, headers: { 'x-request-id': 'req-302' } },
+          { kind: 'stream', text: ['重试之后成功'] }
+        ]
+      })
+    )
+    const alwaysRecorded = recordedTiming()
+    const always = collect()
+    const alwaysService = createChatService({
+      resolveConfig: () =>
+        configFor(OPENAI_CHAT.descriptorAt(alwaysTarget.baseUrl), { mode: 'always' }),
+      retryTiming: alwaysRecorded.timing
+    })
+    always.start(alwaysService, 'stream-always-3xx')
+    await waitUntil(() => terminalOf(always.events) !== undefined)
+
+    expect(always.events).toEqual([
+      { type: 'text', text: '重试之后成功' },
+      { type: 'done' }
+    ])
+    expect(alwaysTarget.requests).toHaveLength(2)
+    expect(alwaysRecorded.delays).toEqual([500])
+
+    const normalTarget = track(
+      await startSseStub({
+        kind: 'status',
+        status: 302,
+        headers: { 'x-request-id': 'req-302-normal' }
+      })
+    )
+    const normalRecorded = recordedTiming()
+    const normal = collect()
+    const normalService = createChatService({
+      resolveConfig: () => configFor(OPENAI_CHAT.descriptorAt(normalTarget.baseUrl)),
+      retryTiming: normalRecorded.timing
+    })
+    normal.start(normalService, 'stream-normal-3xx')
+    await waitUntil(() => terminalOf(normal.events) !== undefined)
+
+    expect(normal.events).toHaveLength(1)
+    expect(normal.events[0]).toMatchObject({
+      type: 'error',
+      error: { kind: 'UNKNOWN', status: 302, requestId: 'req-302-normal' }
+    })
+    expect(normalTarget.requests).toHaveLength(1)
+    expect(normalRecorded.delays).toEqual([])
   })
 
   it('always 也不重试本地缺钥匙预检：请求数为 0，只显示配置错误', async () => {

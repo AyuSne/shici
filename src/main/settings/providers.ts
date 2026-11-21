@@ -508,6 +508,50 @@ function statusWriteOf(
 }
 
 /**
+ * 三个状态回写共用的条件 UPDATE。列名只来自固定白名单，值一律绑定参数；
+ * 带 `expectedUpdatedAt` 时再加版本条件。不要把它扩成任意 SQL 构造器。
+ */
+type ProviderStatusPatch = {
+  verification?: 'verified' | 'unverified'
+  lastError?: string | null
+  lastCheckedAt?: string | null
+  lastVerifiedAt?: string | null
+}
+
+const STATUS_COLUMN: Record<keyof ProviderStatusPatch, string> = {
+  verification: 'verification',
+  lastError: 'last_error',
+  lastCheckedAt: 'last_checked_at',
+  lastVerifiedAt: 'last_verified_at'
+}
+
+function writeProviderStatus(
+  database: AppDatabase,
+  providerId: string,
+  patch: ProviderStatusPatch,
+  expectedUpdatedAt?: string
+): ProviderStatusWrite {
+  const keys = Object.keys(patch) as Array<keyof ProviderStatusPatch>
+  const assignments = keys.map((key) => `${STATUS_COLUMN[key]} = ?`)
+  const args: Array<string | null> = keys.map((key) => {
+    const value = patch[key]
+    return value === undefined ? null : value
+  })
+  args.push(providerId)
+  const where = ['id = ?']
+  if (expectedUpdatedAt !== undefined) {
+    where.push('updated_at = ?')
+    args.push(expectedUpdatedAt)
+  }
+  const result = database
+    .prepare(
+      `UPDATE model_provider SET ${assignments.join(', ')} WHERE ${where.join(' AND ')}`
+    )
+    .run(...args)
+  return statusWriteOf(database, providerId, result.changes)
+}
+
+/**
  * 一次**真实调用**成功之后自动转「已验证」。
  *
  * 只写 provider 表；不写 `last_checked_at` —— 那是对「测试连接」这类显式校验
@@ -520,21 +564,12 @@ export function markProviderVerified(
   now = new Date().toISOString(),
   expectedUpdatedAt?: string
 ): ProviderStatusWrite {
-  const result =
-    expectedUpdatedAt === undefined
-      ? database
-          .prepare(
-            `UPDATE model_provider SET verification = 'verified', last_error = NULL,
-               last_verified_at = ? WHERE id = ?`
-          )
-          .run(now, providerId)
-      : database
-          .prepare(
-            `UPDATE model_provider SET verification = 'verified', last_error = NULL,
-               last_verified_at = ? WHERE id = ? AND updated_at = ?`
-          )
-          .run(now, providerId, expectedUpdatedAt)
-  return statusWriteOf(database, providerId, result.changes)
+  return writeProviderStatus(
+    database,
+    providerId,
+    { verification: 'verified', lastError: null, lastVerifiedAt: now },
+    expectedUpdatedAt
+  )
 }
 
 /** 显式「测试连接」通过：同时记下校验时刻，与真实调用成功区分开。 */
@@ -544,22 +579,17 @@ export function markProviderCheckPassed(
   checkedAt: string,
   expectedUpdatedAt?: string
 ): ProviderStatusWrite {
-  const result =
-    expectedUpdatedAt === undefined
-      ? database
-          .prepare(
-            `UPDATE model_provider SET verification = 'verified', last_error = NULL,
-               last_checked_at = ?, last_verified_at = ? WHERE id = ?`
-          )
-          .run(checkedAt, checkedAt, providerId)
-      : database
-          .prepare(
-            `UPDATE model_provider SET verification = 'verified', last_error = NULL,
-               last_checked_at = ?, last_verified_at = ?
-             WHERE id = ? AND updated_at = ?`
-          )
-          .run(checkedAt, checkedAt, providerId, expectedUpdatedAt)
-  return statusWriteOf(database, providerId, result.changes)
+  return writeProviderStatus(
+    database,
+    providerId,
+    {
+      verification: 'verified',
+      lastError: null,
+      lastCheckedAt: checkedAt,
+      lastVerifiedAt: checkedAt
+    },
+    expectedUpdatedAt
+  )
 }
 
 /**
@@ -587,25 +617,18 @@ export function recordProviderFailure(
       ? {}
       : { requestId: failure.requestId.trim() })
   })
-  const revoke = options.revokeVerified === true
-  const where =
-    options.expectedUpdatedAt === undefined ? 'WHERE id = ?' : 'WHERE id = ? AND updated_at = ?'
-  const args: Array<string> =
-    options.expectedUpdatedAt === undefined ? [providerId] : [providerId, options.expectedUpdatedAt]
-
-  const result = revoke
-    ? database
-        .prepare(
-          `UPDATE model_provider SET last_error = ?, last_checked_at = ?,
-             verification = 'unverified', last_verified_at = NULL ${where}`
-        )
-        .run(encoded, now, ...args)
-    : database
-        .prepare(
-          `UPDATE model_provider SET last_error = ?, last_checked_at = ? ${where}`
-        )
-        .run(encoded, now, ...args)
-  return statusWriteOf(database, providerId, result.changes)
+  return writeProviderStatus(
+    database,
+    providerId,
+    {
+      lastError: encoded,
+      lastCheckedAt: now,
+      ...(options.revokeVerified === true
+        ? { verification: 'unverified' as const, lastVerifiedAt: null }
+        : {})
+    },
+    options.expectedUpdatedAt
+  )
 }
 
 const CHECK_ERROR_OF_KIND: Record<ProviderErrorCode, ProviderCheckError> = {

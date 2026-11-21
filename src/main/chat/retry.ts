@@ -18,14 +18,14 @@ import {
  */
 
 /** normal 的默认上限：初次请求之外最多再试 5 次。 */
-export const MAX_RETRIES = 5
+const MAX_RETRIES = 5
 
 /** 第一次退避 500ms，之后每次翻倍，封顶 10s。 */
-export const BASE_DELAY_MS = 500
-export const MAX_DELAY_MS = 10_000
+const BASE_DELAY_MS = 500
+const MAX_DELAY_MS = 10_000
 
 /** 抖动幅度 ±10%；`random()` 返回 0.5 时正好不加不减。 */
-export const JITTER_RATIO = 0.1
+const JITTER_RATIO = 0.1
 
 /**
  * normal 只重试这些稳定分类。AUTH / QUOTA / CONTEXT_WINDOW / INVALID_REQUEST
@@ -46,7 +46,7 @@ export type RetryTiming = {
   random: () => number
 }
 
-export const REAL_RETRY_TIMING: RetryTiming = {
+const REAL_RETRY_TIMING: RetryTiming = {
   sleep(ms, signal) {
     return new Promise<boolean>((resolve) => {
       if (signal.aborted) {
@@ -174,10 +174,12 @@ export async function runWithRetry(options: RetryRunOptions): Promise<void> {
 
 /**
  * 这一次失败值不值得再试。normal 只认固定五个临时分类；always 重试所有
- * 「模型请求确实发出去并失败了」的情况，但不重试本地失败（UNKNOWN 表示
- * 请求没发出去，例如协议实现加载失败，与本地配置预检同属不该重试的一类）。
+ * 「模型请求确实发出去并失败了」的情况。UNKNOWN 本身不能证明请求没发出去：
+ * 例如 HTTP 3xx 不带 Location 会真实发出并拿到响应，只是分类落在 UNKNOWN；
+ * 有 `status` 就说明确实有一次 HTTP 往返，always 必须重试。没有 status 的
+ * UNKNOWN（如协议实现加载失败）与本地缺钥匙预检仍不重试。
  */
-export function shouldRetry(
+function shouldRetry(
   policy: ProviderRetryPolicy,
   error: ChatError
 ): boolean {
@@ -187,14 +189,14 @@ export function shouldRetry(
   if (policy.mode === 'normal') {
     return error.kind !== undefined && NORMAL_RETRYABLE.has(error.kind)
   }
-  return error.kind !== 'UNKNOWN'
+  return error.kind !== 'UNKNOWN' || error.status !== undefined
 }
 
 /**
  * 第 `retryIndex` 次退避（从 0 开始）：500ms → 1s → 2s → 4s → 8s，抖动 ±10%。
  * `Retry-After` 是下限，绝不提前；超过最大退避（10s）返回 null，表示放弃重试。
  */
-export function retryDelayMs(
+function retryDelayMs(
   retryIndex: number,
   retryAfterMs: number | undefined,
   random: () => number = Math.random

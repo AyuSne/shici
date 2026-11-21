@@ -2,6 +2,7 @@ import type { ServerResponse } from 'node:http'
 import {
   delay,
   isWritable,
+  scriptAt,
   startLocalSseTransport,
   unusedLocalBaseUrl,
   type LocalSseRequest
@@ -78,13 +79,10 @@ export async function startSseStub(script: StubScript): Promise<SseStub> {
   let current = script
   let sequenceIndex = 0
   const transport = await startLocalSseTransport((response) => {
-    const chosen =
-      current.kind === 'sequence'
-        ? (current.scripts[Math.min(sequenceIndex, current.scripts.length - 1)] ?? {
-            kind: 'status' as const,
-            status: 500
-          })
-        : current
+    const chosen = scriptAt(current, sequenceIndex, {
+      kind: 'status' as const,
+      status: 500
+    })
     sequenceIndex += 1
     return respond(response, chosen)
   })
@@ -136,6 +134,12 @@ async function respond(response: ServerResponse, script: StubResponse): Promise<
     Connection: 'keep-alive',
     ...(script.headers ?? {})
   })
+
+  // 「响应头已到、正文挂住」是真实可能发生的超时形态：先 flush，测试才能
+  // 证明 capture 层在正文尚未到达时已经拿到 request id。
+  if (script.kind === 'hang') {
+    response.flushHeaders()
+  }
 
   const sendChunk = async (delta: Record<string, unknown>): Promise<void> => {
     if (!isWritable(response)) {

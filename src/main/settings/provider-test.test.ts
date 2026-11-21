@@ -12,7 +12,7 @@ import {
 import { startAnthropicStub } from '../../testing/anthropic-sse-stub'
 import { startGeminiSseStub } from '../../testing/gemini-sse-stub'
 import { startResponsesStub } from '../../testing/responses-sse-stub'
-import { startSseStub } from '../../testing/sse-stub'
+import { startSseStub, unusedBaseUrl } from '../../testing/sse-stub'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate } from '../db/migrations'
 import { testProviderConnection } from './provider-test'
@@ -311,6 +311,7 @@ describe('testProviderConnection：失败分类与配置保留', () => {
     [400, 'invalid-config'],
     [404, 'invalid-config'],
     [402, 'quota'],
+    [413, 'invalid-config'],
     [429, 'rate-limit'],
     [500, 'server'],
     [503, 'server']
@@ -401,12 +402,57 @@ describe('testProviderConnection：失败分类与配置保留', () => {
     expect(result).toMatchObject({ status: 'failed', persisted: true, reason: 'timeout' })
     if (result.status !== 'failed') throw new Error('应当失败')
     expect(result.error).toMatchObject({ kind: 'TIMEOUT' })
+    // 没有响应头就没有 request id：不伪造一个。
+    expect(result.requestId).toBeUndefined()
+    expect(result.error.requestId).toBeUndefined()
     expect(elapsed).toBeLessThan(2000)
     // 生产口径固定 8 秒；测试只注入更短的超时。
     expect(PROVIDER_TEST_TIMEOUT_MS).toBe(8000)
     expect(readModelProvider(database, providerId)).toMatchObject({
       verification: 'unverified',
       lastError: 'timeout'
+    })
+  })
+
+  it('响应头已带 request id 后正文挂住：超时仍保留这个 id', async () => {
+    const stub = await startSseStub({
+      kind: 'hang',
+      headers: { 'x-request-id': 'req-hang-1' }
+    })
+    stubs.push(stub)
+    const providerId = seedCustom('openai-completions', stub.baseUrl, 'stored')
+
+    const result = await testProviderConnection(database, secrets, {}, { providerId }, {
+      timeoutMs: 120
+    })
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      persisted: true,
+      reason: 'timeout',
+      requestId: 'req-hang-1'
+    })
+    if (result.status !== 'failed') throw new Error('应当失败')
+    expect(result.error.requestId).toBe('req-hang-1')
+    expect(readModelProvider(database, providerId)).toMatchObject({
+      verification: 'unverified',
+      lastError: 'timeout',
+      lastErrorRequestId: 'req-hang-1'
+    })
+  })
+
+  it('地址连不上时按网络异常记录，并给出网络原因', async () => {
+    const baseUrl = await unusedBaseUrl()
+    const providerId = seedCustom('openai-completions', baseUrl, 'stored')
+
+    const result = await testProviderConnection(database, secrets, {}, { providerId })
+
+    expect(result).toMatchObject({ status: 'failed', persisted: true, reason: 'network' })
+    if (result.status !== 'failed') throw new Error('应当失败')
+    expect(result.error).toMatchObject({ kind: 'TRANSPORT' })
+    expect(readModelProvider(database, providerId)).toMatchObject({
+      verification: 'unverified',
+      lastError: 'network'
     })
   })
 

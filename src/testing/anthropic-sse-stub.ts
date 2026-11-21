@@ -2,6 +2,7 @@ import type { ServerResponse } from 'node:http'
 import {
   delay,
   isWritable,
+  scriptAt,
   startLocalSseTransport,
   type LocalSseRequest
 } from './sse-transport'
@@ -87,13 +88,10 @@ export async function startAnthropicStub(
   let current = script
   let sequenceIndex = 0
   const transport = await startLocalSseTransport((response, request) => {
-    const chosen =
-      current.kind === 'sequence'
-        ? (current.scripts[Math.min(sequenceIndex, current.scripts.length - 1)] ?? {
-            kind: 'status' as const,
-            status: 500
-          })
-        : current
+    const chosen = scriptAt(current, sequenceIndex, {
+      kind: 'status' as const,
+      status: 500
+    })
     sequenceIndex += 1
     return respond(response, chosen, request.body)
   })

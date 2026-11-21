@@ -32,6 +32,11 @@ export type StreamChatOptions = {
    * 缺省即普通对话，行为不变。
    */
   probe?: { maxOutputTokens: number }
+  /**
+   * 旁路观察请求捕获：响应头一到就带回 status / request id / Retry-After。
+   * 测试连接用它保留「响应头已到、正文挂住」时的 request id；缺省不观察。
+   */
+  onCaptured?: (captured: CapturedRequest) => void
 }
 
 /** `resolve` 只声明“密钥从调用处来”；请求级的 apiKey 优先，不会去环境里找别的凭据。 */
@@ -55,7 +60,9 @@ const REQUEST_KEY_AUTH: ProviderAuth = {
  * 诊断通道；其余协议仍走请求级 fetch 包装。两条路径共用同一个 capture。
  */
 export async function streamChatCompletion(options: StreamChatOptions): Promise<void> {
-  const capture = createRequestCapture()
+  const capture = createRequestCapture(
+    options.onCaptured === undefined ? {} : { onCapture: options.onCaptured }
+  )
   let hasContent = false
   // Gemini SDK 内部直接调 undici 的全局 fetch，注入 fetch 会被它明确拒绝。
   const nativeFetchProtocol = options.descriptor.api === 'google-generative-ai'

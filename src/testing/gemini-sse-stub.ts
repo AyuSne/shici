@@ -2,6 +2,7 @@ import type { ServerResponse } from 'node:http'
 import {
   delay,
   isWritable,
+  scriptAt,
   startLocalSseTransport,
   type LocalSseRequest
 } from './sse-transport'
@@ -112,27 +113,23 @@ function responseFor(
   url: string,
   sequenceIndex: number
 ): GeminiStubResponse {
-  if (script.kind === 'sequence') {
+  if (script.kind === 'per-model') {
+    const model = /\/models\/([^:?]+)/.exec(url)?.[1]
+    const chosen = model === undefined ? undefined : script.scripts[model]
     return (
-      script.scripts[Math.min(sequenceIndex, script.scripts.length - 1)] ?? {
+      chosen ?? {
         kind: 'status',
-        status: 500,
+        status: 404,
         message: `stub has no script for ${url}`
       }
     )
   }
-  if (script.kind !== 'per-model') {
-    return script
-  }
-  const model = /\/models\/([^:?]+)/.exec(url)?.[1]
-  const chosen = model === undefined ? undefined : script.scripts[model]
-  return (
-    chosen ?? {
-      kind: 'status',
-      status: 404,
-      message: `stub has no script for ${url}`
-    }
-  )
+  // 单脚本或 sequence：与其余三个协议共用同一套「用完重复最后一个」规则。
+  return scriptAt(script, sequenceIndex, {
+    kind: 'status',
+    status: 500,
+    message: `stub has no script for ${url}`
+  })
 }
 
 async function respond(
