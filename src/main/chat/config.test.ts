@@ -354,7 +354,8 @@ describe('resolveChatConfig', () => {
     })
   })
 
-  it('本机密文解不开时报解不开，环境变量即使可用也不换源', () => {    seedProfiles([
+  it('本机密文解不开时报解不开，环境变量即使可用也不换源', () => {
+    seedProfiles([
       { id: 'provider-broken', name: '坏密文', model: 'model-one', apiKey: 'sk-one' }
     ])
     migrate(database)

@@ -19,6 +19,7 @@ import {
   combineCustomProviderModels
 } from './model-discovery'
 import { ModelDiscoveryPanel } from './model-discovery-panel'
+import { credentialRejectionText } from './messages'
 import {
   baseUrlError,
   customProviderErrorText,
@@ -98,9 +99,9 @@ export function CustomProviderForm({
     if (Object.values(next).some((message) => message !== null)) {
       return
     }
-    // 环境模式先做一次即时提示；主进程仍会再校验。
+    // 环境模式先做一次即时提示；主进程仍会再校验。文案与凭据编辑共用一份。
     if (credential.authMode === 'env' && !isValidEnvVarName(credential.envVar)) {
-      setFormError('环境变量名要字母或下划线开头，只含字母、数字与下划线。')
+      setFormError(credentialRejectionText('invalid-env-var'))
       return
     }
 

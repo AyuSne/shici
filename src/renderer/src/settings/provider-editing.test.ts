@@ -14,6 +14,7 @@ import {
   providerIdError,
   providerUpdateErrorText
 } from './provider-editing'
+import { credentialRejectionText } from './messages'
 
 const builtinDeepSeek = {
   source: 'builtin' as const,
@@ -142,6 +143,13 @@ describe('错误文案', () => {
     expect(customProviderErrorText('unsupported-protocol')).toContain('OpenAI Chat Completions')
     expect(customProviderErrorText('missing-model')).toContain('至少要有一个模型')
     expect(providerUpdateErrorText('invalid-base-url')).toContain('http(s)')
+  })
+
+  it('凭据类拒绝与凭据编辑共用同一份文案，不再各抄一句', () => {
+    expect(customProviderErrorText('missing-key')).toBe(credentialRejectionText('missing-key'))
+    expect(customProviderErrorText('invalid-env-var')).toBe(
+      credentialRejectionText('invalid-env-var')
+    )
   })
 
   it('默认模型与最后一条模型给出各自的原因', () => {

@@ -177,30 +177,10 @@ function updatedMetadataOf(
     }
   }
 
-  const catalog = findProviderCatalogModel(
-    {
-      source: provider.source,
-      catalogProviderId: provider.catalogProviderId,
-      protocol: provider.protocol
-    },
-    modelId
-  )
-  return {
-    displayName: draft.displayName?.trim() || catalog?.name || modelId,
-    contextWindow:
-      draft.contextWindow === undefined
-        ? (catalog?.contextWindow ?? null)
-        : draft.contextWindow,
-    maxTokens:
-      draft.maxTokens === undefined ? (catalog?.maxTokens ?? null) : draft.maxTokens,
-    input: inputOf(catalog),
-    // 未知模型没有可借用的思考能力；用户显式勾选/取消优先。
-    reasoning: draft.reasoning ?? catalog?.reasoning ?? false,
-    thinkingLevelMap: jsonOrNull(catalog?.thinkingLevelMap),
-    compat: jsonOrNull(catalog?.compat),
-    // 逐模型地址属于旧身份；换模型后回落到 provider 的地址。
-    baseUrl: null
-  }
+  // 换了模型身份：按新 ID 的目录条目重算（目录里没有就清空，发送时走兜底）。
+  // 目录查找与字段组装统一走 metadataOf，避免两处各写一份后漂移。
+  // 逐模型地址属于旧身份；换模型后回落到 provider 的地址。
+  return { ...metadataOf(provider, draft), baseUrl: null }
 }
 
 /**
