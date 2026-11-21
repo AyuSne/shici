@@ -19,6 +19,7 @@ import {
   findRecentThreadForMain,
   openThreadForMain,
   readContextCandidates,
+  readArticleContextMaterials,
   readThreadView,
   saveAnswer,
   saveContinuation,
@@ -213,28 +214,19 @@ describe('按主对象打开线程', () => {
     expect(again.thread.context).toEqual(restored.thread.context)
   })
 
-  it('上下文装不下词和原句时拒绝复用并保留已有内容，刚好装下时正常复用', () => {
+  it('超过一百条材料仍可复用对话并补回原句', () => {
     const seeded = seed()
     const main = { kind: 'sentence' as const, entrySentenceId: seeded.approachSentenceIds[0] as string }
     const first = openThreadForMain(database, { main }, { now: T0 })
     if (first.status === 'rejected') throw new Error('open failed')
-    const extras: ThreadContextItem[] = Array.from({ length: 99 }, (_, index) => ({
+    const extras: ThreadContextItem[] = Array.from({ length: 101 }, (_, index) => ({
       id: `note:${index}`, kind: 'note', label: `内容 ${index}`, text: `内容 ${index}`, source: ''
     }))
     updateThreadContext(database, { threadId: first.thread.id, items: extras }, { now: T1 })
-    expect(openThreadForMain(database, { main, ensureSentenceContext: true }, { now: T2 }))
-      .toEqual({ status: 'rejected', reason: 'context-full' })
-    expect(readThreadView(database, first.thread.id)?.context).toEqual(extras)
-
-    updateThreadContext(database, { threadId: first.thread.id, items: extras.slice(0, 98) }, { now: T3 })
-    const filled = openThreadForMain(database, { main, ensureSentenceContext: true }, { now: T4 })
-    if (filled.status === 'rejected') throw new Error('open failed')
-    expect(filled.thread.context).toHaveLength(100)
-    expect(itemIds(filled.thread.context)).toContain(`word:${seeded.approachEntryId}`)
-    expect(itemIds(filled.thread.context)).toContain(`sentence:${main.entrySentenceId}`)
-    const reopened = openThreadForMain(database, { main, ensureSentenceContext: true }, { now: T4 })
+    const reopened = openThreadForMain(database, { main, ensureSentenceContext: true }, { now: T2 })
     if (reopened.status === 'rejected') throw new Error('open failed')
-    expect(reopened.thread.context).toEqual(filled.thread.context)
+    expect(reopened.thread.context).toHaveLength(103)
+    expect(itemIds(reopened.thread.context)).toContain(`sentence:${main.entrySentenceId}`)
   })
 
   it('按完整主对象区分线程，明确新开后按最近更新复用', () => {
@@ -944,6 +936,24 @@ describe('上下文', () => {
     }
   })
 
+  it('任意对话可浏览其他文章与词条，并按篇读取全文和全部段落', () => {
+    const seeded = seed()
+    const created = createThread(database, { main: { kind: 'entry', entryId: seeded.contextEntryId } })
+    if (created.status !== 'created') throw new Error('create failed')
+    const candidates = readContextCandidates(database, created.thread.id)
+    expect(candidates.articles.map((article) => article.id)).toContain(longMatch.id)
+    expect(itemIds(candidates.items)).toContain(`article:${firstArticle.id}`)
+    expect(candidates.items.filter((item) => item.kind === 'paragraph' && item.id.startsWith(`paragraph:${firstArticle.id}:`))).toHaveLength(3)
+    expect(itemIds(candidates.libraryItems)).toContain(`word:${seeded.approachEntryId}`)
+    expect(itemIds(candidates.libraryItems)).toContain(`sentence:${seeded.approachSentenceIds[0]}`)
+    expect(candidates.libraryItems.some((item) => item.kind === 'note')).toBe(true)
+    const materials = readArticleContextMaterials(database, longMatch.id)
+    expect(materials.article?.text).toContain('First paragraph here.')
+    expect(materials.paragraphs.map((item) => item.text)).toEqual([
+      'First paragraph here.', 'Nothing on approach.', 'Another approach appears here.'
+    ])
+  })
+
   it('候选里是这次还能加的原句、段落与学习内容，已带上的不再出现', () => {
     const seeded = seed()
     const created = createThread(database, { main: { kind: 'entry', entryId: seeded.approachEntryId } }, { now: T4 })
@@ -974,9 +984,9 @@ describe('上下文', () => {
     if (created.status !== 'created') throw new Error('create failed')
     const candidates = readContextCandidates(database, created.thread.id).items
     const ids = itemIds(candidates)
-    // 全文已带上，同篇段落不再出现；仍可加入原句与学习内容。
+    // 候选保留段落供移除全文后使用；界面在全文仍存在时隐藏这些段落。
     expect(ids).not.toContain(`article:${firstArticle.id}`)
-    expect(ids.filter((id) => id.startsWith('paragraph:')).length).toBe(0)
+    expect(ids.filter((id) => id.startsWith('paragraph:')).length).toBe(3)
     expect(ids).toContain(`sentence:${seeded.approachSentenceIds[0]}`)
     expect(ids).toContain(`sentence:${seeded.approachSentenceIds[1]}`)
     expect(ids.some((id) => id.startsWith('note:'))).toBe(true)

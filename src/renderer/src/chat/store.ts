@@ -393,6 +393,22 @@ export async function openGroupThread(
   }
 }
 
+/** 空白对话选材料时先创建对话，以便持久化所选上下文。 */
+export async function ensureBlankContextThread(): Promise<ChatThreadView | null> {
+  if (state.current) return state.current
+  try {
+    const result = await createThread({ main: { kind: 'none' } })
+    if (result.status !== 'created') return null
+    set({ current: result.thread, currentId: result.thread.id })
+    replaceRoute('chat', { threadId: result.thread.id })
+    void refreshThreads()
+    return result.thread
+  } catch (error) {
+    fail(error, '没能新建对话，再试一次。', null)
+    return null
+  }
+}
+
 export function sendChatMessage(raw: string): boolean {
   const text = raw.trim()
   if (
@@ -754,12 +770,17 @@ export function submitEdit(raw: string): boolean {
 
 /* ---------- 上下文 ---------- */
 
-export function addContextItem(item: ThreadContextItem): void {
+export function addContextItems(items: readonly ThreadContextItem[]): void {
   const view = state.current
-  if (view === null || view.context.some((existing) => existing.id === item.id)) {
-    return
-  }
-  changeContext(view, deduplicateArticleContext([...view.context, item]))
+  if (view === null) return
+  const ids = new Set(view.context.map((item) => item.id))
+  const additions = items.filter((item) => !ids.has(item.id) && (ids.add(item.id), true))
+  if (additions.length === 0) return
+  changeContext(view, deduplicateArticleContext([...view.context, ...additions]))
+}
+
+export function addContextItem(item: ThreadContextItem): void {
+  addContextItems([item])
 }
 
 export function removeContextItem(id: string): void {

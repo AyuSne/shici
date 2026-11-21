@@ -9,6 +9,7 @@ import type {
 import type {
   ThreadAnswer,
   ThreadContextItem,
+  ThreadContextCandidates,
   ThreadListItem,
   ThreadTurn,
   ThreadVersion
@@ -22,6 +23,7 @@ import {
   loadPinSource,
   loadThread,
   loadThreadContextCandidates,
+  loadArticleContextMaterials,
   movePin,
   restorePins,
   saveGeneratedArticle
@@ -55,11 +57,13 @@ import {
 } from '../chat/session'
 import {
   addContextItem,
+  addContextItems,
   beginEditLastQuestion,
   cancelEdit,
   canDeleteChatThread,
   continueLastAnswer,
   ensureChatEvents,
+  ensureBlankContextThread,
   getChatStore,
   isDeletedChatThread,
   openChatThread,
@@ -159,7 +163,7 @@ export function ChatPage({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [railOpen, setRailOpen] = useState(false)
   const [deleteCandidate, setDeleteCandidate] = useState<ThreadListItem | null>(null)
-  const [candidates, setCandidates] = useState<ThreadContextItem[] | null>(null)
+  const [candidates, setCandidates] = useState<ThreadContextCandidates | null>(null)
   const [board, setBoard] = useState<PinBoard>(EMPTY_BOARD)
   const [boardOpen, setBoardOpen] = useState(false)
   const [boardTab, setBoardTab] = useState<PinTab>('thread')
@@ -494,19 +498,18 @@ export function ChatPage({
     submit()
   }
 
-  const togglePicker = (): void => {
+  const togglePicker = async (): Promise<void> => {
     if (pickerOpen) {
       setPickerOpen(false)
       return
     }
-    if (store.current === null) {
-      return
-    }
+    const view = store.current ?? await ensureBlankContextThread()
+    if (view === null) return
     setPickerOpen(true)
     setCandidates(null)
-    loadThreadContextCandidates(store.current.id).then(
-      (result) => setCandidates(result.items),
-      () => setCandidates([])
+    loadThreadContextCandidates(view.id).then(
+      (result) => setCandidates(result),
+      () => setCandidates({ items: [], articles: [], libraryItems: [] })
     )
   }
 
@@ -522,21 +525,13 @@ export function ChatPage({
       return
     }
     addContextItem(item)
-    setCandidates((current) => current?.filter((candidate) => candidate.id !== item.id) ?? current)
   }
 
   const removeItem = (id: string): void => {
     const removed = store.current?.context.find((item) => item.id === id)
     removeContextItem(id)
-    if (removed === undefined) {
-      return
-    }
-    setCandidates((current) => {
-      if (current === null || current.some((item) => item.id === removed.id)) {
-        return current
-      }
-      return [...current, removed]
-    })
+    if (removed) setCandidates((current) => current && !current.items.some((item) => item.id === id)
+      ? { ...current, items: [...current.items, removed] } : current)
   }
 
   const showToast = (
@@ -1252,17 +1247,19 @@ export function ChatPage({
             </div>
           )}
           <div className="composer-inner">
-            {current === null ? null : (
+            {
               <ContextPanel
-                items={current.context}
-                summary={current.contextSummary}
+                items={current?.context ?? []}
+                summary={current?.contextSummary ?? { articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, charCount: 0 }}
                 candidates={candidates}
                 pickerOpen={pickerOpen}
                 onTogglePicker={togglePicker}
                 onAdd={addItem}
+                onAddMany={addContextItems}
+                loadArticle={loadArticleContextMaterials}
                 onRemove={removeItem}
               />
-            )}
+            }
 
             <LearningInstructionPanel draft={draft} onAppend={setDraft} />
 

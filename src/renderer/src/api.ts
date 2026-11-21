@@ -128,6 +128,7 @@ import type {
   SwitchQuestionRequest,
   SwitchThreadResult,
   ThreadContextCandidates,
+  ArticleContextMaterials,
   ThreadListResult,
   UpdateThreadContextRequest,
   UpdateThreadContextResult
@@ -446,6 +447,10 @@ export function loadThreadContextCandidates(
   threadId: string
 ): Promise<ThreadContextCandidates> {
   return invoke('chat:candidates', { threadId })
+}
+
+export function loadArticleContextMaterials(articleId: string): Promise<ArticleContextMaterials> {
+  return invoke('chat:article-context', { articleId })
 }
 
 /** 切到另一提问版本，整支回答跟着换。 */

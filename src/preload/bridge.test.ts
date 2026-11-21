@@ -61,6 +61,15 @@ describe('createBridge', () => {
     ])
   })
 
+  it('按篇读取上下文的请求与结果通过白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+    await bridge.invoke('chat:article-context', { articleId: 'article-1' })
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      { channel: 'chat:article-context', payload: { articleId: 'article-1' } }
+    ])
+  })
+
   it('用一组词开线程的请求穿过白名单', async () => {
     const { ipc, invocations } = fakeRenderer()
     const bridge = createBridge(ipc)

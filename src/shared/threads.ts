@@ -267,6 +267,13 @@ export type UpdateThreadContextResult =
 /** 还没进上下文、这次可以加进来的材料。 */
 export type ThreadContextCandidates = {
   items: ThreadContextItem[]
+  articles: { id: string; title: string }[]
+  libraryItems: ThreadContextItem[]
+}
+
+export type ArticleContextMaterials = {
+  article: ThreadContextItem | null
+  paragraphs: ThreadContextItem[]
 }
 
 export type EditQuestionRequest = {

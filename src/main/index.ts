@@ -15,6 +15,7 @@ import {
   listThreads,
   openThreadForMain,
   readContextCandidates,
+  readArticleContextMaterials,
   readThreadView,
   saveAnswer,
   saveContinuation,
@@ -315,6 +316,7 @@ function start(): void {
     'chat:continue': (payload) => saveContinuation(opened, payload),
     'chat:context': (payload) => updateThreadContext(opened, payload),
     'chat:candidates': (payload) => readContextCandidates(opened, payload.threadId),
+    'chat:article-context': (payload) => readArticleContextMaterials(opened, payload.articleId),
     'chat:switch-question': (payload) => switchQuestion(opened, payload),
     'chat:switch-answer': (payload) => switchAnswer(opened, payload),
     'chat:export-jsonl': async (payload) => {

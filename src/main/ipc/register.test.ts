@@ -112,7 +112,8 @@ function chatHandlers() {
     'chat:answer': (): SaveAnswerResult => ({ status: 'missing' }),
     'chat:continue': (): SaveAnswerResult => ({ status: 'missing' }),
     'chat:context': (): UpdateThreadContextResult => ({ status: 'missing' }),
-    'chat:candidates': (): ThreadContextCandidates => ({ items: [] }),
+    'chat:candidates': (): ThreadContextCandidates => ({ items: [], articles: [], libraryItems: [] }),
+    'chat:article-context': () => ({ article: null, paragraphs: [] }),
     'chat:switch-question': (): SwitchThreadResult => ({ status: 'missing' }),
     'chat:switch-answer': (): SwitchThreadResult => ({ status: 'missing' }),
     'chat:export-jsonl': (): ExportThreadResult => ({ status: 'missing' })

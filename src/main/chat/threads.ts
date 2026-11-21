@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ChatError } from '../../shared/chat'
 import type {
+  ArticleContextMaterials,
   AskThreadRequest,
   ChatThreadView,
   CreateGroupThreadRequest,
@@ -90,7 +91,7 @@ const CONTEXT_KINDS: readonly ThreadContextKind[] = [
 ]
 const ANSWER_PHASES: readonly AnswerPhase[] = ['done', 'stopped', 'error']
 /** 一条线程最多带这么多条上下文，防止界面把整本书塞进去。 */
-const CONTEXT_LIMIT = 100
+const CONTEXT_LIMIT = 10000
 const TITLE_LIMIT = 30
 
 function nowOf(options: { now?: string }): string {
@@ -1430,7 +1431,7 @@ export function readContextCandidates(
 ): ThreadContextCandidates {
   const thread = readThreadRow(database, threadId)
   if (!thread) {
-    return { items: [] }
+    return { items: [], articles: [], libraryItems: [] }
   }
   const main = describeMain(database, thread.main_kind as ThreadMainKind, thread.main_id)
   const context = parseContextJson(thread.context_json)
@@ -1440,7 +1441,6 @@ export function readContextCandidates(
   const seen = new Set<string>()
   const push = (item: ThreadContextItem | null): void => {
     if (!item || included.has(item.id) || seen.has(item.id)) return
-    if (item.kind === 'paragraph' && deduplicateArticleContext([...context, item]).length === context.length) return
     seen.add(item.id)
     candidates.push(item)
   }
@@ -1448,7 +1448,11 @@ export function readContextCandidates(
   if (main.kind === 'entry' || main.kind === 'sentence') {
     push(wordItem(database, main.entryId))
     for (const item of sentenceItemsOfEntry(database, main.entryId)) push(item)
-    for (const item of paragraphItemsOfEntry(database, main.entryId)) push(item)
+    const articleIds = database.prepare('SELECT DISTINCT article_id FROM entry_sentence WHERE entry_id = ?').all(main.entryId) as { article_id: string }[]
+    for (const { article_id } of articleIds) {
+      push(articleItem(database, article_id))
+      for (const item of paragraphItemsOfArticle(database, article_id)) push(item)
+    }
     for (const item of noteItemsOfEntry(database, main.entryId)) push(item)
   } else if (main.kind === 'article') {
     push(articleItem(database, main.articleId))
@@ -1468,5 +1472,19 @@ export function readContextCandidates(
     }
   }
 
-  return { items: candidates }
+  const articles = database.prepare('SELECT id, title FROM article ORDER BY title, id').all() as { id: string; title: string }[]
+  const libraryItems: ThreadContextItem[] = []
+  for (const word of libraryWordItems(database)) {
+    libraryItems.push(word)
+    const entryId = wordContextEntryId(word)
+    if (entryId !== null) {
+      libraryItems.push(...sentenceItemsOfEntry(database, entryId), ...noteItemsOfEntry(database, entryId))
+    }
+  }
+  return { items: candidates, articles, libraryItems }
+}
+
+/** 仅在展开文章时读取正文，避免打开面板时传输整座文章库。 */
+export function readArticleContextMaterials(database: AppDatabase, articleId: string): ArticleContextMaterials {
+  return { article: articleItem(database, articleId), paragraphs: paragraphItemsOfArticle(database, articleId) }
 }

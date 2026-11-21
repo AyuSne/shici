@@ -140,6 +140,7 @@ import type {
   SwitchQuestionRequest,
   SwitchThreadResult,
   ThreadContextCandidates,
+  ArticleContextMaterials,
   ThreadListResult,
   UpdateThreadContextRequest,
   UpdateThreadContextResult
@@ -254,6 +255,7 @@ export interface IpcContract {
     payload: { threadId: string }
     result: ThreadContextCandidates
   }
+  'chat:article-context': { payload: { articleId: string }; result: ArticleContextMaterials }
   'chat:switch-question': { payload: SwitchQuestionRequest; result: SwitchThreadResult }
   'chat:switch-answer': { payload: SwitchAnswerRequest; result: SwitchThreadResult }
   'chat:export-jsonl': { payload: { threadId: string }; result: ExportThreadResult }
@@ -402,6 +404,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'chat:continue': true,
   'chat:context': true,
   'chat:candidates': true,
+  'chat:article-context': true,
   'chat:switch-question': true,
   'chat:switch-answer': true,
   'chat:export-jsonl': true,
