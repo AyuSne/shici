@@ -27,12 +27,16 @@ export const MODEL_PROTOCOL_LABELS: Record<ModelProtocol, string> = {
 
 /**
  * 自定义入口当前开放的协议。这不是第二份协议清单：下拉选项仍由
- * `MODEL_PROTOCOLS` 生成，这里只决定当前哪些选项可用。批次 2 先开
- * OpenAI Chat Completions；#65 开 Anthropic Messages，其余协议后续批次再开。
+ * `MODEL_PROTOCOLS` 生成，这里只决定当前哪些选项可用。
+ *
+ * 批 2 先开 OpenAI Chat Completions；批 3 打开另外三条
+ * （OpenAI Responses、Anthropic Messages、Gemini API）。
  */
 export const OPEN_CUSTOM_PROTOCOLS: readonly ModelProtocol[] = [
   'openai-completions',
-  'anthropic-messages'
+  'openai-responses',
+  'anthropic-messages',
+  'google-generative-ai'
 ]
 
 export function isCustomProviderProtocol(protocol: ModelProtocol): boolean {

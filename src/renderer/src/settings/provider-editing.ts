@@ -1,7 +1,7 @@
 import { findProviderCatalogModel } from '../../../shared/model-directory'
 import {
   MODEL_PROTOCOL_LABELS,
-  OPEN_CUSTOM_PROTOCOLS,
+  MODEL_PROTOCOLS,
   isCustomProviderProtocol,
   type ModelProtocol
 } from '../../../shared/model-protocols'
@@ -131,11 +131,13 @@ export function protocolOptionLabel(protocol: ModelProtocol): string {
 }
 
 /**
- * 当前自定义 API 可选的协议名，与开放清单同源：开放列表变化时文案自动跟上，
- * 不在界面里再抄一份「只开放某某」的硬编码。
+ * 当前自定义入口真正开放的协议名，按共享表顺序拼成一句。
+ * 文案从 `OPEN_CUSTOM_PROTOCOLS` 生成，追加协议时不会留下「只开放一条」的旧话术。
  */
-export function openCustomProtocolText(): string {
-  return OPEN_CUSTOM_PROTOCOLS.map((protocol) => MODEL_PROTOCOL_LABELS[protocol]).join('、')
+export function openCustomProtocolsText(): string {
+  return MODEL_PROTOCOLS.filter(isCustomProviderProtocol)
+    .map((protocol) => MODEL_PROTOCOL_LABELS[protocol])
+    .join('、')
 }
 
 export function moveModelId(
@@ -180,7 +182,7 @@ export function customProviderErrorText(reason: CustomProviderRejection): string
     case 'missing-display-name':
       return '先填显示名。'
     case 'unsupported-protocol':
-      return `本版开放 ${openCustomProtocolText()}；其他协议请等后续版本。`
+      return `当前版本只开放 ${openCustomProtocolsText()}；其他协议请等后续版本。`
     case 'missing-base-url':
       return '先填接口地址。'
     case 'invalid-base-url':

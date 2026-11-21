@@ -36,7 +36,8 @@ type ModelSectionProps = {
 }
 
 /**
- * 模型服务：内置目录（已开放入口见共享 `model-builtin.ts`）与自定义 API 两条添加路径。
+ * 模型服务：内置目录（由 `listBuiltinProviderSetups()` 决定当前开放哪些）
+ * 与自定义 API 两条添加路径。
  *
  * - 卡片可切换、编辑显示名/地址、删除，并在卡片内直接编辑模型目录；
  * - 模型目录支持手加、行内编辑、删除、默认模型单选、拖拽与上移/下移排序，
@@ -62,6 +63,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
   const [credentialError, setCredentialError] = useState<string | null>(null)
 
   const setup = setups.find((candidate) => candidate.id === catalogId) ?? setups[0]
+  const builtinNames = setups.map((candidate) => candidate.displayName).join('、')
   const noActiveProvider =
     overview.providers.length > 0 && overview.activeProviderId === null
 
@@ -192,10 +194,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
     <section className="settings-section" aria-labelledby="settings-model-title">
       <h2 id="settings-model-title">模型服务</h2>
       <p className="settings-desc">
-        从内置目录添加 DeepSeek、Kimi 或智谱 GLM，或自定义一套模型 API。内置入口自动带出
-        地址、环境变量名与模型目录；两种入口都能改模型目录，也能用「获取可用模型」从
-        当前地址与密钥取回候选、勾选后再加入。保存只写本机，不联网校验；真正生成成功
-        一次后才标「已验证」。
+        {`从内置目录添加 ${builtinNames}，或自定义一套模型 API。内置入口自动带出地址、环境变量名与模型目录；两种入口都能改模型目录，也能用「获取可用模型」从当前地址与密钥取回候选、勾选后再加入。保存只写本机，不联网校验；真正生成成功一次后才标「已验证」。`}
       </p>
 
       {overview.providers.length === 0 ? (

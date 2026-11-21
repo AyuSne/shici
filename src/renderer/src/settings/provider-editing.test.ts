@@ -9,6 +9,7 @@ import {
   modelInDirectory,
   modelWriteErrorText,
   moveModelId,
+  openCustomProtocolsText,
   parseCapacity,
   protocolOptionLabel,
   providerIdError,
@@ -115,11 +116,17 @@ describe('moveModelId', () => {
 })
 
 describe('协议下拉文案', () => {
-  it('选项名来自共享协议表，已开放的协议不带「后续版本」', () => {
+  it('选项名来自共享协议表，当前开放的四条都不带「后续版本」', () => {
     expect(protocolOptionLabel('openai-completions')).toBe('OpenAI Chat Completions')
+    expect(protocolOptionLabel('openai-responses')).toBe('OpenAI Responses')
     expect(protocolOptionLabel('anthropic-messages')).toBe('Anthropic Messages')
-    expect(protocolOptionLabel('openai-responses')).toBe('OpenAI Responses（后续版本）')
-    expect(protocolOptionLabel('google-generative-ai')).toBe('Gemini API（后续版本）')
+    expect(protocolOptionLabel('google-generative-ai')).toBe('Gemini API')
+  })
+
+  it('开放协议文案按共享表生成，不写死单一协议', () => {
+    expect(openCustomProtocolsText()).toBe(
+      'OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Gemini API'
+    )
   })
 })
 

@@ -25,7 +25,7 @@ import {
   customProviderErrorText,
   displayNameError,
   modelDirectoryHint,
-  openCustomProtocolText,
+  openCustomProtocolsText,
   protocolOptionLabel,
   providerIdError
 } from './provider-editing'
@@ -245,7 +245,7 @@ export function CustomProviderForm({
         </select>
       </label>
       <p className="field-hint">
-        本版开放 {openCustomProtocolText()}；未开放的协议显示为「后续版本」并禁用。
+        当前开放：{openCustomProtocolsText()}；其余协议后续开放。
       </p>
 
       <label className="settings-field">

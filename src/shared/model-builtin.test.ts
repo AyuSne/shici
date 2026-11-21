@@ -6,21 +6,27 @@ import {
   readBuiltinProviderSetup
 } from './model-builtin'
 
-describe('内置提供商目录（本批的 OpenAI 兼容与 Anthropic 入口）', () => {
-  it('列出本批开放的入口，顺序固定', () => {
+describe('内置提供商目录（批 2 + 批 3）', () => {
+  it('按固定顺序列分批开放的入口', () => {
     expect(BUILTIN_PROVIDER_IDS).toEqual([
       'deepseek',
       'kimi',
       'glm',
       'anthropic',
-      'minimax'
+      'minimax',
+      'openai',
+      'xai',
+      'gemini'
     ])
     expect(listBuiltinProviderSetups().map((setup) => setup.id)).toEqual([
       'deepseek',
       'kimi',
       'glm',
       'anthropic',
-      'minimax'
+      'minimax',
+      'openai',
+      'xai',
+      'gemini'
     ])
   })
 
@@ -70,6 +76,27 @@ describe('内置提供商目录（本批的 OpenAI 兼容与 Anthropic 入口）
         protocol: 'anthropic-messages',
         baseUrl: 'https://api.minimax.io/anthropic',
         envVar: 'MINIMAX_API_KEY'
+      },
+      {
+        id: 'openai',
+        displayName: 'OpenAI',
+        protocol: 'openai-responses',
+        baseUrl: 'https://api.openai.com/v1',
+        envVar: 'OPENAI_API_KEY'
+      },
+      {
+        id: 'xai',
+        displayName: 'xAI',
+        protocol: 'openai-responses',
+        baseUrl: 'https://api.x.ai/v1',
+        envVar: 'XAI_API_KEY'
+      },
+      {
+        id: 'gemini',
+        displayName: 'Google Gemini',
+        protocol: 'google-generative-ai',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        envVar: 'GEMINI_API_KEY'
       }
     ])
   })
@@ -141,12 +168,91 @@ describe('内置提供商目录（本批的 OpenAI 兼容与 Anthropic 入口）
     })
   })
 
-  it('本批未开放的入口（含 OpenCode GO 与其他协议）不可从目录添加', () => {
+  it('Anthropic 与 MiniMax 带出各自的 Anthropic Messages 端点与模型目录', () => {
+    const anthropic = readBuiltinProviderSetup('anthropic')
+    const minimax = readBuiltinProviderSetup('minimax')
+
+    expect(anthropic?.models.length).toBeGreaterThan(0)
+    expect(anthropic?.models.map((model) => model.api)).toEqual(
+      anthropic?.models.map(() => 'anthropic-messages')
+    )
+    expect(anthropic?.models[0]).toMatchObject({
+      id: 'claude-fable-5',
+      api: 'anthropic-messages',
+      contextWindow: 1000000,
+      maxTokens: 128000,
+      reasoning: true
+    })
+
+    expect(minimax?.models.map((model) => model.id)).toEqual([
+      'MiniMax-M2.7',
+      'MiniMax-M2.7-highspeed',
+      'MiniMax-M3',
+      'MiniMax-M3.1-Flash'
+    ])
+    expect(minimax?.models[0]).toMatchObject({
+      api: 'anthropic-messages',
+      contextWindow: 204800,
+      maxTokens: 131072,
+      reasoning: true
+    })
+  })
+
+  it('OpenAI 与 xAI 带出各自的 Responses 模型目录，不共用别家元数据', () => {
+    const openai = readBuiltinProviderSetup('openai')
+    const xai = readBuiltinProviderSetup('xai')
+
+    expect(openai?.models.length).toBeGreaterThan(0)
+    expect(openai?.models.map((model) => model.api)).toEqual(
+      openai?.models.map(() => 'openai-responses')
+    )
+    expect(openai?.models[0]).toMatchObject({
+      id: 'chat-latest',
+      api: 'openai-responses',
+      contextWindow: 400000,
+      maxTokens: 128000,
+      reasoning: true
+    })
+    // 普通模型没有思考能力：发送层不能替它带 reasoning。
+    expect(openai?.models.find((model) => model.id === 'gpt-4.1')).toMatchObject({
+      api: 'openai-responses',
+      reasoning: false
+    })
+
+    expect(xai?.models.map((model) => model.id)).toEqual([
+      'grok-4.3',
+      'grok-4.5',
+      'grok-4.6',
+      'grok-4.7'
+    ])
+    expect(xai?.models[0]).toMatchObject({
+      api: 'openai-responses',
+      contextWindow: 1000000,
+      maxTokens: 30000,
+      reasoning: true
+    })
+  })
+
+  it('Gemini 带出官方端点、环境变量与目录模型，协议是 Gemini API', () => {
+    const setup = readBuiltinProviderSetup('gemini')
+
+    expect(setup?.models.map((model) => model.id)).toContain('gemini-2.5-flash')
+    expect(setup?.models[0]).toMatchObject({
+      api: 'google-generative-ai',
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      reasoning: true
+    })
+  })
+
+  it('目录之外的入口（OpenCode GO 与空值）不可从目录添加', () => {
     expect(readBuiltinProviderSetup('opencode-go')).toBeNull()
-    expect(readBuiltinProviderSetup('openai')).toBeNull()
     expect(readBuiltinProviderSetup('')).toBeNull()
     expect(isBuiltinProviderId('deepseek')).toBe(true)
     expect(isBuiltinProviderId('anthropic')).toBe(true)
+    expect(isBuiltinProviderId('openai')).toBe(true)
+    expect(isBuiltinProviderId('xai')).toBe(true)
+    expect(isBuiltinProviderId('gemini')).toBe(true)
     expect(isBuiltinProviderId(42)).toBe(false)
   })
 })

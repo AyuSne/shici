@@ -229,11 +229,9 @@ describe('createCustomProvider', () => {
     ).toEqual({ count: 0 })
   })
 
-  it('字段缺一不可，且未开放的协议被拒绝；拒绝时一条都不写', () => {
+  it('字段缺一不可，且只接受当前开放的协议；拒绝时一条都不写', () => {
     const rejected: Array<[Partial<CreateCustomProviderRequest>, string]> = [
       [{ displayName: '   ' }, 'missing-display-name'],
-      [{ protocol: 'openai-responses' }, 'unsupported-protocol'],
-      [{ protocol: 'google-generative-ai' }, 'unsupported-protocol'],
       [{ protocol: 'not-a-protocol' as never }, 'unsupported-protocol'],
       [{ baseUrl: '   ' }, 'missing-base-url'],
       [{ baseUrl: 'relay.example.com/v1' }, 'invalid-base-url'],
