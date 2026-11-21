@@ -6,19 +6,20 @@ import {
   activateProvider,
   addBuiltinProvider,
   deleteProvider,
-  loadSettingsOverview,
-  setDefaultProviderModel
+  loadSettingsOverview
 } from '../api'
 import { failureText } from '../errors'
+import { CustomProviderForm } from './custom-provider-form'
 import {
   checkText,
   keyStateText,
-  modelMetaText,
   protocolText,
   providerModelsText,
   providerSourceText,
   verificationText
 } from './format'
+import { ProviderEditForm } from './provider-edit-form'
+import { ProviderModelEditor } from './provider-model-editor'
 
 type ModelSectionProps = {
   overview: SettingsOverview
@@ -27,12 +28,13 @@ type ModelSectionProps = {
 }
 
 /**
- * 模型服务：#62 只支持从内置目录添加 DeepSeek / Kimi / 智谱 GLM 三条
- * OpenAI Chat Completions 入口。地址、环境变量与模型目录都由目录带出且只读，
- * 用户要做的只是填密钥、选默认模型、切换与删除。
+ * 模型服务：内置目录（DeepSeek / Kimi / 智谱 GLM）与自定义 API 两条添加路径。
  *
- * 保存不联网：填完密钥立即落库，状态是「未验证」；真正成功生成一次后才转「已验证」。
- * 本票没有编辑地址、模型 CRUD、发现或测试连接入口。
+ * - 卡片可切换、编辑显示名/地址、删除，并在卡片内直接编辑模型目录；
+ * - 模型目录支持手加、行内编辑、删除、默认模型单选、拖拽与上移/下移排序，
+ *   内置与自定义 provider 都可用；OpenCode GO 的聚合目录首版只读；
+ * - 保存不联网：填完密钥立即落库，状态是「未验证」；真正成功生成一次后才转「已验证」。
+ *   测试连接与获取可用模型留给后续票，不在本票入口里。
  */
 export function ModelSection({ overview, onChange, notify }: ModelSectionProps) {
   const setups = listBuiltinProviderSetups()
@@ -43,6 +45,8 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
   const [busy, setBusy] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [addMode, setAddMode] = useState<'builtin' | 'custom'>('builtin')
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
 
   const setup = setups.find((candidate) => candidate.id === catalogId) ?? setups[0]
   const noActiveProvider =
@@ -105,28 +109,6 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
     })
   }
 
-  function onDefaultModel(
-    provider: ModelProviderSummary,
-    modelRowId: string
-  ): Promise<void> {
-    return run(`default-${provider.id}`, async () => {
-      const result = await setDefaultProviderModel({
-        providerId: provider.id,
-        modelRowId
-      })
-      if (result.status === 'rejected') {
-        setFormError('这个模型已经不在目录里了，刷新后再选。')
-        return
-      }
-      if (result.status === 'missing') {
-        setFormError('这套提供商已经不在了，刷新后再试。')
-        return
-      }
-      await refresh()
-      notify('已换默认模型；正在生成的回答不受影响')
-    })
-  }
-
   function onDelete(provider: ModelProviderSummary): Promise<void> {
     return run(`delete-${provider.id}`, async () => {
       const result = await deleteProvider({ providerId: provider.id })
@@ -148,13 +130,14 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
     <section className="settings-section" aria-labelledby="settings-model-title">
       <h2 id="settings-model-title">模型服务</h2>
       <p className="settings-desc">
-        从内置目录添加 DeepSeek、Kimi 或智谱 GLM：接口地址、环境变量名与模型目录会自动带出，
-        你只需要填密钥。保存只写本机，不联网校验；真正生成成功一次后才标「已验证」。
+        从内置目录添加 DeepSeek、Kimi 或智谱 GLM，或自定义一套模型 API。内置入口自动带出
+        地址、环境变量名与模型目录；两种入口都能改模型目录。保存只写本机，不联网校验；
+        真正生成成功一次后才标「已验证」。
       </p>
 
       {overview.providers.length === 0 ? (
         <p className="settings-empty">
-          还没有模型提供商。从下面的内置目录选一家开始；也可以先用环境变量。
+          还没有模型提供商。从下面的内置目录选一家开始，或自定义一套 API；也可以先用环境变量。
         </p>
       ) : (
         <>
@@ -196,6 +179,19 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                         使用这个
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="link-button"
+                      aria-label={`编辑提供商 ${provider.displayName}`}
+                      disabled={busy !== null}
+                      onClick={() =>
+                        setEditingProviderId(
+                          editingProviderId === provider.id ? null : provider.id
+                        )
+                      }
+                    >
+                      编辑
+                    </button>
                     <button
                       type="button"
                       className="link-button is-danger"
@@ -246,30 +242,20 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                   )}
                 </dl>
 
-                <div className="model-picker" role="group" aria-label="默认模型">
-                  <span className="settings-field-label">默认模型</span>
-                  {provider.models.length === 0 ? (
-                    <p className="settings-hint">这套提供商还没有模型。</p>
-                  ) : (
-                    <ul className="model-options">
-                      {provider.models.map((model) => (
-                        <li key={model.id}>
-                          <label className="model-option">
-                            <input
-                              type="radio"
-                              name={`default-model-${provider.id}`}
-                              checked={provider.defaultModelRowId === model.id}
-                              disabled={busy !== null}
-                              onChange={() => void onDefaultModel(provider, model.id)}
-                            />
-                            <code className="model-id">{model.modelId}</code>
-                            <span className="model-meta">{modelMetaText(model)}</span>
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+                {editingProviderId === provider.id ? (
+                  <ProviderEditForm
+                    provider={provider}
+                    refresh={refresh}
+                    notify={notify}
+                    onClose={() => setEditingProviderId(null)}
+                  />
+                ) : null}
+
+                <ProviderModelEditor
+                  provider={provider}
+                  refresh={refresh}
+                  notify={notify}
+                />
 
                 <p className="profile-check">{checkText(provider)}</p>
 
@@ -305,88 +291,124 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
       )}
 
       <div className="profile-form">
-        <h3>添加内置提供商</h3>
+        <h3>添加模型提供商</h3>
         <p className="settings-desc">
-          保存时不联网，断网也能存成「未验证」。密钥只以掩码显示，不会回传到界面。
+          内置目录自动带出地址与模型；自定义 API 由你自己填 Provider ID、协议与地址。
+          保存时不联网，断网也能存成「未验证」；密钥只以掩码显示。
         </p>
 
-        <label className="settings-field">
-          <span>内置提供商</span>
-          <select
-            aria-label="内置提供商"
-            value={catalogId}
-            disabled={busy !== null}
-            onChange={(event) => setCatalogId(event.target.value as BuiltinProviderId)}
-          >
-            {setups.map((candidate) => (
-              <option key={candidate.id} value={candidate.id}>
-                {candidate.displayName}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {setup === undefined ? null : (
-          <dl className="profile-facts builtin-preview">
-            <div>
-              <dt>接口地址</dt>
-              <dd>
-                <code>{setup.baseUrl}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>环境变量</dt>
-              <dd>
-                <code>{setup.envVar}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>模型目录</dt>
-              <dd>
-                <code>{setup.models.map((model) => model.id).join('、')}</code>
-              </dd>
-            </div>
-            <div>
-              <dt>Provider ID</dt>
-              <dd>
-                <code>
-                  保存后分配：{setup.id}、{setup.id}-2 …（唯一且不可改）
-                </code>
-              </dd>
-            </div>
-          </dl>
-        )}
-
-        <label className="settings-field">
-          <span>API 密钥</span>
-          <input
-            type="password"
-            aria-label="API 密钥"
-            autoComplete="off"
-            spellCheck={false}
-            value={apiKey}
-            disabled={busy !== null}
-            onChange={(event) => setApiKey(event.target.value)}
-          />
-        </label>
-
-        {formError === null ? null : (
-          <p className="field-error" role="alert">
-            {formError}
-          </p>
-        )}
-
-        <div className="settings-actions">
+        <div className="settings-segments" role="group" aria-label="添加方式">
           <button
             type="button"
-            className="button"
-            disabled={busy !== null}
-            onClick={() => void onAdd()}
+            className="settings-segment"
+            aria-pressed={addMode === 'builtin'}
+            onClick={() => setAddMode('builtin')}
           >
-            保存提供商
+            内置提供商
           </button>
-          <span className="settings-hint">保存后仍是未验证；成功对话一次会自动转已验证。</span>
+          <button
+            type="button"
+            className="settings-segment"
+            aria-pressed={addMode === 'custom'}
+            onClick={() => setAddMode('custom')}
+          >
+            自定义 API
+          </button>
         </div>
+
+        {addMode === 'builtin' ? (
+          <div className="builtin-provider-form" data-add-mode="builtin">
+            <label className="settings-field">
+              <span>内置提供商</span>
+              <select
+                aria-label="内置提供商"
+                value={catalogId}
+                disabled={busy !== null}
+                onChange={(event) =>
+                  setCatalogId(event.target.value as BuiltinProviderId)
+                }
+              >
+                {setups.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {setup === undefined ? null : (
+              <dl className="profile-facts builtin-preview">
+                <div>
+                  <dt>接口地址</dt>
+                  <dd>
+                    <code>{setup.baseUrl}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>环境变量</dt>
+                  <dd>
+                    <code>{setup.envVar}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>模型目录</dt>
+                  <dd>
+                    <code>{setup.models.map((model) => model.id).join('、')}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Provider ID</dt>
+                  <dd>
+                    <code>
+                      保存后分配：{setup.id}、{setup.id}-2 …（唯一且不可改）
+                    </code>
+                  </dd>
+                </div>
+              </dl>
+            )}
+
+            <label className="settings-field">
+              <span>API 密钥</span>
+              <input
+                type="password"
+                aria-label="API 密钥"
+                autoComplete="off"
+                spellCheck={false}
+                value={apiKey}
+                disabled={busy !== null}
+                onChange={(event) => setApiKey(event.target.value)}
+              />
+            </label>
+
+            {formError === null ? null : (
+              <p className="field-error" role="alert">
+                {formError}
+              </p>
+            )}
+
+            <div className="settings-actions">
+              <button
+                type="button"
+                className="button"
+                disabled={busy !== null}
+                onClick={() => void onAdd()}
+              >
+                保存提供商
+              </button>
+              <span className="settings-hint">
+                保存后仍是未验证；成功对话一次会自动转已验证。
+              </span>
+            </div>
+          </div>
+        ) : (
+          <CustomProviderForm
+            existingProviderKeys={overview.providers.map(
+              (provider) => provider.providerKey
+            )}
+            refresh={refresh}
+            notify={notify}
+          />
+        )}
       </div>
     </section>
   )
