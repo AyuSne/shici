@@ -52,6 +52,7 @@ describe('descriptorOfProvider', () => {
 
     expect(descriptorOfProvider(provider, model)).toEqual({
       provider: 'deepseek',
+      catalogProviderId: 'deepseek',
       model: 'deepseek-flash',
       api: 'openai-completions',
       baseUrl: 'https://api.deepseek.com',
@@ -104,6 +105,7 @@ describe('descriptorOfProvider', () => {
 
     expect(descriptor).toEqual({
       provider: 'custom-gateway',
+      catalogProviderId: null,
       model: 'mystery-model',
       api: 'openai-completions',
       baseUrl: 'https://gateway.example.com/model',
@@ -116,6 +118,46 @@ describe('descriptorOfProvider', () => {
     expect(UNKNOWN_MAX_TOKENS).toBe(128_000)
     expect(descriptor.thinkingLevelMap).toBeUndefined()
     expect(descriptor.compat).toBeUndefined()
+  })
+
+  it('OpenCode GO 描述符区分稳定配置身份与目录身份，模型自带协议与地址', () => {
+    const added = addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'opencode-go',
+      apiKey: 'sk-synthetic-go'
+    })
+    if (added.status !== 'saved') throw new Error('没存上')
+    const provider = readModelProvider(database, added.providerId)!
+    const models = readProviderModels(database, added.providerId)
+    const gemini = models.find((model) => model.modelId === 'gemini-4-argon')!
+
+    const descriptor = descriptorOfProvider(provider, gemini)!
+    expect(descriptor).toMatchObject({
+      // 配置层身份：第二套会叫 opencode-go-2；
+      provider: 'opencode-go',
+      // 目录身份：请求时据此复用 pi 内置聚合 Provider。
+      catalogProviderId: 'opencode-go',
+      model: 'gemini-4-argon',
+      api: 'google-generative-ai',
+      baseUrl: 'https://opencode.ai/inference/go/google/v1beta',
+      reasoning: true
+    })
+    // 聚合入口没有统一地址：描述符只认模型行自带的地址。
+    expect(provider.baseUrl).toBeNull()
+
+    const second = addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'opencode-go',
+      apiKey: 'sk-synthetic-go-2'
+    })
+    if (second.status !== 'saved') throw new Error('第二套没存上')
+    const secondProvider = readModelProvider(database, second.providerId)!
+    const secondModel = readProviderModels(database, second.providerId).find(
+      (model) => model.modelId === 'gemini-4-argon'
+    )!
+    expect(descriptorOfProvider(secondProvider, secondModel)).toMatchObject({
+      provider: 'opencode-go-2',
+      catalogProviderId: 'opencode-go',
+      baseUrl: 'https://opencode.ai/inference/go/google/v1beta'
+    })
   })
 
   it('模型行的协议本版不认识时没有描述符：不发请求，也不猜成别的协议', () => {

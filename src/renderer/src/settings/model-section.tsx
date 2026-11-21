@@ -4,6 +4,7 @@ import type {
   ProviderAuthMode
 } from '../../../shared/model-providers'
 import { listBuiltinProviderSetups, type BuiltinProviderId } from '../../../shared/model-builtin'
+import { isAggregateModelProvider } from '../../../shared/model-directory'
 import type { UpdateProviderCredentialRequest } from '../../../shared/provider-credentials'
 import type { SettingsOverview } from '../../../shared/settings'
 import {
@@ -20,12 +21,13 @@ import {
   checkText,
   credentialIssueText,
   keyStateText,
-  protocolText,
+  providerBaseUrlText,
   providerModelsText,
+  providerProtocolText,
   providerSourceText,
   verificationText
 } from './format'
-import { credentialRejectionText } from './messages'
+import { credentialRejectionText, modelSectionDescription } from './messages'
 import { ProviderEditForm } from './provider-edit-form'
 import { ProviderModelEditor } from './provider-model-editor'
 
@@ -36,7 +38,8 @@ type ModelSectionProps = {
 }
 
 /**
- * 模型服务：内置目录（DeepSeek / Kimi / 智谱 GLM）与自定义 API 两条添加路径。
+ * 模型服务：内置目录（由 `listBuiltinProviderSetups()` 决定当前开放哪些）
+ * 与自定义 API 两条添加路径。
  *
  * - 卡片可切换、编辑显示名/地址、删除，并在卡片内直接编辑模型目录；
  * - 模型目录支持手加、行内编辑、删除、默认模型单选、拖拽与上移/下移排序，
@@ -62,6 +65,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
   const [credentialError, setCredentialError] = useState<string | null>(null)
 
   const setup = setups.find((candidate) => candidate.id === catalogId) ?? setups[0]
+  const builtinNames = setups.map((candidate) => candidate.displayName).join('、')
   const noActiveProvider =
     overview.providers.length > 0 && overview.activeProviderId === null
 
@@ -191,12 +195,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
   return (
     <section className="settings-section" aria-labelledby="settings-model-title">
       <h2 id="settings-model-title">模型服务</h2>
-      <p className="settings-desc">
-        从内置目录添加 DeepSeek、Kimi 或智谱 GLM，或自定义一套模型 API。内置入口自动带出
-        地址、环境变量名与模型目录；两种入口都能改模型目录，也能用「获取可用模型」从
-        当前地址与密钥取回候选、勾选后再加入。保存只写本机，不联网校验；真正生成成功
-        一次后才标「已验证」。
-      </p>
+      <p className="settings-desc">{modelSectionDescription(builtinNames)}</p>
 
       {overview.providers.length === 0 ? (
         <p className="settings-empty">
@@ -284,12 +283,12 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                   </div>
                   <div>
                     <dt>协议</dt>
-                    <dd>{protocolText(provider.protocol)}</dd>
+                    <dd>{providerProtocolText(provider)}</dd>
                   </div>
                   <div>
                     <dt>接口地址</dt>
                     <dd>
-                      <code>{provider.baseUrl ?? '未填写'}</code>
+                      <code>{providerBaseUrlText(provider)}</code>
                     </dd>
                   </div>
                   <div>
@@ -432,7 +431,21 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                 <div>
                   <dt>接口地址</dt>
                   <dd>
-                    <code>{setup.baseUrl}</code>
+                    <code>
+                      {providerBaseUrlText({
+                        baseUrl: setup.baseUrl,
+                        catalogProviderId: setup.id
+                      })}
+                    </code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>协议</dt>
+                  <dd>
+                    {providerProtocolText({
+                      protocol: setup.protocol,
+                      catalogProviderId: setup.id
+                    })}
                   </dd>
                 </div>
                 <div>
@@ -444,7 +457,11 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                 <div>
                   <dt>模型目录</dt>
                   <dd>
-                    <code>{setup.models.map((model) => model.id).join('、')}</code>
+                    <code>
+                      {isAggregateModelProvider({ catalogProviderId: setup.id })
+                        ? `${setup.models.length} 个模型，各自带协议与地址`
+                        : setup.models.map((model) => model.id).join('、')}
+                    </code>
                   </dd>
                 </div>
                 <div>

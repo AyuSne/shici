@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { findProviderCatalogModel } from './model-directory'
+import {
+  findProviderCatalogModel,
+  isAggregateModelProvider,
+  isModelDirectoryReadOnly
+} from './model-directory'
 
 describe('findProviderCatalogModel', () => {
   it('内置 provider 只认自己目录入口里的模型，不拿别家的同名模型冒充', () => {
@@ -59,6 +63,24 @@ describe('findProviderCatalogModel', () => {
     ).toMatchObject({ id: 'MiniMax-M3', api: 'anthropic-messages' })
   })
 
+  it('聚合入口在目录里只按模型身份查，模型自带协议与地址', () => {
+    expect(
+      findProviderCatalogModel(
+        { source: 'builtin', catalogProviderId: 'opencode-go', protocol: null },
+        'gemini-4-argon'
+      )
+    ).toMatchObject({
+      api: 'google-generative-ai',
+      baseUrl: 'https://opencode.ai/inference/go/google/v1beta'
+    })
+    expect(
+      findProviderCatalogModel(
+        { source: 'builtin', catalogProviderId: 'opencode-go', protocol: null },
+        'not-in-go-catalog'
+      )
+    ).toBeNull()
+  })
+
   it('空 ID 与目录外 ID 返回 null，交给调用方保留未知模型', () => {
     const identity = {
       source: 'custom' as const,
@@ -73,5 +95,20 @@ describe('findProviderCatalogModel', () => {
         'deepseek-v4-pro'
       )
     ).toBeNull()
+  })
+})
+
+describe('聚合入口与只读目录', () => {
+  it('只有目录里没有单一协议的入口算聚合；未知与单协议入口都不算', () => {
+    expect(isAggregateModelProvider({ catalogProviderId: 'opencode-go' })).toBe(true)
+    expect(isAggregateModelProvider({ catalogProviderId: 'deepseek' })).toBe(false)
+    expect(isAggregateModelProvider({ catalogProviderId: 'not-in-catalog' })).toBe(false)
+    expect(isAggregateModelProvider({ catalogProviderId: null })).toBe(false)
+  })
+
+  it('聚合目录首版只读；单协议内置与自定义仍可编辑', () => {
+    expect(isModelDirectoryReadOnly({ catalogProviderId: 'opencode-go' })).toBe(true)
+    expect(isModelDirectoryReadOnly({ catalogProviderId: 'deepseek' })).toBe(false)
+    expect(isModelDirectoryReadOnly({ catalogProviderId: null })).toBe(false)
   })
 })

@@ -6,7 +6,10 @@ import type {
   DeleteProviderResult,
   SetDefaultProviderModelResult
 } from '../../shared/model-providers'
-import { readBuiltinProviderSetup } from '../../shared/model-builtin'
+import {
+  AGGREGATE_PROTOCOL_STORAGE,
+  readBuiltinProviderSetup
+} from '../../shared/model-builtin'
 import type { CatalogModel } from '../../shared/model-catalog'
 import type { AppDatabase } from '../db/database'
 import { uniqueProviderKey } from '../db/provider-key'
@@ -121,7 +124,9 @@ export function addBuiltinProvider(
         providerId,
         providerKey,
         displayName,
-        setup.protocol,
+        // 聚合入口没有单一协议：存显式哨兵，读取层照旧按未知协议保护，
+        // 不冒充 openai-completions；地址与协议都按模型行给。
+        setup.protocol ?? AGGREGATE_PROTOCOL_STORAGE,
         setup.baseUrl,
         prepared.authMode,
         prepared.envVar,

@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { isModelDirectoryReadOnly } from '../../../shared/model-directory'
+import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
 import {
   baseUrlError,
   customProviderErrorText,
   displayNameError,
+  filterModelsByQuery,
   modelDirectoryHint,
   modelIdError,
   modelInDirectory,
+  modelMatchesQuery,
   modelWriteErrorText,
   moveModelId,
+  openCustomProtocolsText,
   parseCapacity,
-  protocolOptionLabel,
   providerIdError,
   providerUpdateErrorText
 } from './provider-editing'
@@ -102,6 +105,34 @@ describe('isModelDirectoryReadOnly', () => {
   })
 })
 
+describe('模型目录搜索', () => {
+  const models = [
+    { modelId: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5' },
+    { modelId: 'gemini-4-argon', displayName: 'Gemini 4 Argon' },
+    { modelId: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' }
+  ]
+
+  it('按模型 ID 或显示名搜索，大小写与首尾空格都不影响', () => {
+    expect(modelMatchesQuery(models[0]!, 'claude')).toBe(true)
+    expect(modelMatchesQuery(models[0]!, 'HAIKU 5.5')).toBe(true)
+    expect(modelMatchesQuery(models[1]!, '  gemini-4  ')).toBe(true)
+    expect(modelMatchesQuery(models[2]!, 'gpt-5.6')).toBe(true)
+    expect(modelMatchesQuery(models[2]!, 'haiku')).toBe(false)
+  })
+
+  it('空搜索词保留全部模型，过滤结果保持原顺序', () => {
+    expect(modelMatchesQuery(models[0]!, '   ')).toBe(true)
+    expect(filterModelsByQuery(models, '')).toEqual(models)
+    expect(filterModelsByQuery(models, 'gemini').map((model) => model.modelId)).toEqual([
+      'gemini-4-argon'
+    ])
+    expect(filterModelsByQuery(models, 'luna').map((model) => model.modelId)).toEqual([
+      'gpt-5.6-luna'
+    ])
+    expect(filterModelsByQuery(models, 'nope')).toEqual([])
+  })
+})
+
 describe('moveModelId', () => {
   const ids = ['a', 'b', 'c']
 
@@ -115,11 +146,17 @@ describe('moveModelId', () => {
 })
 
 describe('协议下拉文案', () => {
-  it('选项名来自共享协议表，本票只开放的那一条不带「后续版本」', () => {
-    expect(protocolOptionLabel('openai-completions')).toBe('OpenAI Chat Completions')
-    expect(protocolOptionLabel('openai-responses')).toBe('OpenAI Responses（后续版本）')
-    expect(protocolOptionLabel('anthropic-messages')).toBe('Anthropic Messages（后续版本）')
-    expect(protocolOptionLabel('google-generative-ai')).toBe('Gemini API（后续版本）')
+  it('四种协议名直接来自共享 map，均为已确认文案', () => {
+    expect(MODEL_PROTOCOL_LABELS['openai-completions']).toBe('OpenAI Chat Completions')
+    expect(MODEL_PROTOCOL_LABELS['openai-responses']).toBe('OpenAI Responses')
+    expect(MODEL_PROTOCOL_LABELS['anthropic-messages']).toBe('Anthropic Messages')
+    expect(MODEL_PROTOCOL_LABELS['google-generative-ai']).toBe('Gemini API')
+  })
+
+  it('开放协议文案按共享表生成，不写死单一协议', () => {
+    expect(openCustomProtocolsText()).toBe(
+      'OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Gemini API'
+    )
   })
 })
 
@@ -140,7 +177,9 @@ describe('错误文案', () => {
   it('自定义创建与 provider 编辑的拒绝都有可操作的说明', () => {
     expect(customProviderErrorText('invalid-provider-id')).toContain('小写字母开头')
     expect(customProviderErrorText('duplicate-provider-id')).toContain('已经有了')
-    expect(customProviderErrorText('unsupported-protocol')).toContain('OpenAI Chat Completions')
+    const unsupported = customProviderErrorText('unsupported-protocol')
+    expect(unsupported).toContain('OpenAI Chat Completions')
+    expect(unsupported).not.toContain('后续版本')
     expect(customProviderErrorText('missing-model')).toContain('至少要有一个模型')
     expect(providerUpdateErrorText('invalid-base-url')).toContain('http(s)')
   })

@@ -66,10 +66,18 @@ test.describe('自定义 provider 与模型目录', () => {
     await expect(form).toBeVisible()
     const protocol = form.getByLabel('协议')
     await expect(protocol.locator('option')).toHaveCount(4)
-    await expect(protocol.locator('option[value="openai-completions"]')).toBeEnabled()
-    await expect(protocol.locator('option[value="anthropic-messages"]')).toBeDisabled()
+    // 四种协议在本批次都已开放：下拉里没有「后续版本」占位。
+    for (const value of [
+      'openai-completions',
+      'openai-responses',
+      'anthropic-messages',
+      'google-generative-ai'
+    ]) {
+      await expect(protocol.locator(`option[value="${value}"]`)).toBeEnabled()
+      await expect(protocol.locator(`option[value="${value}"]`)).not.toContainText('后续版本')
+    }
     await expect(protocol.locator('option[value="anthropic-messages"]')).toContainText(
-      '后续版本'
+      'Anthropic Messages'
     )
 
     // 非法 Provider ID 与重复 ID 都给出字段错误，且不写半条配置。
@@ -207,10 +215,10 @@ test.describe('自定义 provider 与模型目录', () => {
     await expect(card.locator('.field-error')).toContainText('先另选一个默认模型')
     await expect(card.locator('[data-model-row="deepseek-flash"]')).toBeVisible()
 
-    await card.getByRole('radio', { name: /outside-catalog-model-2/ }).check()
-    await expect(
-      card.getByRole('radio', { name: /outside-catalog-model-2/ })
-    ).toBeChecked()
+    const outsideRadio = card.getByRole('radio', { name: /outside-catalog-model-2/ })
+    // 受控单选要等异步保存后的重渲染，click + web-first 断言比 check() 稳。
+    await outsideRadio.click()
+    await expect(outsideRadio).toBeChecked()
     await card.getByRole('button', { name: '移除模型 deepseek-flash' }).click()
     await expect(card.locator('[data-model-row="deepseek-flash"]')).toHaveCount(0)
 

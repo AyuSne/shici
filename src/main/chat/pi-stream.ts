@@ -1,13 +1,17 @@
 import type {
   AssistantMessage,
   Context,
+  Provider,
   ProviderAuth,
   SimpleStreamOptions
 } from '@earendil-works/pi-ai'
 import type { ChatError, ChatStreamEvent, ChatTurn, ProviderErrorCode } from '../../shared/chat'
+import { isSupportedAggregateProvider } from '../../shared/model-catalog'
 import { chatErrorFromFailure, requestIdFromDetail } from './errors'
 import { classifyStatus, createRequestCapture, type CapturedRequest } from './http-capture'
 import type { ChatModelDescriptor } from './model-descriptor'
+import { runWithNativeRequestCapture } from './native-fetch-capture'
+import { loadOpenCodeGoProvider } from './opencode-go'
 import { loadPi } from './pi-modules'
 import { piModelOf } from './pi-model'
 import { loadProtocolApi } from './protocols'
@@ -39,23 +43,43 @@ const REQUEST_KEY_AUTH: ProviderAuth = {
  * 协议实现按描述符的 `api` 从注册表懒加载；请求级 fetch 捕获 HTTP 状态、
  * request id 与 Retry-After，pi 之后怎么拍平异常都不影响稳定分类。
  * `maxRetries: 0` 表示一次调用只发一次请求：本批没有重试层，失败交给界面决定。
+ *
+ * Gemini 的 SDK 不接受自定义 fetch，改由 `native-fetch-capture` 旁路观察 undici
+ * 诊断通道；其余协议仍走请求级 fetch 包装。两条路径共用同一个 capture。
  */
 export async function streamChatCompletion(options: StreamChatOptions): Promise<void> {
   const capture = createRequestCapture()
   let hasContent = false
+  // Gemini SDK 内部直接调 undici 的全局 fetch，注入 fetch 会被它明确拒绝。
+  const nativeFetchProtocol = options.descriptor.api === 'google-generative-ai'
+  // SDK 在请求还没到达 undici 时就失败时不会产生诊断事件；这条兜底只在原生
+  // 捕获分支生效。其余协议由请求级 fetch 自己记录，不用一个 no-op 参数混过去。
+  const recordUnreachableFailure = nativeFetchProtocol
+    ? (): void => {
+        const captured = capture.snapshot()
+        if (captured.status === undefined && captured.transport === undefined) {
+          capture.recordFailure(undefined, options.signal)
+        }
+      }
+    : (): void => undefined
 
   try {
     const pi = await loadPi()
-    const protocolApi = await loadProtocolApi(options.descriptor.api)
     const model = piModelOf(options.descriptor)
-    const provider = pi.createProvider({
-      id: options.descriptor.provider,
-      name: options.descriptor.provider,
-      baseUrl: options.descriptor.baseUrl,
-      auth: REQUEST_KEY_AUTH,
-      models: [model],
-      api: protocolApi
-    })
+    // 聚合入口直接复用 pi 内置的 Provider 对象：它自带四条协议并按 model.api
+    // 分派，地址取模型行。单协议入口仍按原路径构造一套单 API Provider。
+    const provider: Provider = isSupportedAggregateProvider(
+      options.descriptor.catalogProviderId
+    )
+      ? await loadOpenCodeGoProvider()
+      : pi.createProvider({
+          id: options.descriptor.provider,
+          name: options.descriptor.provider,
+          baseUrl: options.descriptor.baseUrl,
+          auth: REQUEST_KEY_AUTH,
+          models: [model],
+          api: await loadProtocolApi(options.descriptor.api)
+        })
     const models = pi.createModels()
     models.setProvider(provider)
 
@@ -66,66 +90,78 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
       signal: options.signal,
       // 一次调用一次尝试；重试属于后续批次，绝不在模型层偷偷叠加。
       maxRetries: 0,
-      fetch: capture.fetch
+      ...(nativeFetchProtocol ? {} : { fetch: capture.fetch })
     }
-    const stream = models.streamSimple(
-      model,
-      toContext(options.messages, options.descriptor, options.systemPrompt),
-      requestOptions
-    )
+    // 流的创建与完整消费都要在这个闭包里：Gemini 的请求归属靠 AsyncLocalStorage，
+    // 只返回迭代器会把创建挪出 scope。
+    const consume = async (): Promise<void> => {
+      const stream = models.streamSimple(
+        model,
+        toContext(options.messages, options.descriptor, options.systemPrompt),
+        requestOptions
+      )
 
-    for await (const event of stream) {
-      switch (event.type) {
-        case 'thinking_delta':
-          if (event.delta !== '') {
-            hasContent = true
-            options.onEvent({ type: 'thinking', text: event.delta })
-          }
-          break
-        case 'text_delta':
-          if (event.delta !== '') {
-            hasContent = true
-            options.onEvent({ type: 'text', text: event.delta })
-          }
-          break
-        case 'done':
-          if (!hasContent) {
-            // 空回答同样走失败构造器：200 状态、request id 与 Retry-After 都已捕获，
-            // 只把稳定分类固定成 EMPTY_RESPONSE，不丢排障信息。
+      for await (const event of stream) {
+        switch (event.type) {
+          case 'thinking_delta':
+            if (event.delta !== '') {
+              hasContent = true
+              options.onEvent({ type: 'thinking', text: event.delta })
+            }
+            break
+          case 'text_delta':
+            if (event.delta !== '') {
+              hasContent = true
+              options.onEvent({ type: 'text', text: event.delta })
+            }
+            break
+          case 'done':
+            if (!hasContent) {
+              // 空回答同样走失败构造器：200 状态、request id 与 Retry-After 都已捕获，
+              // 只把稳定分类固定成 EMPTY_RESPONSE，不丢排障信息。
+              options.onEvent({
+                type: 'error',
+                error: failureError(
+                  capture.snapshot(),
+                  '模型服务返回了空回答',
+                  'EMPTY_RESPONSE'
+                )
+              })
+              return
+            }
+            options.onEvent({ type: 'done' })
+            return
+          case 'error':
+            if (event.reason === 'aborted' || options.signal.aborted) {
+              return
+            }
+            recordUnreachableFailure()
             options.onEvent({
               type: 'error',
               error: failureError(
                 capture.snapshot(),
-                '模型服务返回了空回答',
-                'EMPTY_RESPONSE'
+                event.error.errorMessage ?? '模型服务中断了这次生成'
               )
             })
             return
-          }
-          options.onEvent({ type: 'done' })
-          return
-        case 'error':
-          if (event.reason === 'aborted' || options.signal.aborted) {
-            return
-          }
-          options.onEvent({
-            type: 'error',
-            error: failureError(
-              capture.snapshot(),
-              event.error.errorMessage ?? '模型服务中断了这次生成'
-            )
-          })
-          return
-        default:
-          break
+          default:
+            break
+        }
       }
+
+      // 没有 done / error 就结束：不假装生成完成，按连接中断处理。
+      recordUnreachableFailure()
+      options.onEvent({
+        type: 'error',
+        error: failureError(capture.snapshot(), '模型服务在生成结束前断开了连接')
+      })
     }
 
-    // 没有 done / error 就结束：不假装生成完成，按连接中断处理。
-    options.onEvent({
-      type: 'error',
-      error: failureError(capture.snapshot(), '模型服务在生成结束前断开了连接')
-    })
+    if (nativeFetchProtocol) {
+      await runWithNativeRequestCapture(capture, options.signal, consume)
+    } else {
+      await consume()
+    }
   } catch (error) {
     if (options.signal.aborted) {
       return

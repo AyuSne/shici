@@ -27,6 +27,16 @@ export type CapturedRequest = {
 export type RequestCapture = {
   fetch: FetchLike
   snapshot: () => CapturedRequest
+  /**
+   * 原生 fetch 路径（Gemini SDK 不允许注入 fetch）在响应到达后回写状态与头。
+   * 与 `fetch` 包装共用同一个分类/request id/Retry-After 读取，不另写一份。
+   */
+  recordResponse: (status: number, headers: Headers) => void
+  /**
+   * 原生 fetch 路径在没拿到响应就失败时回写传输失败分类。
+   * 用户主动取消不算服务端故障，直接不记。
+   */
+  recordFailure: (error: unknown, signal?: AbortSignal) => void
 }
 
 export type RequestCaptureOptions = {
@@ -143,28 +153,40 @@ export function createRequestCapture(options: RequestCaptureOptions = {}): Reque
   const now = options.now ?? Date.now
   let captured: CapturedRequest = {}
 
+  /** 响应头 → 状态、request id、Retry-After；两条 fetch 路径共用这一处。 */
+  function recordResponse(status: number, headers: Headers): void {
+    const requestId = readRequestId(headers)
+    const retryAfterMs = readRetryAfterMs(headers, now())
+    captured = {
+      status,
+      ...(requestId === undefined ? {} : { requestId }),
+      ...(retryAfterMs === undefined ? {} : { retryAfterMs })
+    }
+  }
+
+  function recordFailure(error: unknown, signal?: AbortSignal): void {
+    // 用户按了停止时 abort 不是服务端超时，交给流层按停止处理。
+    if (signal?.aborted === true) {
+      return
+    }
+    captured = { ...captured, transport: classifyFailure(error) }
+  }
+
   return {
     async fetch(input, init) {
       try {
         const response = await fetchImpl(input, init)
-        const requestId = readRequestId(response.headers)
-        const retryAfterMs = readRetryAfterMs(response.headers, now())
-        captured = {
-          status: response.status,
-          ...(requestId === undefined ? {} : { requestId }),
-          ...(retryAfterMs === undefined ? {} : { retryAfterMs })
-        }
+        recordResponse(response.status, response.headers)
         return response
       } catch (error) {
-        // 用户按了停止时 abort 不是服务端超时，交给流层按停止处理。
-        if (init?.signal?.aborted !== true) {
-          captured = { ...captured, transport: classifyFailure(error) }
-        }
+        recordFailure(error, init?.signal ?? undefined)
         throw error
       }
     },
     snapshot() {
       return { ...captured }
-    }
+    },
+    recordResponse,
+    recordFailure
   }
 }

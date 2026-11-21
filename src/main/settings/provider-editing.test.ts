@@ -6,6 +6,7 @@ import type {
   CreateCustomProviderRequest,
   UpdateProviderRequest
 } from '../../shared/model-providers'
+import { AGGREGATE_PROTOCOL_STORAGE } from '../../shared/model-builtin'
 import { resolveChatConfig } from '../chat/config'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate } from '../db/migrations'
@@ -229,12 +230,9 @@ describe('createCustomProvider', () => {
     ).toEqual({ count: 0 })
   })
 
-  it('字段缺一不可，且本票只开放 OpenAI Chat Completions；拒绝时一条都不写', () => {
+  it('字段缺一不可，且只接受当前开放的协议；拒绝时一条都不写', () => {
     const rejected: Array<[Partial<CreateCustomProviderRequest>, string]> = [
       [{ displayName: '   ' }, 'missing-display-name'],
-      [{ protocol: 'anthropic-messages' }, 'unsupported-protocol'],
-      [{ protocol: 'openai-responses' }, 'unsupported-protocol'],
-      [{ protocol: 'google-generative-ai' }, 'unsupported-protocol'],
       [{ protocol: 'not-a-protocol' as never }, 'unsupported-protocol'],
       [{ baseUrl: '   ' }, 'missing-base-url'],
       [{ baseUrl: 'relay.example.com/v1' }, 'invalid-base-url'],
@@ -765,7 +763,7 @@ describe('deleteProviderModel', () => {
 })
 
 describe('OpenCode GO 的模型目录', () => {
-  it('首版只读：能选默认模型，但手加、修改、删除与排序都被拒绝', () => {
+  function addOpenCodeGoRow(): void {
     const now = '2026-11-21T00:00:00.000Z'
     database
       .prepare(
@@ -774,12 +772,17 @@ describe('OpenCode GO 的模型目录', () => {
            secret_ciphertext, retry_policy, verification, last_error, last_checked_at,
            last_verified_at, source, catalog_provider_id, default_model_id, created_at,
            updated_at
-         ) VALUES ('provider-opencode', 'opencode-go', 'OpenCode GO', 'openai-completions',
+         ) VALUES ('provider-opencode', 'opencode-go', 'OpenCode GO', ?,
                    NULL, 'env', 'OPENCODE_GO_API_KEY', NULL, '{"mode":"normal"}',
                    'unverified', NULL, NULL, NULL, 'builtin', 'opencode-go', 'model-a',
                    ?, ?)`
       )
-      .run(now, now)
+      .run(AGGREGATE_PROTOCOL_STORAGE, now, now)
+  }
+
+  it('首版只读：能选默认模型，但手加、修改、删除与排序都被拒绝', () => {
+    const now = '2026-11-21T00:00:00.000Z'
+    addOpenCodeGoRow()
     const insertModel = database.prepare(
       `INSERT INTO model_provider_model (
          id, provider_id, model_id, display_name, api, base_url, context_window, max_tokens,
@@ -819,6 +822,28 @@ describe('OpenCode GO 的模型目录', () => {
     expect(readProviderModels(database, 'provider-opencode').map((model) => model.modelId)).toEqual(
       ['model-a', 'model-b']
     )
+  })
+
+  it('聚合入口没有统一地址：只改显示名也能保存，base_url 保持为空', () => {
+    addOpenCodeGoRow()
+
+    expect(
+      updateModelProvider(database, {
+        providerId: 'provider-opencode',
+        displayName: '我的 OpenCode GO',
+        baseUrl: ''
+      })
+    ).toEqual({ status: 'saved' })
+
+    const provider = readModelProvider(database, 'provider-opencode')
+    expect(provider).toMatchObject({
+      displayName: '我的 OpenCode GO',
+      baseUrl: null,
+      catalogProviderId: 'opencode-go'
+    })
+    expect(
+      listModelProviders(database, { secrets, env: {} })[0]
+    ).toMatchObject({ displayName: '我的 OpenCode GO', protocol: null })
   })
 })
 

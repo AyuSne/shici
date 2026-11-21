@@ -1,12 +1,15 @@
 import { useState } from 'react'
-import { isModelDirectoryReadOnly } from '../../../shared/model-directory'
+import {
+  isAggregateModelProvider,
+  isModelDirectoryReadOnly
+} from '../../../shared/model-directory'
 import type { FetchedModelCandidate } from '../../../shared/model-discovery'
 import type { ModelProviderSummary } from '../../../shared/model-providers'
 import type { ProviderCredentialDraft } from '../../../shared/provider-credentials'
 import { addProviderModel, updateProvider } from '../api'
 import { failureText } from '../errors'
 import { emptyCredentialDraft } from './credential-editor'
-import { protocolText } from './format'
+import { providerProtocolText } from './format'
 import { providerModelDraftOf } from './model-discovery'
 import { ModelDiscoveryPanel } from './model-discovery-panel'
 import {
@@ -33,6 +36,7 @@ export function ProviderEditForm({
   notify,
   onClose
 }: ProviderEditFormProps) {
+  const aggregate = isAggregateModelProvider(provider)
   const [displayName, setDisplayName] = useState(provider.displayName)
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? '')
   // 获取可用模型用的凭据草稿：与「编辑凭据」分开展示，只用于这次获取，不写库。
@@ -82,7 +86,8 @@ export function ProviderEditForm({
 
   async function onSave(): Promise<void> {
     const nextNameError = displayNameError(displayName)
-    const nextUrlError = baseUrlError(baseUrl)
+    // 聚合入口没有统一地址：地址按模型给，只改显示名不需要填一个假地址。
+    const nextUrlError = aggregate ? null : baseUrlError(baseUrl)
     setNameError(nextNameError)
     setUrlError(nextUrlError)
     setFormError(null)
@@ -95,7 +100,7 @@ export function ProviderEditForm({
       const result = await updateProvider({
         providerId: provider.id,
         displayName: displayName.trim(),
-        baseUrl: baseUrl.trim()
+        baseUrl: aggregate ? '' : baseUrl.trim()
       })
       if (result.status === 'missing') {
         setFormError('这套提供商已经不在了，刷新后再试。')
@@ -112,7 +117,7 @@ export function ProviderEditForm({
       }
       await refresh()
       notify(
-        baseUrl.trim() === (provider.baseUrl ?? '')
+        aggregate || baseUrl.trim() === (provider.baseUrl ?? '')
           ? `已保存「${displayName.trim()}」`
           : `已保存「${displayName.trim()}」的新地址；状态回到未验证`
       )
@@ -135,10 +140,14 @@ export function ProviderEditForm({
         </div>
         <div>
           <dt>协议</dt>
-          <dd>{protocolText(provider.protocol)}</dd>
+          <dd>{providerProtocolText(provider)}</dd>
         </div>
       </dl>
-      <p className="field-hint">Provider ID 与协议创建后不可改；要换协议请新建一套。</p>
+      <p className="field-hint">
+        {aggregate
+          ? 'Provider ID 与「按模型混合」的协议创建后不可改；接口地址由每条模型自带，这里没有统一地址。'
+          : 'Provider ID 与协议创建后不可改；要换协议请新建一套。'}
+      </p>
 
       <label className="settings-field">
         <span>显示名</span>
@@ -155,21 +164,29 @@ export function ProviderEditForm({
         </p>
       )}
 
-      <label className="settings-field">
-        <span>接口地址</span>
-        <input
-          aria-label="编辑接口地址"
-          autoComplete="off"
-          spellCheck={false}
-          value={baseUrl}
-          disabled={busy}
-          onChange={(event) => setBaseUrl(event.target.value)}
-        />
-      </label>
-      {urlError === null ? null : (
-        <p className="field-error" role="alert">
-          {urlError}
+      {aggregate ? (
+        <p className="field-hint" data-aggregate-address="true">
+          接口地址按每条模型自带（OpenCode GO 没有统一地址）；改显示名或凭据不影响模型地址。
         </p>
+      ) : (
+        <>
+          <label className="settings-field">
+            <span>接口地址</span>
+            <input
+              aria-label="编辑接口地址"
+              autoComplete="off"
+              spellCheck={false}
+              value={baseUrl}
+              disabled={busy}
+              onChange={(event) => setBaseUrl(event.target.value)}
+            />
+          </label>
+          {urlError === null ? null : (
+            <p className="field-error" role="alert">
+              {urlError}
+            </p>
+          )}
+        </>
       )}
 
       <ModelDiscoveryPanel
@@ -177,7 +194,7 @@ export function ProviderEditForm({
         catalogProviderId={provider.catalogProviderId}
         providerId={provider.source === 'custom' ? provider.id : null}
         protocol={provider.protocol}
-        baseUrl={baseUrl}
+        baseUrl={aggregate ? '' : baseUrl}
         credential={credential}
         onCredentialChange={setCredential}
         showCredentialFields={provider.source === 'custom'}

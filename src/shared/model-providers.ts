@@ -84,7 +84,7 @@ export type ModelProviderSummary = {
   lastCheckedAt: string | null
   lastVerifiedAt: string | null
   source: ProviderSource
-  /** 内置目录身份（deepseek / kimi / glm）；迁移来的 custom 为 null。 */
+  /** 内置目录身份（deepseek / … / opencode-go）；迁移来的 custom 为 null。 */
   catalogProviderId: string | null
   /** 切换只影响之后的调用，所以这里只标「使用中」。 */
   active: boolean
@@ -96,7 +96,7 @@ export type ModelProviderSummary = {
 /* ---------- #62：从内置目录添加、选择默认模型、激活与删除 ---------- */
 
 export type AddBuiltinProviderRequest = {
-  /** 目录入口 id：deepseek / kimi / glm。 */
+  /** 目录入口 id：deepseek / … / opencode-go；聚合入口没有单一协议与统一地址。 */
   catalogProviderId: string
   /** 密钥来源；不传按本机处理（兼容只传 apiKey 的旧调用）。 */
   authMode?: ProviderAuthMode
@@ -177,7 +177,7 @@ export type CreateCustomProviderRequest = {
    */
   providerKey: string
   displayName: string
-  /** 本票只开放 OpenAI Chat Completions，但值仍来自共享协议表。 */
+  /** 协议值来自共享协议表；实际开放范围由 `OPEN_CUSTOM_PROTOCOLS` 决定。 */
   protocol: ProviderProtocol
   baseUrl: string
   /** 密钥来源；不传按本机处理。环境模式不需要先存本机密钥。 */

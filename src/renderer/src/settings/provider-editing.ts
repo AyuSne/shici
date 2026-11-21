@@ -1,11 +1,12 @@
 import { findProviderCatalogModel } from '../../../shared/model-directory'
 import {
   MODEL_PROTOCOL_LABELS,
-  isCustomProviderProtocol,
-  type ModelProtocol
+  MODEL_PROTOCOLS,
+  isCustomProviderProtocol
 } from '../../../shared/model-protocols'
 import type {
   CustomProviderRejection,
+  ModelProviderModelSummary,
   ModelProviderSummary,
   ProviderModelRejection,
   UpdateProviderRejection
@@ -122,11 +123,36 @@ export function modelDirectoryHint(
   return '不在目录：仍可加入并发送；缺容量时按默认值兜底（上下文 1,000,000 · 输出 128,000 · text）。'
 }
 
-/** 协议选项仍由共享协议表生成；本票未开放的只加后缀并禁用。 */
-export function protocolOptionLabel(protocol: ModelProtocol): string {
-  return isCustomProviderProtocol(protocol)
-    ? MODEL_PROTOCOL_LABELS[protocol]
-    : `${MODEL_PROTOCOL_LABELS[protocol]}（后续版本）`
+/**
+ * 当前自定义入口真正开放的协议名，按共享表顺序拼成一句。
+ * 文案从 `OPEN_CUSTOM_PROTOCOLS` 生成，追加协议时不会留下「只开放一条」的旧话术。
+ */
+export function openCustomProtocolsText(): string {
+  return MODEL_PROTOCOLS.filter(isCustomProviderProtocol)
+    .map((protocol) => MODEL_PROTOCOL_LABELS[protocol])
+    .join('、')
+}
+
+/**
+ * 模型目录搜索：按请求 ID 或显示名匹配，大小写与首尾空格不影响。
+ * 聚合入口有 32 行，只读目录靠它找到某个模型再选默认；空搜索词保留全部。
+ */
+export function modelMatchesQuery(
+  model: Pick<ModelProviderModelSummary, 'modelId' | 'displayName'>,
+  query: string
+): boolean {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') {
+    return true
+  }
+  return `${model.modelId} ${model.displayName}`.toLowerCase().includes(needle)
+}
+
+/** 过滤后的模型保持原保存顺序（默认模型与排序都不因搜索改变）。 */
+export function filterModelsByQuery<
+  T extends Pick<ModelProviderModelSummary, 'modelId' | 'displayName'>
+>(models: readonly T[], query: string): T[] {
+  return models.filter((model) => modelMatchesQuery(model, query))
 }
 
 export function moveModelId(
@@ -171,7 +197,7 @@ export function customProviderErrorText(reason: CustomProviderRejection): string
     case 'missing-display-name':
       return '先填显示名。'
     case 'unsupported-protocol':
-      return '本票只开放 OpenAI Chat Completions；其他协议请等后续版本。'
+      return `协议无法识别；当前支持 ${openCustomProtocolsText()}。`
     case 'missing-base-url':
       return '先填接口地址。'
     case 'invalid-base-url':
