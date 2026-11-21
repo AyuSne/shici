@@ -7,10 +7,9 @@ import {
 } from './model-catalog'
 
 /**
- * 从内置目录添加的入口。批 2 开了 DeepSeek、Kimi（中国大陆区）与智谱 GLM；
- * 批 3 追加 Anthropic、MiniMax（Anthropic Messages）与 OpenAI、xAI
- * （OpenAI Responses）以及 Google Gemini（Gemini API），最后是聚合入口
- * OpenCode GO。其余入口由各自票据追加，最终取并集；这里不按名字去猜，
+ * 从内置目录添加的入口：首版九家，覆盖四种协议与一个聚合入口。
+ *
+ * 每个入口的身份、端点、协议与模型都读生成目录；这里不按名字去猜，
  * 也不从别的厂商目录克隆模型。
  */
 export const BUILTIN_PROVIDER_IDS = [

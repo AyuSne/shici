@@ -1,4 +1,3 @@
-import type { Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { join } from 'node:path'
 import {
@@ -7,6 +6,7 @@ import {
   type ResponsesStubScript
 } from '../../src/testing/responses-sse-stub'
 import { expect, test } from '../fixtures/app'
+import { ask, openChat, openSettings } from '../fixtures/chat'
 
 /**
  * #67 OpenAI Responses 的真实 Electron UI 用例。
@@ -32,27 +32,6 @@ const noEnvironmentConfig = { DEEPSEEK_API_KEY: '', OPENAI_API_KEY: '', XAI_API_
 
 function databaseFile(userDataDirectory: string): string {
   return join(userDataDirectory, 'english-learning.db')
-}
-
-async function openSettings(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '设置' })
-    .click()
-  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible()
-}
-
-async function openChat(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '对话' })
-    .click()
-  await expect(page.getByRole('textbox', { name: '输入问题' })).toBeVisible()
-}
-
-async function ask(page: Page, text: string): Promise<void> {
-  await page.getByRole('textbox', { name: '输入问题' }).fill(text)
-  await page.getByRole('button', { name: '发送' }).click()
 }
 
 test.describe('OpenAI Responses 协议', () => {
@@ -124,11 +103,11 @@ test.describe('OpenAI Responses 协议', () => {
       xai.locator('[data-model-row="grok-4.3"]').getByRole('radio')
     ).toBeChecked()
 
-    // 选默认模型 gpt-5，再设为使用中。
-    await openai.locator('[data-model-row="gpt-5"]').getByRole('radio').check()
-    await expect(
-      openai.locator('[data-model-row="gpt-5"]').getByRole('radio')
-    ).toBeChecked()
+    // 选默认模型 gpt-5，再设为使用中。受控单选由异步保存后的重渲染改选中态，
+    // 所以用 click + web-first 断言，不依赖 check() 的即时状态假设。
+    const gpt5Radio = openai.locator('[data-model-row="gpt-5"]').getByRole('radio')
+    await gpt5Radio.click()
+    await expect(gpt5Radio).toBeChecked()
     await openai.getByRole('button', { name: '使用这个' }).click()
     await expect(openai).toContainText('使用中')
 

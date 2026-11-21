@@ -1,9 +1,16 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import type { ServerResponse } from 'node:http'
+import {
+  delay,
+  isWritable,
+  startLocalSseTransport,
+  unusedLocalBaseUrl,
+  type LocalSseRequest
+} from './sse-transport'
 
 /**
- * 本地 SSE stub：单元测试与 E2E 共用一份，形状照抄 DeepSeek 的真实 chunk
- * （思维链先、正文后、末尾 finish_reason 与 [DONE]）。测试不联网。
+ * 本地 OpenAI Chat Completions SSE stub：单元测试与 E2E 共用一份，形状照抄
+ * DeepSeek 的真实 chunk（思维链先、正文后、末尾 finish_reason 与 [DONE]）。
+ * 测试不联网。传输外壳在 `sse-transport.ts`；这里只保留本协议的事件形状。
  */
 export type StubScript =
   | {
@@ -48,12 +55,7 @@ export type StubScript =
       headers?: Readonly<Record<string, string>>
     }
 
-export type StubRequest = {
-  method: string
-  url: string
-  headers: IncomingMessage['headers']
-  body: Record<string, unknown>
-}
+export type StubRequest = LocalSseRequest
 
 export type SseStub = {
   readonly baseUrl: string
@@ -65,50 +67,21 @@ export type SseStub = {
 
 export async function startSseStub(script: StubScript): Promise<SseStub> {
   let current = script
-  const requests: StubRequest[] = []
-  let abortedConnections = 0
-
-  const server = createServer(async (request, response) => {
-    const raw = await readBody(request)
-    requests.push({
-      method: request.method ?? '',
-      url: request.url ?? '',
-      headers: request.headers,
-      body: parseJson(raw)
-    })
-
-    response.on('error', () => undefined)
-    response.on('close', () => {
-      if (!response.writableEnded) {
-        abortedConnections += 1
-      }
-    })
-
-    try {
-      await respond(response, current)
-    } catch {
-      // 客户端中途断开时写入会失败，测试里不算服务端问题。
-      response.destroy()
-    }
-  })
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', resolve)
-  })
-  const address = server.address() as AddressInfo
+  const transport = await startLocalSseTransport((response) =>
+    respond(response, current)
+  )
 
   return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
-    requests,
+    baseUrl: transport.baseUrl,
+    requests: transport.requests,
     get abortedConnections() {
-      return abortedConnections
+      return transport.abortedConnections
     },
     setScript(next) {
       current = next
     },
-    async close() {
-      server.closeAllConnections()
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+    close() {
+      return transport.close()
     }
   }
 }
@@ -116,30 +89,8 @@ export async function startSseStub(script: StubScript): Promise<SseStub> {
 /**
  * 一个当前没人监听的本地地址，用来制造连接失败（网络异常）。
  */
-export async function unusedBaseUrl(): Promise<string> {
-  const server = createServer()
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', resolve)
-  })
-  const address = server.address() as AddressInfo
-  await new Promise<void>((resolve) => server.close(() => resolve()))
-  return `http://127.0.0.1:${address.port}`
-}
-
-async function readBody(request: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = []
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-  }
-  return Buffer.concat(chunks).toString('utf8')
-}
-
-function parseJson(raw: string): Record<string, unknown> {
-  try {
-    return JSON.parse(raw) as Record<string, unknown>
-  } catch {
-    return {}
-  }
+export function unusedBaseUrl(): Promise<string> {
+  return unusedLocalBaseUrl()
 }
 
 async function respond(response: ServerResponse, script: StubScript): Promise<void> {
@@ -228,12 +179,4 @@ async function respond(response: ServerResponse, script: StubScript): Promise<vo
   )
   response.write('data: [DONE]\n\n')
   response.end()
-}
-
-function isWritable(response: ServerResponse): boolean {
-  return !response.writableEnded && !response.destroyed
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }

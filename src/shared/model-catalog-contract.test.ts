@@ -3,6 +3,7 @@ import {
   findCatalogModel,
   findModelProvider,
   isModelProtocol,
+  isSupportedAggregateProvider,
   MODEL_PROVIDER_CATALOG,
   MODEL_PROVIDERS,
   MODEL_PROTOCOLS,
@@ -41,6 +42,13 @@ describe('共享模型目录', () => {
     expect(isModelProtocol('google-generative-ai')).toBe(true)
     expect(isModelProtocol('mistral-conversations')).toBe(false)
     expect(isModelProtocol('')).toBe(false)
+
+    // 只有 OpenCode GO 真正走 pi 内置的聚合 Provider；目录里再多一个混合入口，
+    // 也不能被误当成 GO 去加载那 32 个模型。
+    expect(isSupportedAggregateProvider('opencode-go')).toBe(true)
+    expect(isSupportedAggregateProvider('deepseek')).toBe(false)
+    expect(isSupportedAggregateProvider('future-mixed-catalog')).toBe(false)
+    expect(isSupportedAggregateProvider(null)).toBe(false)
 
     const deepseek = findModelProvider('deepseek')
     const model = findCatalogModel('deepseek', 'deepseek-flash')

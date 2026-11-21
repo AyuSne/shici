@@ -1,4 +1,3 @@
-import type { Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { join } from 'node:path'
 import { openDatabase } from '../../src/main/db/database'
@@ -7,7 +6,7 @@ import { startGeminiSseStub, type GeminiSseStub } from '../../src/testing/gemini
 import { startResponsesStub, type ResponsesStub } from '../../src/testing/responses-sse-stub'
 import { startSseStub, type SseStub } from '../../src/testing/sse-stub'
 import { expect, test } from '../fixtures/app'
-import { seedAnsweredThread } from '../fixtures/chat'
+import { ask, openChat, openSettings, seedAnsweredThread } from '../fixtures/chat'
 import { databasePath } from '../fixtures/database'
 import { seedOpenCodeGoProvider } from '../fixtures/opencode-go'
 
@@ -29,27 +28,6 @@ test.afterEach(async () => {
 const noProviderEnv = {
   DEEPSEEK_API_KEY: '',
   OPENCODE_GO_API_KEY: ''
-}
-
-async function openSettings(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '设置' })
-    .click()
-  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible()
-}
-
-async function openChat(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '对话' })
-    .click()
-  await expect(page.getByRole('textbox', { name: '输入问题' })).toBeVisible()
-}
-
-async function ask(page: Page, text: string): Promise<void> {
-  await page.getByRole('textbox', { name: '输入问题' }).fill(text)
-  await page.getByRole('button', { name: '发送' }).click()
 }
 
 test.describe('OpenCode GO 聚合入口', () => {

@@ -4,7 +4,6 @@ import type {
   ProviderAuthMode
 } from '../../../shared/model-providers'
 import { listBuiltinProviderSetups, type BuiltinProviderId } from '../../../shared/model-builtin'
-import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
 import type { UpdateProviderCredentialRequest } from '../../../shared/provider-credentials'
 import type { SettingsOverview } from '../../../shared/settings'
 import {
@@ -27,7 +26,7 @@ import {
   providerSourceText,
   verificationText
 } from './format'
-import { credentialRejectionText } from './messages'
+import { credentialRejectionText, modelSectionDescription } from './messages'
 import { ProviderEditForm } from './provider-edit-form'
 import { ProviderModelEditor } from './provider-model-editor'
 
@@ -195,9 +194,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
   return (
     <section className="settings-section" aria-labelledby="settings-model-title">
       <h2 id="settings-model-title">模型服务</h2>
-      <p className="settings-desc">
-        {`从内置目录添加 ${builtinNames}，或自定义一套模型 API。内置入口自动带出地址、环境变量名与模型目录；单协议入口可改模型目录，也能用「获取可用模型」从当前地址与密钥取回候选、勾选后再加入。OpenCode GO 是聚合入口：协议与地址按模型给，目录首版只读，只能搜索与选默认模型。保存只写本机，不联网校验；真正生成成功一次后才标「已验证」。`}
-      </p>
+      <p className="settings-desc">{modelSectionDescription(builtinNames)}</p>
 
       {overview.providers.length === 0 ? (
         <p className="settings-empty">
@@ -434,14 +431,20 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                   <dt>接口地址</dt>
                   <dd>
                     <code>
-                      {setup.baseUrl ?? '按模型给（无统一地址）'}
+                      {providerBaseUrlText({
+                        baseUrl: setup.baseUrl,
+                        catalogProviderId: setup.id
+                      })}
                     </code>
                   </dd>
                 </div>
                 <div>
                   <dt>协议</dt>
                   <dd>
-                    {setup.protocol === null ? '按模型混合' : MODEL_PROTOCOL_LABELS[setup.protocol]}
+                    {providerProtocolText({
+                      protocol: setup.protocol,
+                      catalogProviderId: setup.id
+                    })}
                   </dd>
                 </div>
                 <div>

@@ -26,11 +26,11 @@ export const MODEL_PROTOCOL_LABELS: Record<ModelProtocol, string> = {
 }
 
 /**
- * 自定义入口当前开放的协议。这不是第二份协议清单：下拉选项仍由
- * `MODEL_PROTOCOLS` 生成，这里只决定当前哪些选项可用。
+ * 自定义入口接受的协议。这不是第二份协议清单：下拉选项仍由
+ * `MODEL_PROTOCOLS` 生成，这里只决定哪些值会被接受。
  *
- * 批 2 先开 OpenAI Chat Completions；批 3 打开另外三条
- * （OpenAI Responses、Anthropic Messages、Gemini API）。
+ * 首版四条协议都已开放；保留这份显式清单，是为了主进程对未知协议给出
+ * 明确拒绝，而不是照着枚举静默接受。
  */
 export const OPEN_CUSTOM_PROTOCOLS: readonly ModelProtocol[] = [
   'openai-completions',

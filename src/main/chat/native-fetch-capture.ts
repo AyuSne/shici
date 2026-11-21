@@ -138,21 +138,15 @@ function scopeOf(request: unknown): ScopeEntry | undefined {
 }
 
 /**
- * undici 的响应头是 `[name, value, name, value, ...]` 的 Buffer 扁平数组
- * （不同版本也可能是成对数组），两种都接受；解析不出来就当没有头。
+ * undici 的响应头在实测的 Node 22 与 Electron 内置 Node 24 上是
+ * `[name, value, name, value, ...]` 的 Buffer 扁平数组。只接受这个已实测的形状；
+ * 解析不出来就当没有头，不为没有调用方的嵌套数组提前买单。
  */
 function headersOf(raw: unknown): Headers {
   const headers = new Headers()
   if (!Array.isArray(raw)) {
     return headers
   }
-  if (raw.length > 0 && Array.isArray(raw[0])) {
-    for (const entry of raw as unknown[][]) {
-      appendHeader(headers, entry[0], entry[1])
-    }
-    return headers
-  }
-  // 扁平数组按两个一组处理。
   for (let index = 0; index + 1 < raw.length; index += 2) {
     appendHeader(headers, raw[index], raw[index + 1])
   }

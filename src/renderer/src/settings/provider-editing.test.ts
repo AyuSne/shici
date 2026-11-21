@@ -146,7 +146,7 @@ describe('moveModelId', () => {
 })
 
 describe('协议下拉文案', () => {
-  it('选项名来自共享协议表，当前开放的四条都不带「后续版本」', () => {
+  it('选项名来自共享协议表，四条都可直接选用、不带未开放后缀', () => {
     expect(protocolOptionLabel('openai-completions')).toBe('OpenAI Chat Completions')
     expect(protocolOptionLabel('openai-responses')).toBe('OpenAI Responses')
     expect(protocolOptionLabel('anthropic-messages')).toBe('Anthropic Messages')
@@ -177,7 +177,9 @@ describe('错误文案', () => {
   it('自定义创建与 provider 编辑的拒绝都有可操作的说明', () => {
     expect(customProviderErrorText('invalid-provider-id')).toContain('小写字母开头')
     expect(customProviderErrorText('duplicate-provider-id')).toContain('已经有了')
-    expect(customProviderErrorText('unsupported-protocol')).toContain('OpenAI Chat Completions')
+    const unsupported = customProviderErrorText('unsupported-protocol')
+    expect(unsupported).toContain('OpenAI Chat Completions')
+    expect(unsupported).not.toContain('后续版本')
     expect(customProviderErrorText('missing-model')).toContain('至少要有一个模型')
     expect(providerUpdateErrorText('invalid-base-url')).toContain('http(s)')
   })

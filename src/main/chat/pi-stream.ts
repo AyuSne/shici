@@ -6,7 +6,7 @@ import type {
   SimpleStreamOptions
 } from '@earendil-works/pi-ai'
 import type { ChatError, ChatStreamEvent, ChatTurn, ProviderErrorCode } from '../../shared/chat'
-import { isAggregateCatalogProvider } from '../../shared/model-catalog'
+import { isSupportedAggregateProvider } from '../../shared/model-catalog'
 import { chatErrorFromFailure, requestIdFromDetail } from './errors'
 import { classifyStatus, createRequestCapture, type CapturedRequest } from './http-capture'
 import type { ChatModelDescriptor } from './model-descriptor'
@@ -52,13 +52,23 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
   let hasContent = false
   // Gemini SDK 内部直接调 undici 的全局 fetch，注入 fetch 会被它明确拒绝。
   const nativeFetchProtocol = options.descriptor.api === 'google-generative-ai'
+  // SDK 在请求还没到达 undici 时就失败时不会产生诊断事件；这条兜底只在原生
+  // 捕获分支生效。其余协议由请求级 fetch 自己记录，不用一个 no-op 参数混过去。
+  const recordUnreachableFailure = nativeFetchProtocol
+    ? (): void => {
+        const captured = capture.snapshot()
+        if (captured.status === undefined && captured.transport === undefined) {
+          capture.recordFailure(undefined, options.signal)
+        }
+      }
+    : (): void => undefined
 
   try {
     const pi = await loadPi()
     const model = piModelOf(options.descriptor)
     // 聚合入口直接复用 pi 内置的 Provider 对象：它自带四条协议并按 model.api
     // 分派，地址取模型行。单协议入口仍按原路径构造一套单 API Provider。
-    const provider: Provider = isAggregateCatalogProvider(
+    const provider: Provider = isSupportedAggregateProvider(
       options.descriptor.catalogProviderId
     )
       ? await loadOpenCodeGoProvider()
@@ -125,7 +135,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
             if (event.reason === 'aborted' || options.signal.aborted) {
               return
             }
-            recordUnreachableFailure(nativeFetchProtocol, capture, options.signal)
+            recordUnreachableFailure()
             options.onEvent({
               type: 'error',
               error: failureError(
@@ -140,7 +150,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
       }
 
       // 没有 done / error 就结束：不假装生成完成，按连接中断处理。
-      recordUnreachableFailure(nativeFetchProtocol, capture, options.signal)
+      recordUnreachableFailure()
       options.onEvent({
         type: 'error',
         error: failureError(capture.snapshot(), '模型服务在生成结束前断开了连接')
@@ -160,25 +170,6 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
       type: 'error',
       error: failureError(capture.snapshot(), describeError(error))
     })
-  }
-}
-
-/**
- * Gemini SDK 在请求还没到达 undici 时就失败（URL 校验、被禁端口等）不会产生任何
- * 诊断事件，capture 里状态与传输失败都是空的。从用户视角这就是没连上，按传输
- * 失败归属；只看结构化捕获，不解析错误文案。
- */
-function recordUnreachableFailure(
-  nativeFetchProtocol: boolean,
-  capture: ReturnType<typeof createRequestCapture>,
-  signal: AbortSignal
-): void {
-  if (!nativeFetchProtocol) {
-    return
-  }
-  const captured = capture.snapshot()
-  if (captured.status === undefined && captured.transport === undefined) {
-    capture.recordFailure(undefined, signal)
   }
 }
 

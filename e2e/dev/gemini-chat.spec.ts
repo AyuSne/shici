@@ -1,10 +1,10 @@
-import type { Page } from '@playwright/test'
 import {
   startGeminiSseStub,
   type GeminiSseStub,
   type GeminiStubScript
 } from '../../src/testing/gemini-sse-stub'
 import { expect, test } from '../fixtures/app'
+import { ask, openChat, openSettings } from '../fixtures/chat'
 
 const stubs: GeminiSseStub[] = []
 
@@ -21,27 +21,6 @@ async function createStub(script: GeminiStubScript): Promise<GeminiSseStub> {
 /** 挡住开发态 .env：本用例只验证界面里存下的合成密钥，不联网。 */
 const noEnvironmentConfig = { DEEPSEEK_API_KEY: '', GEMINI_API_KEY: '' }
 const syntheticKey = 'sk-e2e-gemini-1111'
-
-async function openSettings(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '设置' })
-    .click()
-  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible()
-}
-
-async function openChat(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '对话' })
-    .click()
-  await expect(page.getByRole('textbox', { name: '输入问题' })).toBeVisible()
-}
-
-async function ask(page: Page, text: string): Promise<void> {
-  await page.getByRole('textbox', { name: '输入问题' }).fill(text)
-  await page.getByRole('button', { name: '发送' }).click()
-}
 
 test.describe('Google Gemini 内置入口与聊天', () => {
   test('从内置目录添加 Gemini、选默认模型、真流式思考与正文、停止、自定义协议可用', async ({
