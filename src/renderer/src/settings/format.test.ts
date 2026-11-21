@@ -14,9 +14,12 @@ import {
   modelThinkingText,
   protocolText,
   providerBaseUrlText,
+  providerCheckReasonText,
   providerModelsText,
   providerProtocolText,
   providerSourceText,
+  providerTestFailureText,
+  providerTestVerifiedText,
   readingDefaultsText,
   restoreRejectionText,
   themeText,
@@ -113,6 +116,91 @@ describe('checkText', () => {
     expect(checkText(provider({ lastError, lastCheckedAt: checkedAt }))).toBe(
       `上次校验 ${formatMoment(checkedAt)} 未通过 · ${part}`
     )
+  })
+
+  it('失败原因后面带 request id，能和服务端日志对上', () => {
+    expect(
+      checkText(
+        provider({
+          lastError: 'invalid-key',
+          lastErrorRequestId: 'req-401',
+          lastCheckedAt: checkedAt
+        })
+      )
+    ).toBe(`上次校验 ${formatMoment(checkedAt)} 未通过 · 密钥无效 · 请求 ID req-401`)
+  })
+
+  it('已验证但最近一次真实调用失败时，同时说清两件事', () => {
+    expect(
+      checkText(
+        provider({
+          verification: 'verified',
+          lastError: 'server',
+          lastErrorRequestId: 'req-500',
+          lastCheckedAt: checkedAt,
+          lastVerifiedAt: checkedAt
+        })
+      )
+    ).toBe(
+      `上次校验 ${formatMoment(checkedAt)} 通过；最近一次失败 · 服务繁忙 · 请求 ID req-500`
+    )
+  })
+})
+
+describe('providerCheckReasonText', () => {
+  it.each([
+    ['invalid-key', '密钥无效'],
+    ['invalid-config', '接口地址或模型名不对'],
+    ['quota', '余额不足'],
+    ['rate-limit', '请求太频繁'],
+    ['server', '服务繁忙'],
+    ['timeout', '超时'],
+    ['network', '未能完成'],
+    ['empty-response', '返回了空回答'],
+    ['missing-credential', '没有可用的密钥'],
+    ['unsupported-protocol', '协议不受支持'],
+    ['no-model', '没有可用的模型'],
+    ['unknown', '未能完成'],
+    [null, '未能完成']
+  ] as const)('%s → %s', (reason, text) => {
+    expect(providerCheckReasonText(reason)).toBe(text)
+  })
+})
+
+describe('测试连接的结果文案', () => {
+  const failed = {
+    status: 'failed' as const,
+    checkedAt,
+    persisted: true,
+    reason: 'invalid-key' as const,
+    error: {
+      code: 'invalid-key' as const,
+      kind: 'AUTH' as const,
+      status: 401,
+      requestId: 'req-401'
+    },
+    requestId: 'req-401'
+  }
+
+  it('失败时显示原因与 request id', () => {
+    expect(providerTestFailureText(failed)).toBe(
+      '测试没通过：密钥无效 · 请求 ID req-401'
+    )
+  })
+
+  it('测试期间配置变了：如实说这次结果没有写回', () => {
+    expect(providerTestFailureText({ ...failed, persisted: false })).toBe(
+      '测试没通过：密钥无效 · 请求 ID req-401 · 测试期间配置已改动，这次结果没有写回；请重新测试'
+    )
+  })
+
+  it('通过时说明已验证；没有写回时也要说清', () => {
+    expect(
+      providerTestVerifiedText({ status: 'verified', checkedAt, persisted: true })
+    ).toBe('测试连接通过，已标为已验证。')
+    expect(
+      providerTestVerifiedText({ status: 'verified', checkedAt, persisted: false })
+    ).toBe('测试连接通过，但测试期间配置已改动，没有写回；请重新测试。')
   })
 })
 

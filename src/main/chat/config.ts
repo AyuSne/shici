@@ -23,6 +23,11 @@ export type ChatConfig = {
   /** 来自设置里的哪个 provider 与模型；环境变量配置没有这一段，也不参与状态回写。 */
   providerId?: string
   modelId?: string
+  /**
+   * 解析这份配置时 provider 行的 `updated_at`：回写验证状态 / 最后错误时用它
+   * 判断配置有没有在调用期间被改过，避免旧结果误写新配置。
+   */
+  providerUpdatedAt?: string
   /** 这次调用冻结的描述符：协议、地址、容量与思考元数据都在这里。 */
   descriptor: ChatModelDescriptor
   /**
@@ -32,6 +37,25 @@ export type ChatConfig = {
   missingCredential?: boolean
   /** 缺失的具体原因：环境模式点名变量，本机模式明说解不开。 */
   credentialProblem?: ChatCredentialProblem
+}
+
+/** 给日志与排障用的说明；界面文案另从结构化原因生成。 */
+export function credentialProblemDetail(
+  problem: ChatCredentialProblem | undefined
+): string {
+  if (problem === undefined) {
+    return '本机密钥缺失或解不开'
+  }
+  switch (problem.kind) {
+    case 'stored-decrypt-failed':
+      return '本机保存的密钥解不开'
+    case 'stored-missing':
+      return '这套提供商没有保存密钥'
+    case 'env-missing':
+      return `环境变量 ${problem.envVar} 没有设置`
+    case 'env-var-unset':
+      return '环境模式没有填写环境变量名'
+  }
 }
 
 /**
@@ -79,6 +103,7 @@ export function resolveChatConfig(
       model: descriptor.model,
       providerId: active.provider.id,
       modelId: active.model.id,
+      providerUpdatedAt: active.provider.updatedAt,
       descriptor,
       ...(credentialProblem === undefined
         ? {}

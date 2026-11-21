@@ -26,6 +26,12 @@ export type StreamChatOptions = {
   systemPrompt?: string
   signal: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
+  /**
+   * 「测试连接」探针：限制输出预算、不传思考参数，并把「200 但没有正文」
+   * 当作一次成功的往返（探针只要确认地址、协议与密钥能用，不要求生成内容）。
+   * 缺省即普通对话，行为不变。
+   */
+  probe?: { maxOutputTokens: number }
 }
 
 /** `resolve` 只声明“密钥从调用处来”；请求级的 apiKey 优先，不会去环境里找别的凭据。 */
@@ -65,7 +71,13 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
 
   try {
     const pi = await loadPi()
-    const model = piModelOf(options.descriptor)
+    // 探针给模型一个很小的输出上限：一次往返就够，不生成正文。
+    const model = options.probe
+      ? {
+          ...piModelOf(options.descriptor),
+          maxTokens: Math.min(options.descriptor.maxTokens, options.probe.maxOutputTokens)
+        }
+      : piModelOf(options.descriptor)
     // 聚合入口直接复用 pi 内置的 Provider 对象：它自带四条协议并按 model.api
     // 分派，地址取模型行。单协议入口仍按原路径构造一套单 API Provider。
     const provider: Provider = isSupportedAggregateProvider(
@@ -83,7 +95,8 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
     const models = pi.createModels()
     models.setProvider(provider)
 
-    const reasoning = await resolveThinkingLevel(options.descriptor)
+    // 探针不传思考参数：测试连接只需要一次最小往返，不打开思维链。
+    const reasoning = options.probe ? undefined : await resolveThinkingLevel(options.descriptor)
     const requestOptions: SimpleStreamOptions = {
       apiKey: options.apiKey,
       ...(reasoning === undefined ? {} : { reasoning }),
@@ -116,7 +129,7 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
             }
             break
           case 'done':
-            if (!hasContent) {
+            if (!hasContent && options.probe === undefined) {
               // 空回答同样走失败构造器：200 状态、request id 与 Retry-After 都已捕获，
               // 只把稳定分类固定成 EMPTY_RESPONSE，不丢排障信息。
               options.onEvent({
@@ -129,6 +142,8 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
               })
               return
             }
+            // 探针收到协议正常结束即可：200 + 结束标记已证明这套配置能发请求，
+            // 输出上限很小，正文为空并不代表连接有问题。
             options.onEvent({ type: 'done' })
             return
           case 'error':

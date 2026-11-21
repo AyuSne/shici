@@ -211,6 +211,32 @@ describe('createBridge', () => {
     ])
   })
 
+  it('显式测试连接的请求和结果穿过 preload 白名单', async () => {
+    const { ipc } = fakeRenderer()
+    const calls: unknown[] = []
+    const bridge = createBridge({
+      ...ipc,
+      async invoke(channel, payload) {
+        calls.push({ channel, payload })
+        return {
+          status: 'failed',
+          checkedAt: '2026-11-21T00:00:00.000Z',
+          persisted: true,
+          reason: 'invalid-key',
+          error: { code: 'invalid-key', kind: 'AUTH', requestId: 'req-401' },
+          requestId: 'req-401'
+        }
+      }
+    })
+
+    await expect(
+      bridge.invoke('settings:provider-test', { providerId: 'provider-1' })
+    ).resolves.toMatchObject({ status: 'failed', reason: 'invalid-key', requestId: 'req-401' })
+    expect(calls).toEqual([
+      { channel: 'settings:provider-test', payload: { providerId: 'provider-1' } }
+    ])
+  })
+
   it('自定义 provider 与模型目录的写入都走同一份白名单', async () => {
     const { ipc, invocations } = fakeRenderer()
     const bridge = createBridge(ipc)

@@ -301,6 +301,11 @@ function settingsHandlers() {
       status: 'fetched' as const,
       candidates: []
     }),
+    'settings:provider-test': () => ({
+      status: 'verified' as const,
+      checkedAt: '2026-11-21T00:00:00.000Z',
+      persisted: true
+    }),
     'settings:reading-save': () => ({
       saved: true,
       preferences: settingsOverview.reading
@@ -353,7 +358,7 @@ describe('registerIpcHandlers', () => {
     expect(events).toEqual([event])
   })
 
-  it('模型服务写入只走 provider 表：自定义创建与模型 CRUD 都在契约里；#64 获取模型已接入，测试连接仍留给后续票', () => {
+  it('模型服务写入只走 provider 表：自定义创建与模型 CRUD 都在契约里；获取模型与显式测试连接都已接入', () => {
     expect(IPC_CHANNELS).toContain('settings:overview')
     expect(IPC_CHANNELS).toEqual(
       expect.arrayContaining([
@@ -368,14 +373,12 @@ describe('registerIpcHandlers', () => {
         'settings:provider-activate',
         'settings:provider-delete',
         'settings:provider-credential',
-        'settings:provider-models-fetch'
+        'settings:provider-models-fetch',
+        'settings:provider-test'
       ])
     )
     expect(
       IPC_CHANNELS.filter((channel) => channel.startsWith('settings:profile-'))
-    ).toEqual([])
-    expect(
-      IPC_CHANNELS.filter((channel) => channel.includes('test-connection'))
     ).toEqual([])
   })
 

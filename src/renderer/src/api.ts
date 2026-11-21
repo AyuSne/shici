@@ -107,6 +107,10 @@ import type {
   FetchProviderModelsResult
 } from '../../shared/model-discovery'
 import type {
+  ProviderTestRequest,
+  ProviderTestResult
+} from '../../shared/provider-test'
+import type {
   AskThreadRequest,
   ChatThreadView,
   CreateThreadRequest,
@@ -593,6 +597,16 @@ export function fetchProviderModels(
   request: FetchProviderModelsRequest
 ): Promise<FetchProviderModelsResult> {
   return invoke('settings:provider-models-fetch', request)
+}
+
+/**
+ * 显式的「测试连接」：按 provider 自己的协议发一次最小请求。
+ * 成功转已验证；失败保留原配置与原密钥，并带回原因与 request id。
+ */
+export function testProviderConnection(
+  request: ProviderTestRequest
+): Promise<ProviderTestResult> {
+  return invoke('settings:provider-test', request)
 }
 
 /** 改全局阅读默认；单篇覆盖不受影响。 */

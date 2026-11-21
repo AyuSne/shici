@@ -107,6 +107,10 @@ import type {
   ReadingView
 } from './reading'
 import type {
+  ProviderTestRequest,
+  ProviderTestResult
+} from './provider-test'
+import type {
   CreateBackupResult,
   OpenDataDirectoryResult,
   PickRestoreResult,
@@ -313,6 +317,11 @@ export interface IpcContract {
     payload: FetchProviderModelsRequest
     result: FetchProviderModelsResult
   }
+  /** 显式的「测试连接」：按 provider 协议发一次最小请求，只写验证状态。 */
+  'settings:provider-test': {
+    payload: ProviderTestRequest
+    result: ProviderTestResult
+  }
   'settings:reading-save': {
     payload: { preferences: ReadingPreferences }
     result: ReadingPreferencesResult
@@ -416,6 +425,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'settings:provider-delete': true,
   'settings:provider-credential': true,
   'settings:provider-models-fetch': true,
+  'settings:provider-test': true,
   'settings:reading-save': true,
   'settings:theme-save': true,
   'settings:backup-create': true,

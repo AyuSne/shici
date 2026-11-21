@@ -3,8 +3,10 @@ import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
 import type {
   ModelProviderModelSummary,
   ModelProviderSummary,
+  ProviderCheckError,
   ProviderProtocol
 } from '../../../shared/model-providers'
+import type { ProviderTestFailure, ProviderTestResult } from '../../../shared/provider-test'
 import type { ReadingPreferences } from '../../../shared/reading'
 import type { BackupSummary, RestoreRejection } from '../../../shared/settings'
 import type { ThemePreference } from '../../../shared/types'
@@ -22,19 +24,74 @@ export function checkText(provider: ModelProviderSummary): string {
   if (provider.lastCheckedAt === null && provider.lastVerifiedAt === null) {
     return '还没校验过'
   }
+  const requestId =
+    provider.lastErrorRequestId === undefined || provider.lastErrorRequestId === null
+      ? ''
+      : ` · 请求 ID ${provider.lastErrorRequestId}`
   if (provider.verification === 'verified') {
     // 成功调用也会自动转已验证，这时用真正证实密钥可用的那个时刻。
     const moment = formatMoment(provider.lastVerifiedAt ?? provider.lastCheckedAt ?? '')
-    return moment === '' ? '已验证' : `上次校验 ${moment} 通过`
+    const passed = moment === '' ? '已验证' : `上次校验 ${moment} 通过`
+    return provider.lastError === null
+      ? passed
+      : `${passed}；最近一次失败 · ${providerCheckReasonText(provider.lastError)}${requestId}`
   }
   const moment = formatMoment(provider.lastCheckedAt ?? '')
-  const reason =
-    provider.lastError === 'invalid-key'
-      ? '密钥无效'
-      : provider.lastError === 'invalid-config'
-        ? '接口地址或模型名不对'
-        : '未能完成'
-  return `上次校验 ${moment} 未通过 · ${reason}`
+  return `上次校验 ${moment} 未通过 · ${providerCheckReasonText(provider.lastError)}${requestId}`
+}
+
+/**
+ * 失败原因 → 一句可操作的中文。测试连接与卡片上的「上次校验」共用这一份，
+ * 新增分类时只改这里。
+ */
+export function providerCheckReasonText(reason: ProviderCheckError | null): string {
+  switch (reason) {
+    case 'invalid-key':
+      return '密钥无效'
+    case 'invalid-config':
+      return '接口地址或模型名不对'
+    case 'quota':
+      return '余额不足'
+    case 'rate-limit':
+      return '请求太频繁'
+    case 'server':
+      return '服务繁忙'
+    case 'timeout':
+      return '超时'
+    case 'empty-response':
+      return '返回了空回答'
+    case 'missing-credential':
+      return '没有可用的密钥'
+    case 'unsupported-protocol':
+      return '协议不受支持'
+    case 'no-model':
+      return '没有可用的模型'
+    case 'network':
+    case 'unknown':
+    case null:
+      return '未能完成'
+  }
+}
+
+/** 一次失败测试的卡片文案：原因 + request id；没写回时说明为什么。 */
+export function providerTestFailureText(result: ProviderTestFailure): string {
+  const parts = [`测试没通过：${providerCheckReasonText(result.reason)}`]
+  if (result.requestId !== undefined && result.requestId.trim() !== '') {
+    parts.push(`请求 ID ${result.requestId}`)
+  }
+  if (!result.persisted) {
+    parts.push('测试期间配置已改动，这次结果没有写回；请重新测试')
+  }
+  return parts.join(' · ')
+}
+
+/** 一次通过测试的结果文案；请求成功但配置在测试期间变了，不能谎称已验证。 */
+export function providerTestVerifiedText(
+  result: Extract<ProviderTestResult, { status: 'verified' }>
+): string {
+  return result.persisted
+    ? '测试连接通过，已标为已验证。'
+    : '测试连接通过，但测试期间配置已改动，没有写回；请重新测试。'
 }
 
 export function protocolText(protocol: ProviderProtocol | null): string {

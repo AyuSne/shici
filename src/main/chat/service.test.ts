@@ -18,7 +18,7 @@ import {
   setDefaultProviderModel
 } from '../settings/provider-writes'
 import type { SecretStore } from '../settings/secret-store'
-import { listModelProviders, readProviderModels } from '../settings/providers'
+import { listModelProviders, readModelProvider, readProviderModels } from '../settings/providers'
 import type { ChatConfig } from './config'
 import { resolveChatConfig } from './config'
 import { descriptorOfCatalogModel, type ChatModelDescriptor } from './model-descriptor'
@@ -469,34 +469,109 @@ describe('createChatService', () => {
 })
 
 describe('配置回写与切换', () => {
-  it('一次成功调用后把使用中的 provider 标成已验证', async () => {
+  it('一次成功调用后把使用中的 provider 标成已验证，并带上冻结的配置版本', async () => {
     const target = await stub({ kind: 'stream', text: ['答'] })
-    const verified: string[] = []
+    const verified: Array<{ providerId: string; updatedAt: string | undefined }> = []
+    const failed: unknown[] = []
     const service = createChatService({
-      resolveConfig: () => ({ ...configFor(target), providerId: 'provider-1' }),
-      onVerified: (providerId) => verified.push(providerId)
+      resolveConfig: () => ({
+        ...configFor(target),
+        providerId: 'provider-1',
+        providerUpdatedAt: 'config-rev-1'
+      }),
+      onVerified: (providerId, providerUpdatedAt) =>
+        verified.push({ providerId, updatedAt: providerUpdatedAt }),
+      onError: (...args) => failed.push(args)
     })
     const { send, waitFor } = collector()
 
     service.start({ threadId: 'thread-1', streamId: 'stream-verified', messages: [userTurn] }, send)
     await waitFor((current) => current.some((event) => event.type === 'done'))
 
-    expect(verified).toEqual(['provider-1'])
+    expect(verified).toEqual([{ providerId: 'provider-1', updatedAt: 'config-rev-1' }])
+    expect(failed).toEqual([])
   })
 
-  it('出错时不把 provider 标成已验证', async () => {
-    const target = await stub({ kind: 'status', status: 500 })
+  it('真实调用失败只回写最后错误，不标已验证；错误里带 request id', async () => {
+    const target = await stub({
+      kind: 'status',
+      status: 401,
+      headers: { 'x-request-id': 'req-chat-401' }
+    })
     const verified: string[] = []
+    const failed: Array<{ providerId: string; error: unknown; updatedAt: string | undefined }> = []
     const service = createChatService({
-      resolveConfig: () => ({ ...configFor(target), providerId: 'provider-1' }),
-      onVerified: (providerId) => verified.push(providerId)
+      resolveConfig: () => ({
+        ...configFor(target),
+        providerId: 'provider-1',
+        providerUpdatedAt: 'config-rev-1'
+      }),
+      onVerified: (providerId) => verified.push(providerId),
+      onError: (providerId, error, providerUpdatedAt) =>
+        failed.push({ providerId, error, updatedAt: providerUpdatedAt })
     })
     const { send, waitFor } = collector()
 
-    service.start({ threadId: 'thread-1', streamId: 'stream-failed', messages: [userTurn] }, send)
+    service.start({ threadId: 'thread-1', streamId: 'stream-chat-failed', messages: [userTurn] }, send)
     await waitFor((current) => current.some((event) => event.type === 'error'))
 
     expect(verified).toEqual([])
+    expect(failed).toHaveLength(1)
+    expect(failed[0]).toMatchObject({
+      providerId: 'provider-1',
+      updatedAt: 'config-rev-1',
+      error: { code: 'invalid-key', kind: 'AUTH', requestId: 'req-chat-401' }
+    })
+  })
+
+  it('发送前的本地配置错误（not-configured）不覆盖上一次真实失败', async () => {
+    const target = await stub({ kind: 'stream', text: ['不该出现'] })
+    const failed: unknown[] = []
+    const service = createChatService({
+      resolveConfig: () => ({
+        ...configFor(target),
+        apiKey: '',
+        providerId: 'provider-1',
+        providerUpdatedAt: 'config-rev-1',
+        missingCredential: true
+      }),
+      onVerified: () => undefined,
+      onError: (...args) => failed.push(args)
+    })
+    const { send, waitFor } = collector()
+
+    service.start(
+      { threadId: 'thread-1', streamId: 'stream-local-config', messages: [userTurn] },
+      send
+    )
+    await waitFor((current) => current.some((event) => event.type === 'error'))
+
+    expect(failed).toEqual([])
+    expect(target.requests).toHaveLength(0)
+  })
+
+  it('主动停止不触发成功或失败回写', async () => {
+    const target = await stub({ kind: 'hang', text: ['半句'] })
+    const verified: string[] = []
+    const failed: unknown[] = []
+    const service = createChatService({
+      resolveConfig: () => ({
+        ...configFor(target),
+        providerId: 'provider-1',
+        providerUpdatedAt: 'config-rev-1'
+      }),
+      onVerified: (providerId) => verified.push(providerId),
+      onError: (...args) => failed.push(args)
+    })
+    const { send, waitFor } = collector()
+
+    service.start({ threadId: 'thread-1', streamId: 'stream-stopped', messages: [userTurn] }, send)
+    await waitFor((current) => current.some((event) => event.type === 'text'))
+    service.stop('stream-stopped')
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    expect(verified).toEqual([])
+    expect(failed).toEqual([])
   })
 
   it('每次调用重新解析配置，切换只影响之后的调用', async () => {
@@ -577,6 +652,11 @@ describe('内置 provider 与描述符进请求', () => {
       maxTokens: 262144,
       reasoning: true
     })
+    // 每次解析都冻结当时的 provider 版本：调用期间换地址 / 换密钥，
+    // 回写就能据此判断结果是否还代表当前配置。
+    expect(config?.providerUpdatedAt).toBe(
+      readModelProvider(database, providerId)?.updatedAt
+    )
     const service = createChatService({ resolveConfig: () => config })
     const { send, waitFor } = collector()
 
