@@ -1,14 +1,17 @@
 import type {
   AssistantMessage,
   Context,
+  Provider,
   ProviderAuth,
   SimpleStreamOptions
 } from '@earendil-works/pi-ai'
 import type { ChatError, ChatStreamEvent, ChatTurn, ProviderErrorCode } from '../../shared/chat'
+import { isAggregateCatalogProvider } from '../../shared/model-catalog'
 import { chatErrorFromFailure, requestIdFromDetail } from './errors'
 import { classifyStatus, createRequestCapture, type CapturedRequest } from './http-capture'
 import type { ChatModelDescriptor } from './model-descriptor'
 import { runWithNativeRequestCapture } from './native-fetch-capture'
+import { loadOpenCodeGoProvider } from './opencode-go'
 import { loadPi } from './pi-modules'
 import { piModelOf } from './pi-model'
 import { loadProtocolApi } from './protocols'
@@ -52,16 +55,21 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
 
   try {
     const pi = await loadPi()
-    const protocolApi = await loadProtocolApi(options.descriptor.api)
     const model = piModelOf(options.descriptor)
-    const provider = pi.createProvider({
-      id: options.descriptor.provider,
-      name: options.descriptor.provider,
-      baseUrl: options.descriptor.baseUrl,
-      auth: REQUEST_KEY_AUTH,
-      models: [model],
-      api: protocolApi
-    })
+    // 聚合入口直接复用 pi 内置的 Provider 对象：它自带四条协议并按 model.api
+    // 分派，地址取模型行。单协议入口仍按原路径构造一套单 API Provider。
+    const provider: Provider = isAggregateCatalogProvider(
+      options.descriptor.catalogProviderId
+    )
+      ? await loadOpenCodeGoProvider()
+      : pi.createProvider({
+          id: options.descriptor.provider,
+          name: options.descriptor.provider,
+          baseUrl: options.descriptor.baseUrl,
+          auth: REQUEST_KEY_AUTH,
+          models: [model],
+          api: await loadProtocolApi(options.descriptor.api)
+        })
     const models = pi.createModels()
     models.setProvider(provider)
 

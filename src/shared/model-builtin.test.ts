@@ -16,7 +16,8 @@ describe('内置提供商目录（批 2 + 批 3）', () => {
       'minimax',
       'openai',
       'xai',
-      'gemini'
+      'gemini',
+      'opencode-go'
     ])
     expect(listBuiltinProviderSetups().map((setup) => setup.id)).toEqual([
       'deepseek',
@@ -26,7 +27,8 @@ describe('内置提供商目录（批 2 + 批 3）', () => {
       'minimax',
       'openai',
       'xai',
-      'gemini'
+      'gemini',
+      'opencode-go'
     ])
   })
 
@@ -97,6 +99,14 @@ describe('内置提供商目录（批 2 + 批 3）', () => {
         protocol: 'google-generative-ai',
         baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
         envVar: 'GEMINI_API_KEY'
+      },
+      {
+        id: 'opencode-go',
+        displayName: 'OpenCode GO',
+        // 聚合入口没有单一协议与统一地址：两者都按模型给，不冒充任何一条协议。
+        protocol: null,
+        baseUrl: null,
+        envVar: 'OPENCODE_GO_API_KEY'
       }
     ])
   })
@@ -245,14 +255,47 @@ describe('内置提供商目录（批 2 + 批 3）', () => {
     })
   })
 
-  it('目录之外的入口（OpenCode GO 与空值）不可从目录添加', () => {
-    expect(readBuiltinProviderSetup('opencode-go')).toBeNull()
+  it('OpenCode GO 带出 32 个模型，每个模型各自带协议与地址，不套单协议端点', () => {
+    const setup = readBuiltinProviderSetup('opencode-go')
+
+    expect(setup).toMatchObject({
+      id: 'opencode-go',
+      displayName: 'OpenCode GO',
+      protocol: null,
+      baseUrl: null,
+      envVar: 'OPENCODE_GO_API_KEY'
+    })
+    expect(setup?.models).toHaveLength(32)
+    expect(new Set(setup?.models.map((model) => model.api))).toEqual(
+      new Set([
+        'openai-completions',
+        'openai-responses',
+        'anthropic-messages',
+        'google-generative-ai'
+      ])
+    )
+    expect(setup?.models.every((model) => typeof model.baseUrl === 'string')).toBe(true)
+    expect(
+      setup?.models.find((model) => model.id === 'claude-haiku-5-5')
+    ).toMatchObject({
+      api: 'anthropic-messages',
+      baseUrl: 'https://opencode.ai/inference/go/anthropic'
+    })
+    expect(setup?.models.find((model) => model.id === 'gemini-4-argon')).toMatchObject({
+      api: 'google-generative-ai',
+      baseUrl: 'https://opencode.ai/inference/go/google/v1beta'
+    })
+  })
+
+  it('目录之外的入口与空值不可从目录添加', () => {
+    expect(readBuiltinProviderSetup('not-in-catalog')).toBeNull()
     expect(readBuiltinProviderSetup('')).toBeNull()
     expect(isBuiltinProviderId('deepseek')).toBe(true)
     expect(isBuiltinProviderId('anthropic')).toBe(true)
     expect(isBuiltinProviderId('openai')).toBe(true)
     expect(isBuiltinProviderId('xai')).toBe(true)
     expect(isBuiltinProviderId('gemini')).toBe(true)
+    expect(isBuiltinProviderId('opencode-go')).toBe(true)
     expect(isBuiltinProviderId(42)).toBe(false)
   })
 })

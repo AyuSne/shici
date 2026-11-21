@@ -400,6 +400,50 @@ describe('内置目录：永远本地、零 HTTP', () => {
     expect(stub.requests).toHaveLength(0)
   })
 
+  it('OpenCode GO：没有密钥、地址无效也直接读本地目录，不联网也不改目录', async () => {
+    const stub = await stubWith({ body: JSON.stringify({ data: [{ id: 'wrong' }] }) })
+    const added = addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'opencode-go',
+      authMode: 'env',
+      envVar: 'E2E_GO_UNSET_KEY'
+    })
+    if (added.status !== 'saved') throw new Error('GO 没存上')
+    // 用户把聚合入口的地址写坏了也不该影响本地发现：这条路径根本不看地址。
+    database
+      .prepare('UPDATE model_provider SET base_url = ? WHERE id = ?')
+      .run('not a url', added.providerId)
+    const decrypt = vi.fn(() => {
+      throw new Error('must not decrypt')
+    })
+    const before = snapshot()
+
+    const result = await fetchProviderModels(
+      database,
+      { encrypt: (plain) => plain, decrypt },
+      {},
+      requestOf({
+        source: 'builtin',
+        catalogProviderId: 'opencode-go',
+        baseUrl: 'not a url',
+        authMode: 'env',
+        envVar: 'E2E_GO_UNSET_KEY',
+        knownModelIds: []
+      })
+    )
+
+    expect(result).toMatchObject({ status: 'fetched' })
+    if (result.status !== 'fetched') throw new Error('unreachable')
+    expect(result.candidates).toHaveLength(32)
+    expect(result.candidates.every((candidate) => candidate.origin === 'catalog')).toBe(true)
+    expect(new Set(result.candidates.map((candidate) => candidate.modelId))).toContain(
+      'gemini-4-argon'
+    )
+    expect(stub.requests).toHaveLength(0)
+    expect(decrypt).not.toHaveBeenCalled()
+    // 发现是只读动作：provider、模型行、默认模型与耗时字段一条都不动。
+    expect(snapshot()).toEqual(before)
+  })
+
   it('不认识的内置身份明确报 unknown-catalog，不发请求', async () => {
     const stub = await stubWith({ body: '{"data":[]}' })
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { CatalogModel } from '../../shared/model-catalog'
 import {
   findProviderCatalogModel,
+  isAggregateModelProvider,
   isModelDirectoryReadOnly
 } from '../../shared/model-directory'
 import {
@@ -380,16 +381,21 @@ export function updateModelProvider(
   if (displayName === '') {
     return { status: 'rejected', reason: 'missing-display-name' }
   }
+  // 聚合入口（OpenCode GO）没有统一地址：地址按模型给，只改显示名是合法操作，
+  // 空地址不能像单协议 provider 那样被当成「没填」。单协议仍要求必填。
+  const aggregate = isAggregateModelProvider(provider)
   const baseUrl = request.baseUrl.trim()
   if (baseUrl === '') {
-    return { status: 'rejected', reason: 'missing-base-url' }
-  }
-  if (parseHttpUrl(baseUrl) === null) {
+    if (!aggregate) {
+      return { status: 'rejected', reason: 'missing-base-url' }
+    }
+  } else if (parseHttpUrl(baseUrl) === null) {
     return { status: 'rejected', reason: 'invalid-base-url' }
   }
+  const storedBaseUrl = baseUrl === '' ? null : baseUrl
 
   const now = nowOf(options)
-  const addressChanged = baseUrl !== (provider.baseUrl ?? '').trim()
+  const addressChanged = (storedBaseUrl ?? '') !== (provider.baseUrl ?? '').trim()
   const update = database.transaction(() => {
     database
       .prepare(
@@ -397,7 +403,7 @@ export function updateModelProvider(
             SET display_name = ?, base_url = ?, updated_at = ?
           WHERE id = ?`
       )
-      .run(displayName, baseUrl, now, provider.id)
+      .run(displayName, storedBaseUrl, now, provider.id)
     if (addressChanged) {
       // 地址变了，此前的「已验证」不再代表这套配置；下次真实调用/测试连接再转回来。
       database

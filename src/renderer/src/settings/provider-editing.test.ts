@@ -4,9 +4,11 @@ import {
   baseUrlError,
   customProviderErrorText,
   displayNameError,
+  filterModelsByQuery,
   modelDirectoryHint,
   modelIdError,
   modelInDirectory,
+  modelMatchesQuery,
   modelWriteErrorText,
   moveModelId,
   openCustomProtocolsText,
@@ -100,6 +102,34 @@ describe('isModelDirectoryReadOnly', () => {
     expect(isModelDirectoryReadOnly({ catalogProviderId: 'opencode-go' })).toBe(true)
     expect(isModelDirectoryReadOnly({ catalogProviderId: 'deepseek' })).toBe(false)
     expect(isModelDirectoryReadOnly({ catalogProviderId: null })).toBe(false)
+  })
+})
+
+describe('模型目录搜索', () => {
+  const models = [
+    { modelId: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5' },
+    { modelId: 'gemini-4-argon', displayName: 'Gemini 4 Argon' },
+    { modelId: 'gpt-5.6-luna', displayName: 'GPT-5.6 Luna' }
+  ]
+
+  it('按模型 ID 或显示名搜索，大小写与首尾空格都不影响', () => {
+    expect(modelMatchesQuery(models[0]!, 'claude')).toBe(true)
+    expect(modelMatchesQuery(models[0]!, 'HAIKU 5.5')).toBe(true)
+    expect(modelMatchesQuery(models[1]!, '  gemini-4  ')).toBe(true)
+    expect(modelMatchesQuery(models[2]!, 'gpt-5.6')).toBe(true)
+    expect(modelMatchesQuery(models[2]!, 'haiku')).toBe(false)
+  })
+
+  it('空搜索词保留全部模型，过滤结果保持原顺序', () => {
+    expect(modelMatchesQuery(models[0]!, '   ')).toBe(true)
+    expect(filterModelsByQuery(models, '')).toEqual(models)
+    expect(filterModelsByQuery(models, 'gemini').map((model) => model.modelId)).toEqual([
+      'gemini-4-argon'
+    ])
+    expect(filterModelsByQuery(models, 'luna').map((model) => model.modelId)).toEqual([
+      'gpt-5.6-luna'
+    ])
+    expect(filterModelsByQuery(models, 'nope')).toEqual([])
   })
 })
 

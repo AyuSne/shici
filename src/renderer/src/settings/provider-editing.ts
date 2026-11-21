@@ -7,6 +7,7 @@ import {
 } from '../../../shared/model-protocols'
 import type {
   CustomProviderRejection,
+  ModelProviderModelSummary,
   ModelProviderSummary,
   ProviderModelRejection,
   UpdateProviderRejection
@@ -138,6 +139,28 @@ export function openCustomProtocolsText(): string {
   return MODEL_PROTOCOLS.filter(isCustomProviderProtocol)
     .map((protocol) => MODEL_PROTOCOL_LABELS[protocol])
     .join('、')
+}
+
+/**
+ * 模型目录搜索：按请求 ID 或显示名匹配，大小写与首尾空格不影响。
+ * 聚合入口有 32 行，只读目录靠它找到某个模型再选默认；空搜索词保留全部。
+ */
+export function modelMatchesQuery(
+  model: Pick<ModelProviderModelSummary, 'modelId' | 'displayName'>,
+  query: string
+): boolean {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') {
+    return true
+  }
+  return `${model.modelId} ${model.displayName}`.toLowerCase().includes(needle)
+}
+
+/** 过滤后的模型保持原保存顺序（默认模型与排序都不因搜索改变）。 */
+export function filterModelsByQuery<
+  T extends Pick<ModelProviderModelSummary, 'modelId' | 'displayName'>
+>(models: readonly T[], query: string): T[] {
+  return models.filter((model) => modelMatchesQuery(model, query))
 }
 
 export function moveModelId(

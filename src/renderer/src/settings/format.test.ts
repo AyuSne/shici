@@ -13,7 +13,9 @@ import {
   modelMetaText,
   modelThinkingText,
   protocolText,
+  providerBaseUrlText,
   providerModelsText,
+  providerProtocolText,
   providerSourceText,
   readingDefaultsText,
   restoreRejectionText,
@@ -127,6 +129,28 @@ describe('protocolText', () => {
   })
 })
 
+describe('providerProtocolText 与 providerBaseUrlText', () => {
+  it('聚合入口说「按模型混合 / 按模型给」，不误报未识别协议', () => {
+    const aggregate = provider({
+      protocol: null,
+      baseUrl: null,
+      source: 'builtin',
+      catalogProviderId: 'opencode-go'
+    })
+    expect(providerProtocolText(aggregate)).toBe('按模型混合')
+    expect(providerBaseUrlText(aggregate)).toBe('按模型给（无统一地址）')
+  })
+
+  it('真正的未知协议仍如实说；单协议与空地址照旧', () => {
+    expect(
+      providerProtocolText(provider({ protocol: null, catalogProviderId: null }))
+    ).toBe('未识别协议')
+    expect(providerProtocolText(provider())).toBe('OpenAI Chat Completions')
+    expect(providerBaseUrlText(provider())).toBe('https://api.deepseek.com')
+    expect(providerBaseUrlText(provider({ baseUrl: null }))).toBe('未填写')
+  })
+})
+
 describe('keyStateText', () => {
   it('本机、环境、缺失三态都写清楚，缺失时带上变量名', () => {
     expect(keyStateText(provider())).toBe('本机 · sk-·············0001')
@@ -207,6 +231,22 @@ describe('providerModelsText', () => {
       )
     ).toBe('deepseek-flash、deepseek-v4-pro')
     expect(providerModelsText(provider({ models: [] }))).toBe('还没有模型')
+  })
+
+  it('聚合入口的卡片不把 32 个 ID 挤成一行，只说清数量与按模型给', () => {
+    expect(
+      providerModelsText(
+        provider({
+          source: 'builtin',
+          catalogProviderId: 'opencode-go',
+          protocol: null,
+          models: [
+            { ...provider().models[0]!, id: 'm1', modelId: 'beam-free' },
+            { ...provider().models[0]!, id: 'm2', modelId: 'gemini-4-argon' }
+          ]
+        })
+      )
+    ).toBe('2 个模型（协议与地址按模型给）')
   })
 })
 
