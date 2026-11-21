@@ -124,11 +124,9 @@ export function modelDirectoryHint(
   return '不在目录：仍可加入并发送；缺容量时按默认值兜底（上下文 1,000,000 · 输出 128,000 · text）。'
 }
 
-/** 协议选项仍由共享协议表生成；当前未开放的只加后缀并禁用。 */
+/** 协议选项名直接来自共享协议表；四种协议当前都可用，不附加未开放后缀。 */
 export function protocolOptionLabel(protocol: ModelProtocol): string {
-  return isCustomProviderProtocol(protocol)
-    ? MODEL_PROTOCOL_LABELS[protocol]
-    : `${MODEL_PROTOCOL_LABELS[protocol]}（后续版本）`
+  return MODEL_PROTOCOL_LABELS[protocol]
 }
 
 /**
@@ -205,7 +203,7 @@ export function customProviderErrorText(reason: CustomProviderRejection): string
     case 'missing-display-name':
       return '先填显示名。'
     case 'unsupported-protocol':
-      return `当前版本只开放 ${openCustomProtocolsText()}；其他协议请等后续版本。`
+      return `协议无法识别；当前支持 ${openCustomProtocolsText()}。`
     case 'missing-base-url':
       return '先填接口地址。'
     case 'invalid-base-url':

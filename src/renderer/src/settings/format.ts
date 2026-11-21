@@ -43,23 +43,31 @@ export function protocolText(protocol: ProviderProtocol | null): string {
 }
 
 /**
- * provider 卡片的协议文案。聚合入口（OpenCode GO）没有单一协议，说「按模型
+ * 聚合入口的固定文案。卡片与「从内置目录添加」的预览都引用这两句，
+ * 判定则统一走 `isAggregateModelProvider`，不要再按 `protocol === null` 各写一份。
+ */
+export const AGGREGATE_PROTOCOL_TEXT = '按模型混合'
+export const AGGREGATE_BASE_URL_TEXT = '按模型给（无统一地址）'
+
+/**
+ * provider 的协议文案。聚合入口（OpenCode GO）没有单一协议，说「按模型
  * 混合」；只有真正的未知持久化值才说「未识别协议」。两者不能混成一句。
  */
 export function providerProtocolText(
   provider: Pick<ModelProviderSummary, 'protocol' | 'catalogProviderId'>
 ): string {
-  return isAggregateModelProvider(provider) ? '按模型混合' : protocolText(provider.protocol)
+  return isAggregateModelProvider(provider)
+    ? AGGREGATE_PROTOCOL_TEXT
+    : protocolText(provider.protocol)
 }
 
 /** 聚合入口没有统一地址；空地址只对单协议 provider 才是「未填写」。 */
 export function providerBaseUrlText(
   provider: Pick<ModelProviderSummary, 'baseUrl' | 'catalogProviderId'>
 ): string {
-  if (isAggregateModelProvider(provider)) {
-    return '按模型给（无统一地址）'
-  }
-  return provider.baseUrl ?? '未填写'
+  return isAggregateModelProvider(provider)
+    ? AGGREGATE_BASE_URL_TEXT
+    : (provider.baseUrl ?? '未填写')
 }
 
 /** 密钥三态：本机（带掩码）、环境（带变量名）、缺失（带变量名）。 */

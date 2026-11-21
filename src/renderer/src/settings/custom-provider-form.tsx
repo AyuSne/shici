@@ -1,9 +1,6 @@
 import { useState } from 'react'
 import type { FetchedModelCandidate } from '../../../shared/model-discovery'
-import {
-  MODEL_PROTOCOLS,
-  isCustomProviderProtocol
-} from '../../../shared/model-protocols'
+import { MODEL_PROTOCOLS } from '../../../shared/model-protocols'
 import type { ProviderProtocol } from '../../../shared/model-providers'
 import {
   isValidEnvVarName,
@@ -53,9 +50,9 @@ type CustomProviderFormProps = {
 /**
  * 「自定义模型 API」入口：手填 Provider ID、显示名、协议、地址、密钥与首个模型。
  *
- * 表单只做即时字段提示；Provider ID 的唯一性、精确 regex、协议开放范围与
- * 「至少一个模型」仍由主进程再校验一次。协议选项由共享协议表生成，
- * 当前未开放的协议显示为「后续版本」并禁用，不在界面另抄一份协议清单。
+ * 表单只做即时字段提示；Provider ID 的唯一性、精确 regex、协议接受范围与
+ * 「至少一个模型」仍由主进程再校验一次。协议选项由共享协议表生成，四种协议
+ * 当前都可用；这里不再保留「后续版本」占位，也不另抄一份协议清单。
  */
 export function CustomProviderForm({
   existingProviderKeys,
@@ -234,18 +231,14 @@ export function CustomProviderForm({
           onChange={(event) => setProtocol(event.target.value as ProviderProtocol)}
         >
           {MODEL_PROTOCOLS.map((value) => (
-            <option
-              key={value}
-              value={value}
-              disabled={!isCustomProviderProtocol(value)}
-            >
+            <option key={value} value={value}>
               {protocolOptionLabel(value)}
             </option>
           ))}
         </select>
       </label>
       <p className="field-hint">
-        当前开放：{openCustomProtocolsText()}；其余协议后续开放。
+        当前可用协议：{openCustomProtocolsText()}。
       </p>
 
       <label className="settings-field">

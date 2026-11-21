@@ -357,9 +357,7 @@ export function ProviderModelEditor({
                     )}
                     <span className="model-meta">{modelMetaText(model)}</span>
                     {aggregate ? (
-                      <span className="model-chip is-protocol">
-                        {protocolText(model.api)}
-                      </span>
+                      <span className="model-chip">{protocolText(model.api)}</span>
                     ) : null}
                     {model.source === 'fetched' ? (
                       <span className="model-chip is-fetched">获取</span>

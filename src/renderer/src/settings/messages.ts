@@ -7,6 +7,11 @@ import type { CredentialRejectionReason } from '../../../shared/provider-credent
  * 很容易漏改一层；这里各留一份，组件只引用不重抄。
  */
 
+/** 模型服务页顶部说明；内置名单由页面传入，组件只引用不重抄。 */
+export function modelSectionDescription(builtinNames: string): string {
+  return `从内置目录添加 ${builtinNames}，或自定义一套模型 API。内置入口自动带出地址、环境变量名与模型目录；单协议入口可改模型目录，也能用「获取可用模型」从当前地址与密钥取回候选、勾选后再加入。OpenCode GO 是聚合入口：协议与地址按模型给，目录首版只读，只能搜索与选默认模型。保存只写本机，不联网校验；真正生成成功一次后才标「已验证」。`
+}
+
 /** 只读目录的统一前缀：主进程拒绝与界面提示用同一句。 */
 export const OPENCODE_GO_READ_ONLY = 'OpenCode GO 的模型目录首版只读'
 

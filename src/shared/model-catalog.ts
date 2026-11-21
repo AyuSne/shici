@@ -122,6 +122,8 @@ export function findCatalogModel(
 /**
  * 聚合入口：目录里没有单一协议的入口（`protocol` 为 null），协议与地址都按模型给。
  * 以目录数据本身为准，不在调用方各自写死入口 ID；当前只有 OpenCode GO。
+ * 这只说明「怎么显示」，不代表请求层已经支持它的按模型分派，后者见
+ * `isSupportedAggregateProvider`。
  */
 export function isAggregateCatalogProvider(
   providerId: string | null | undefined
@@ -130,6 +132,20 @@ export function isAggregateCatalogProvider(
     return false
   }
   return findModelProvider(providerId)?.protocol === null
+}
+
+/**
+ * 真正支持按模型分派的聚合入口：当前只有 OpenCode GO，请求层直接复用它对应的
+ * pi 内置 Provider。目录里即使再出现别的 `protocol === null` 入口，也不会被
+ * 误当成 GO 去加载那 32 个模型；要支持新的聚合入口，必须先在这里登记并验证。
+ */
+export const SUPPORTED_AGGREGATE_PROVIDER_ID = 'opencode-go' as const
+export type SupportedAggregateProviderId = typeof SUPPORTED_AGGREGATE_PROVIDER_ID
+
+export function isSupportedAggregateProvider(
+  providerId: string | null | undefined
+): providerId is SupportedAggregateProviderId {
+  return providerId === SUPPORTED_AGGREGATE_PROVIDER_ID
 }
 
 /** 模型的请求协议：单协议入口与模型行一致，聚合入口按模型自身的 api。 */

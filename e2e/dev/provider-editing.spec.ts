@@ -215,10 +215,10 @@ test.describe('自定义 provider 与模型目录', () => {
     await expect(card.locator('.field-error')).toContainText('先另选一个默认模型')
     await expect(card.locator('[data-model-row="deepseek-flash"]')).toBeVisible()
 
-    await card.getByRole('radio', { name: /outside-catalog-model-2/ }).check()
-    await expect(
-      card.getByRole('radio', { name: /outside-catalog-model-2/ })
-    ).toBeChecked()
+    const outsideRadio = card.getByRole('radio', { name: /outside-catalog-model-2/ })
+    // 受控单选要等异步保存后的重渲染，click + web-first 断言比 check() 稳。
+    await outsideRadio.click()
+    await expect(outsideRadio).toBeChecked()
     await card.getByRole('button', { name: '移除模型 deepseek-flash' }).click()
     await expect(card.locator('[data-model-row="deepseek-flash"]')).toHaveCount(0)
 

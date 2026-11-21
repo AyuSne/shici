@@ -6,8 +6,8 @@ import {
   readBuiltinProviderSetup
 } from './model-builtin'
 
-describe('内置提供商目录（批 2 + 批 3）', () => {
-  it('按固定顺序列分批开放的入口', () => {
+describe('内置提供商目录（四种协议与聚合入口）', () => {
+  it('按固定顺序列出九家入口', () => {
     expect(BUILTIN_PROVIDER_IDS).toEqual([
       'deepseek',
       'kimi',

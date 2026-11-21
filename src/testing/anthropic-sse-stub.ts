@@ -1,8 +1,13 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import type { ServerResponse } from 'node:http'
+import {
+  delay,
+  isWritable,
+  startLocalSseTransport,
+  type LocalSseRequest
+} from './sse-transport'
 
 /**
- * 本地 Anthropic Messages SSE stub：#65 用它跑真实 pi 请求，不联网。
+ * 本地 Anthropic Messages SSE stub：用它跑真实 pi 请求，不联网。
  *
  * 事件顺序照 Anthropic 官方流协议：`message_start` → `content_block_start`
  * （thinking / text）→ `content_block_delta`（thinking_delta / text_delta）→
@@ -12,7 +17,7 @@ import type { AddressInfo } from 'node:net'
  * `/v1/messages?beta=true`。
  *
  * 与 OpenAI 形状的 `sse-stub.ts` 分开：两种协议的事件名与请求字段不同，
- * 共用一份会把两套形状混在一个类型里。
+ * 共用一份会把两套形状混在一个类型里。传输外壳共用 `sse-transport.ts`。
  */
 export type AnthropicStubScript =
   | {
@@ -58,12 +63,7 @@ export type AnthropicStubScript =
       headers?: Readonly<Record<string, string>>
     }
 
-export type AnthropicStubRequest = {
-  method: string
-  url: string
-  headers: IncomingMessage['headers']
-  body: Record<string, unknown>
-}
+export type AnthropicStubRequest = LocalSseRequest
 
 export type AnthropicStub = {
   readonly baseUrl: string
@@ -79,51 +79,21 @@ export async function startAnthropicStub(
   script: AnthropicStubScript
 ): Promise<AnthropicStub> {
   let current = script
-  const requests: AnthropicStubRequest[] = []
-  let abortedConnections = 0
-
-  const server = createServer(async (request, response) => {
-    const raw = await readBody(request)
-    const body = parseJson(raw)
-    requests.push({
-      method: request.method ?? '',
-      url: request.url ?? '',
-      headers: request.headers,
-      body
-    })
-
-    response.on('error', () => undefined)
-    response.on('close', () => {
-      if (!response.writableEnded) {
-        abortedConnections += 1
-      }
-    })
-
-    try {
-      await respond(response, current, body)
-    } catch {
-      // 客户端中途断开时写入会失败，测试里不算服务端问题。
-      response.destroy()
-    }
-  })
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', resolve)
-  })
-  const address = server.address() as AddressInfo
+  const transport = await startLocalSseTransport((response, request) =>
+    respond(response, current, request.body)
+  )
 
   return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
-    requests,
+    baseUrl: transport.baseUrl,
+    requests: transport.requests,
     get abortedConnections() {
-      return abortedConnections
+      return transport.abortedConnections
     },
     setScript(next) {
       current = next
     },
-    async close() {
-      server.closeAllConnections()
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+    close() {
+      return transport.close()
     }
   }
 }
@@ -253,28 +223,4 @@ async function respond(
   })
   sse('message_stop', { type: 'message_stop' })
   response.end()
-}
-
-function isWritable(response: ServerResponse): boolean {
-  return !response.writableEnded && !response.destroyed
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function readBody(request: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = []
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-  }
-  return Buffer.concat(chunks).toString('utf8')
-}
-
-function parseJson(raw: string): Record<string, unknown> {
-  try {
-    return JSON.parse(raw) as Record<string, unknown>
-  } catch {
-    return {}
-  }
 }

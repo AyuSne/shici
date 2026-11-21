@@ -1,10 +1,10 @@
-import type { Page } from '@playwright/test'
 import {
   startAnthropicStub,
   type AnthropicStub,
   type AnthropicStubScript
 } from '../../src/testing/anthropic-sse-stub'
 import { expect, test } from '../fixtures/app'
+import { ask, openChat, openSettings } from '../fixtures/chat'
 
 /**
  * #65 真实 Electron E2E：Anthropic Messages 走真实窗口、真实 pi 请求与本地
@@ -28,27 +28,6 @@ const noProviderEnv = {
   DEEPSEEK_API_KEY: '',
   ANTHROPIC_API_KEY: '',
   MINIMAX_API_KEY: ''
-}
-
-async function openSettings(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '设置' })
-    .click()
-  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible()
-}
-
-async function openChat(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '对话' })
-    .click()
-  await expect(page.getByRole('textbox', { name: '输入问题' })).toBeVisible()
-}
-
-async function ask(page: Page, text: string): Promise<void> {
-  await page.getByRole('textbox', { name: '输入问题' }).fill(text)
-  await page.getByRole('button', { name: '发送' }).click()
 }
 
 function requestPath(url: string): string {
@@ -131,7 +110,8 @@ test.describe('Anthropic Messages 内置入口', () => {
 
     // 4. 换默认模型：下一次才用新模型，旧回答保留。
     const sonnetRadio = card.locator('[data-model-row="claude-sonnet-5"] input[type="radio"]')
-    await sonnetRadio.check()
+    // 受控单选：点击后等异步保存再重渲染；不要用 check() 的即时状态假设。
+    await sonnetRadio.click()
     await expect(sonnetRadio).toBeChecked()
     await openChat(page)
     await ask(page, '第二问')

@@ -1,5 +1,10 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import type { ServerResponse } from 'node:http'
+import {
+  delay,
+  isWritable,
+  startLocalSseTransport,
+  type LocalSseRequest
+} from './sse-transport'
 
 /**
  * 本地 OpenAI Responses SSE stub（#67）。
@@ -9,8 +14,8 @@ import type { AddressInfo } from 'node:net'
  * → `response.completed`。pi 只会在收到对应 `output_item.added` 后接受增量，
  * 所以这里不能复用 Chat Completions 的 chunk 形状。
  *
- * 与 `sse-stub.ts` 分开维护：#65/#66 各有自己的协议形状，避免并行改同一个
- * 测试夹具。测试与 E2E 共用本文件，全部请求都落在 127.0.0.1。
+ * 与 `sse-stub.ts` 分开维护：每种协议都有自己的事件形状。测试与 E2E 共用
+ * 本文件，全部请求都落在 127.0.0.1；传输外壳共用 `sse-transport.ts`。
  */
 export type ResponsesStubScript =
   | {
@@ -58,12 +63,7 @@ export type ResponsesStubScript =
       headers?: Readonly<Record<string, string>>
     }
 
-export type ResponsesStubRequest = {
-  method: string
-  url: string
-  headers: IncomingMessage['headers']
-  body: Record<string, unknown>
-}
+export type ResponsesStubRequest = LocalSseRequest
 
 export type ResponsesStub = {
   readonly baseUrl: string
@@ -77,67 +77,22 @@ export async function startResponsesStub(
   script: ResponsesStubScript
 ): Promise<ResponsesStub> {
   let current = script
-  const requests: ResponsesStubRequest[] = []
-  let abortedConnections = 0
-
-  const server = createServer(async (request, response) => {
-    const raw = await readBody(request)
-    requests.push({
-      method: request.method ?? '',
-      url: request.url ?? '',
-      headers: request.headers,
-      body: parseJson(raw)
-    })
-
-    response.on('error', () => undefined)
-    response.on('close', () => {
-      if (!response.writableEnded) {
-        abortedConnections += 1
-      }
-    })
-
-    try {
-      await respond(response, current)
-    } catch {
-      // 客户端中途断开时写入会失败，测试里不算服务端问题。
-      response.destroy()
-    }
-  })
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', resolve)
-  })
-  const address = server.address() as AddressInfo
+  const transport = await startLocalSseTransport((response) =>
+    respond(response, current)
+  )
 
   return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
-    requests,
+    baseUrl: transport.baseUrl,
+    requests: transport.requests,
     get abortedConnections() {
-      return abortedConnections
+      return transport.abortedConnections
     },
     setScript(next) {
       current = next
     },
-    async close() {
-      server.closeAllConnections()
-      await new Promise<void>((resolve) => server.close(() => resolve()))
+    close() {
+      return transport.close()
     }
-  }
-}
-
-async function readBody(request: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = []
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-  }
-  return Buffer.concat(chunks).toString('utf8')
-}
-
-function parseJson(raw: string): Record<string, unknown> {
-  try {
-    return JSON.parse(raw) as Record<string, unknown>
-  } catch {
-    return {}
   }
 }
 
@@ -298,12 +253,4 @@ async function respond(
     }
   })
   response.end()
-}
-
-function isWritable(response: ServerResponse): boolean {
-  return !response.writableEnded && !response.destroyed
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
