@@ -229,10 +229,9 @@ describe('createCustomProvider', () => {
     ).toEqual({ count: 0 })
   })
 
-  it('字段缺一不可，且本票只开放 OpenAI Chat Completions；拒绝时一条都不写', () => {
+  it('字段缺一不可，且未开放的协议被拒绝；拒绝时一条都不写', () => {
     const rejected: Array<[Partial<CreateCustomProviderRequest>, string]> = [
       [{ displayName: '   ' }, 'missing-display-name'],
-      [{ protocol: 'anthropic-messages' }, 'unsupported-protocol'],
       [{ protocol: 'openai-responses' }, 'unsupported-protocol'],
       [{ protocol: 'google-generative-ai' }, 'unsupported-protocol'],
       [{ protocol: 'not-a-protocol' as never }, 'unsupported-protocol'],

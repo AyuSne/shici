@@ -26,10 +26,14 @@ export const MODEL_PROTOCOL_LABELS: Record<ModelProtocol, string> = {
 }
 
 /**
- * #63 的自定义入口本票只开放 OpenAI Chat Completions。这不是第二份协议清单：
- * 下拉选项仍由 `MODEL_PROTOCOLS` 生成，这里只决定当前哪些选项可用。
+ * 自定义入口当前开放的协议。这不是第二份协议清单：下拉选项仍由
+ * `MODEL_PROTOCOLS` 生成，这里只决定当前哪些选项可用。批次 2 先开
+ * OpenAI Chat Completions；#65 开 Anthropic Messages，其余协议后续批次再开。
  */
-export const OPEN_CUSTOM_PROTOCOLS: readonly ModelProtocol[] = ['openai-completions']
+export const OPEN_CUSTOM_PROTOCOLS: readonly ModelProtocol[] = [
+  'openai-completions',
+  'anthropic-messages'
+]
 
 export function isCustomProviderProtocol(protocol: ModelProtocol): boolean {
   return OPEN_CUSTOM_PROTOCOLS.includes(protocol)

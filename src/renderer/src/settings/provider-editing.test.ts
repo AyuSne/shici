@@ -115,10 +115,10 @@ describe('moveModelId', () => {
 })
 
 describe('协议下拉文案', () => {
-  it('选项名来自共享协议表，本票只开放的那一条不带「后续版本」', () => {
+  it('选项名来自共享协议表，已开放的协议不带「后续版本」', () => {
     expect(protocolOptionLabel('openai-completions')).toBe('OpenAI Chat Completions')
+    expect(protocolOptionLabel('anthropic-messages')).toBe('Anthropic Messages')
     expect(protocolOptionLabel('openai-responses')).toBe('OpenAI Responses（后续版本）')
-    expect(protocolOptionLabel('anthropic-messages')).toBe('Anthropic Messages（后续版本）')
     expect(protocolOptionLabel('google-generative-ai')).toBe('Gemini API（后续版本）')
   })
 })

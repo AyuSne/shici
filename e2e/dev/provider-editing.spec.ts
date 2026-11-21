@@ -67,8 +67,12 @@ test.describe('自定义 provider 与模型目录', () => {
     const protocol = form.getByLabel('协议')
     await expect(protocol.locator('option')).toHaveCount(4)
     await expect(protocol.locator('option[value="openai-completions"]')).toBeEnabled()
-    await expect(protocol.locator('option[value="anthropic-messages"]')).toBeDisabled()
+    await expect(protocol.locator('option[value="anthropic-messages"]')).toBeEnabled()
     await expect(protocol.locator('option[value="anthropic-messages"]')).toContainText(
+      'Anthropic Messages'
+    )
+    await expect(protocol.locator('option[value="openai-responses"]')).toBeDisabled()
+    await expect(protocol.locator('option[value="openai-responses"]')).toContainText(
       '后续版本'
     )
 

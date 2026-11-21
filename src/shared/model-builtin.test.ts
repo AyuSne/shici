@@ -6,13 +6,21 @@ import {
   readBuiltinProviderSetup
 } from './model-builtin'
 
-describe('内置提供商目录（#62 只开三条 OpenAI 兼容入口）', () => {
-  it('只列 DeepSeek、Kimi 与智谱 GLM，顺序固定', () => {
-    expect(BUILTIN_PROVIDER_IDS).toEqual(['deepseek', 'kimi', 'glm'])
+describe('内置提供商目录（本批的 OpenAI 兼容与 Anthropic 入口）', () => {
+  it('列出本批开放的入口，顺序固定', () => {
+    expect(BUILTIN_PROVIDER_IDS).toEqual([
+      'deepseek',
+      'kimi',
+      'glm',
+      'anthropic',
+      'minimax'
+    ])
     expect(listBuiltinProviderSetups().map((setup) => setup.id)).toEqual([
       'deepseek',
       'kimi',
-      'glm'
+      'glm',
+      'anthropic',
+      'minimax'
     ])
   })
 
@@ -48,6 +56,20 @@ describe('内置提供商目录（#62 只开三条 OpenAI 兼容入口）', () =
         protocol: 'openai-completions',
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
         envVar: 'ZAI_API_KEY'
+      },
+      {
+        id: 'anthropic',
+        displayName: 'Anthropic',
+        protocol: 'anthropic-messages',
+        baseUrl: 'https://api.anthropic.com',
+        envVar: 'ANTHROPIC_API_KEY'
+      },
+      {
+        id: 'minimax',
+        displayName: 'MiniMax',
+        protocol: 'anthropic-messages',
+        baseUrl: 'https://api.minimax.io/anthropic',
+        envVar: 'MINIMAX_API_KEY'
       }
     ])
   })
@@ -119,12 +141,12 @@ describe('内置提供商目录（#62 只开三条 OpenAI 兼容入口）', () =
     })
   })
 
-  it('目录之外的入口（含 OpenCode GO 与其他协议）在本票不可从目录添加', () => {
+  it('本批未开放的入口（含 OpenCode GO 与其他协议）不可从目录添加', () => {
     expect(readBuiltinProviderSetup('opencode-go')).toBeNull()
     expect(readBuiltinProviderSetup('openai')).toBeNull()
     expect(readBuiltinProviderSetup('')).toBeNull()
     expect(isBuiltinProviderId('deepseek')).toBe(true)
-    expect(isBuiltinProviderId('anthropic')).toBe(false)
+    expect(isBuiltinProviderId('anthropic')).toBe(true)
     expect(isBuiltinProviderId(42)).toBe(false)
   })
 })
