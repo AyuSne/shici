@@ -56,9 +56,9 @@ test.describe('文章重命名与删除', () => {
       const detail = page.getByRole('complementary', { name: '文章详情' })
       await expect(detail.locator('.library-detail-title')).toHaveText(TITLE_A)
       const firstRow = page.locator('.library-row').first()
-      await expect(firstRow).toContainText(TITLE_A)
+      await expect(firstRow).toContainText('仔细阅读 Passage One')
       // 默认篇名里已经带场次、套数与题型，行内 meta 不再重复一遍。
-      await expect(firstRow.locator('.library-row-name')).toHaveText(TITLE_A)
+      await expect(firstRow.locator('.library-row-name')).toHaveText('仔细阅读 Passage One')
       await expect(firstRow.locator('.library-row-meta')).not.toContainText('仔细阅读 Passage One')
       await expect(firstRow.locator('.library-row-meta')).not.toContainText('第1套')
 
@@ -130,7 +130,7 @@ test.describe('文章重命名与删除', () => {
 
       await expect(second.page.getByText('1 篇 · 1 个场次')).toBeVisible()
       await expect(second.page.locator('.library-row')).toHaveCount(1)
-      await expect(second.page.locator('.library-row').first()).toContainText(TITLE_B)
+      await expect(second.page.locator('.library-row').first()).toContainText('仔细阅读 Passage Two')
       await expect(second.page.getByText('文章已删除。')).toBeVisible()
       await expect(secondDetail.locator('.library-detail-title')).toHaveText(TITLE_B)
 
@@ -146,7 +146,7 @@ test.describe('文章重命名与删除', () => {
       await openLibrary(third.page)
       await expect(third.page.getByText('1 篇 · 1 个场次')).toBeVisible()
       await expect(third.page.locator('.library-row')).toHaveCount(1)
-      await expect(third.page.locator('.library-row').first()).toContainText(TITLE_B)
+      await expect(third.page.locator('.library-row').first()).toContainText('仔细阅读 Passage Two')
       const bootstrap = await readBootstrap(third.page)
       expect(bootstrap.corpusImport).toMatchObject({ imported: 0, updated: 0, skipped: 2 })
     } finally {

@@ -22,7 +22,7 @@ let entriesState: EntriesViewState = {
   listScrollTop: 0
 }
 const entryScrollTops = new Map<string | null, number>()
-let libraryState = { query: '', scrollTop: 0 }
+let libraryState: { query: string; scrollTop: number; expandedSessions: string[] | null; expandedSets: string[]; aiExpanded: boolean } = { query: '', scrollTop: 0, expandedSessions: null, expandedSets: [], aiExpanded: false }
 export type SettingsSection = 'model' | 'reading' | 'appearance' | 'data' | 'about'
 let settingsSection: SettingsSection = 'model'
 

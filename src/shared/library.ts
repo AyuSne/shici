@@ -61,11 +61,17 @@ export type LibraryArticle = {
   lastOpenedAt: string | null
 }
 
+export type LibrarySet = {
+  id: number
+  label: string
+  articles: LibraryArticle[]
+}
+
 export type LibrarySession = {
   /** 场次键，形如 2024-06。 */
   id: string
   label: string
-  articles: LibraryArticle[]
+  sets: LibrarySet[]
 }
 
 export type LibrarySize = {

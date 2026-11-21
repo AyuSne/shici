@@ -82,6 +82,8 @@ async function openLibrary(page: Page): Promise<void> {
     .getByRole('button', { name: '文章库' })
     .click()
   await expect(page.getByRole('heading', { name: '文章库', level: 1 })).toBeVisible()
+  const toggle = page.getByRole('region', { name: 'AI 生成' }).getByRole('button', { name: /^AI 生成 \d+ 篇$/ })
+  if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click()
 }
 
 async function openChat(page: Page): Promise<void> {

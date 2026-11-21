@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { LibraryArticle } from '../../../shared/library'
 import {
   articleTitleParts,
+  librarySetRowTitle,
   continueReadingDisplay,
   libraryArticleMetaParts
 } from './display'
@@ -163,5 +164,14 @@ describe('continueReadingDisplay', () => {
       title: 'Sarcasm and Jazz',
       meta: '仔细阅读 Passage One · 19 词 · 读到 50%'
     })
+  })
+})
+
+
+describe('librarySetRowTitle', () => {
+  it('默认篇名在套内只显示题型，改名后保留用户篇名', () => {
+    expect(librarySetRowTitle(article())).toBe('仔细阅读 Passage One')
+    expect(librarySetRowTitle(article({ title: '我的文章' }))).toBe('我的文章')
+    expect(librarySetRowTitle(article({ title: '2026年6月 · 第1套 · 我的文章' }))).toBe('2026年6月 · 第1套 · 我的文章')
   })
 })

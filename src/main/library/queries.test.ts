@@ -61,40 +61,26 @@ afterEach(() => {
 })
 
 describe('readLibrary', () => {
-  it('按场次从新到旧分组，未读的按库内顺序排', () => {
-    const listing = readLibrary(database)
-
-    expect(listing.articleCount).toBe(3)
-    expect(listing.sessionCount).toBe(2)
-    expect(listing.sessions.map((session) => session.label)).toEqual(['2024年6月', '2023年12月'])
-    expect(listing.sessions[0]?.articles.map((article) => article.title)).toEqual([
-      '2024年6月 · 第1套 · 仔细阅读 Passage One',
-      '2024年6月 · 第2套 · 长篇匹配'
-    ])
-    expect(listing.sessions[0]?.articles[0]).toMatchObject({
-      kind: 'careful_reading',
-      kindLabel: '仔细阅读 Passage One',
-      setLabel: '第1套',
-      wordCount: 19,
-      progress: { state: 'unread', percent: 0 },
-      lastOpenedAt: null
-    })
+  it('套内长篇匹配在两篇仔细阅读前，按原卷顺序排列', () => {
+    const one = fixtureArticle({ id: 'same-set-one', year: 2025, set: 3, label: '2025年6月 · 第3套 · 仔细阅读 Passage One', sentences: [['One.']] })
+    const two = fixtureArticle({ id: 'same-set-two', year: 2025, set: 3, label: '2025年6月 · 第3套 · 仔细阅读 Passage Two', sentences: [['Two.']] })
+    const match = fixtureArticle({ id: 'same-set-match', year: 2025, set: 3, kind: 'long_match', sentences: [['Match.']] })
+    writeCorpusDirectory(directory, [one, two, match])
+    importCorpus(database, { directory })
+    openArticle(database, two.id, { now: '2026-11-18T09:00:00.000Z' })
+    expect(readLibrary(database).sessions[0]?.sets[0]?.articles.map((article) => article.id)).toEqual([match.id, one.id, two.id])
   })
 
-  it('打开过的文章排到本场次前面并带上进度', () => {
-    openArticle(database, olderReading.id, { now: '2026-11-18T08:00:00.000Z' })
+  it('按场次与套固定排序，不受最近打开影响', () => {
     openArticle(database, longMatch.id, { now: '2026-11-18T09:00:00.000Z' })
-
     const listing = readLibrary(database)
-
     expect(listing.sessions.map((session) => session.label)).toEqual(['2024年6月', '2023年12月'])
-    expect(listing.sessions[0]?.articles.map((article) => article.id)).toEqual([
-      longMatch.id,
-      carefulReading.id
+    expect(listing.sessions[0]?.sets.map((set) => [set.label, set.articles.map((article) => article.id)])).toEqual([
+      ['第1套', [carefulReading.id]], ['第2套', [longMatch.id]]
     ])
-    expect(listing.sessions[0]?.articles[0]?.progress).toEqual({ state: 'reading', percent: 50 })
-    expect(listing.sessions[1]?.articles[0]?.progress).toEqual({ state: 'reading', percent: 50 })
+    expect(listing.sessions[0]?.sets[1]?.articles[0]?.progress).toEqual({ state: 'reading', percent: 50 })
   })
+
 })
 
 describe('openArticle', () => {
@@ -246,7 +232,7 @@ describe('markArticleCompleted', () => {
       percent: 100
     })
     const listed = readLibrary(database)
-      .sessions.flatMap((session) => session.articles)
+      .sessions.flatMap((session) => session.sets.flatMap((set) => set.articles))
       .find((article) => article.id === carefulReading.id)
     expect(listed?.progress).toEqual({ state: 'completed', percent: 100 })
     expect(readHomeSummary(database).completedArticleCount).toBe(1)
