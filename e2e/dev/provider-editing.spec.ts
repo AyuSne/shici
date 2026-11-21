@@ -66,14 +66,18 @@ test.describe('自定义 provider 与模型目录', () => {
     await expect(form).toBeVisible()
     const protocol = form.getByLabel('协议')
     await expect(protocol.locator('option')).toHaveCount(4)
-    await expect(protocol.locator('option[value="openai-completions"]')).toBeEnabled()
-    await expect(protocol.locator('option[value="anthropic-messages"]')).toBeEnabled()
+    // 四种协议在本批次都已开放：下拉里没有「后续版本」占位。
+    for (const value of [
+      'openai-completions',
+      'openai-responses',
+      'anthropic-messages',
+      'google-generative-ai'
+    ]) {
+      await expect(protocol.locator(`option[value="${value}"]`)).toBeEnabled()
+      await expect(protocol.locator(`option[value="${value}"]`)).not.toContainText('后续版本')
+    }
     await expect(protocol.locator('option[value="anthropic-messages"]')).toContainText(
       'Anthropic Messages'
-    )
-    await expect(protocol.locator('option[value="openai-responses"]')).toBeDisabled()
-    await expect(protocol.locator('option[value="openai-responses"]')).toContainText(
-      '后续版本'
     )
 
     // 非法 Provider ID 与重复 ID 都给出字段错误，且不写半条配置。
