@@ -36,7 +36,8 @@ type ModelSectionProps = {
 }
 
 /**
- * 模型服务：内置目录（DeepSeek / Kimi / 智谱 GLM）与自定义 API 两条添加路径。
+ * 模型服务：内置目录（DeepSeek / Kimi / 智谱 GLM / Google Gemini）与自定义 API
+ * 两条添加路径。
  *
  * - 卡片可切换、编辑显示名/地址、删除，并在卡片内直接编辑模型目录；
  * - 模型目录支持手加、行内编辑、删除、默认模型单选、拖拽与上移/下移排序，
@@ -192,7 +193,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
     <section className="settings-section" aria-labelledby="settings-model-title">
       <h2 id="settings-model-title">模型服务</h2>
       <p className="settings-desc">
-        从内置目录添加 DeepSeek、Kimi 或智谱 GLM，或自定义一套模型 API。内置入口自动带出
+        从内置目录添加 DeepSeek、Kimi、智谱 GLM 或 Google Gemini，或自定义一套模型 API。内置入口自动带出
         地址、环境变量名与模型目录；两种入口都能改模型目录，也能用「获取可用模型」从
         当前地址与密钥取回候选、勾选后再加入。保存只写本机，不联网校验；真正生成成功
         一次后才标「已验证」。

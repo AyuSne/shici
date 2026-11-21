@@ -243,7 +243,7 @@ export function CustomProviderForm({
           ))}
         </select>
       </label>
-      <p className="field-hint">本票只开放 OpenAI Chat Completions，其余协议后续开放。</p>
+      <p className="field-hint">本票只开放 OpenAI Chat Completions 与 Gemini API，其余协议后续开放。</p>
 
       <label className="settings-field">
         <span>接口地址</span>

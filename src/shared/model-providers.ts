@@ -177,7 +177,7 @@ export type CreateCustomProviderRequest = {
    */
   providerKey: string
   displayName: string
-  /** 本票只开放 OpenAI Chat Completions，但值仍来自共享协议表。 */
+  /** 本票开放 OpenAI Chat Completions 与 Gemini API，但值仍来自共享协议表。 */
   protocol: ProviderProtocol
   baseUrl: string
   /** 密钥来源；不传按本机处理。环境模式不需要先存本机密钥。 */

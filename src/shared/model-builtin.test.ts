@@ -6,13 +6,14 @@ import {
   readBuiltinProviderSetup
 } from './model-builtin'
 
-describe('内置提供商目录（#62 只开三条 OpenAI 兼容入口）', () => {
-  it('只列 DeepSeek、Kimi 与智谱 GLM，顺序固定', () => {
-    expect(BUILTIN_PROVIDER_IDS).toEqual(['deepseek', 'kimi', 'glm'])
+describe('内置提供商目录', () => {
+  it('列出 DeepSeek、Kimi、智谱 GLM 与 Google Gemini，顺序固定', () => {
+    expect(BUILTIN_PROVIDER_IDS).toEqual(['deepseek', 'kimi', 'glm', 'gemini'])
     expect(listBuiltinProviderSetups().map((setup) => setup.id)).toEqual([
       'deepseek',
       'kimi',
-      'glm'
+      'glm',
+      'gemini'
     ])
   })
 
@@ -48,6 +49,13 @@ describe('内置提供商目录（#62 只开三条 OpenAI 兼容入口）', () =
         protocol: 'openai-completions',
         baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
         envVar: 'ZAI_API_KEY'
+      },
+      {
+        id: 'gemini',
+        displayName: 'Google Gemini',
+        protocol: 'google-generative-ai',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        envVar: 'GEMINI_API_KEY'
       }
     ])
   })
@@ -119,11 +127,25 @@ describe('内置提供商目录（#62 只开三条 OpenAI 兼容入口）', () =
     })
   })
 
-  it('目录之外的入口（含 OpenCode GO 与其他协议）在本票不可从目录添加', () => {
+  it('Gemini 带出官方端点、环境变量与目录模型，协议是 Gemini API', () => {
+    const setup = readBuiltinProviderSetup('gemini')
+
+    expect(setup?.models.map((model) => model.id)).toContain('gemini-2.5-flash')
+    expect(setup?.models[0]).toMatchObject({
+      api: 'google-generative-ai',
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      reasoning: true
+    })
+  })
+
+  it('目录之外的入口（含其他协议）在本票不可从目录添加', () => {
     expect(readBuiltinProviderSetup('opencode-go')).toBeNull()
     expect(readBuiltinProviderSetup('openai')).toBeNull()
+    expect(readBuiltinProviderSetup('anthropic')).toBeNull()
     expect(readBuiltinProviderSetup('')).toBeNull()
     expect(isBuiltinProviderId('deepseek')).toBe(true)
+    expect(isBuiltinProviderId('gemini')).toBe(true)
     expect(isBuiltinProviderId('anthropic')).toBe(false)
     expect(isBuiltinProviderId(42)).toBe(false)
   })

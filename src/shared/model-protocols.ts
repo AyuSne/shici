@@ -26,10 +26,13 @@ export const MODEL_PROTOCOL_LABELS: Record<ModelProtocol, string> = {
 }
 
 /**
- * #63 的自定义入口本票只开放 OpenAI Chat Completions。这不是第二份协议清单：
+ * 自定义入口本票开放 OpenAI Chat Completions 与 Gemini API。这不是第二份协议清单：
  * 下拉选项仍由 `MODEL_PROTOCOLS` 生成，这里只决定当前哪些选项可用。
  */
-export const OPEN_CUSTOM_PROTOCOLS: readonly ModelProtocol[] = ['openai-completions']
+export const OPEN_CUSTOM_PROTOCOLS: readonly ModelProtocol[] = [
+  'openai-completions',
+  'google-generative-ai'
+]
 
 export function isCustomProviderProtocol(protocol: ModelProtocol): boolean {
   return OPEN_CUSTOM_PROTOCOLS.includes(protocol)

@@ -171,7 +171,7 @@ export function customProviderErrorText(reason: CustomProviderRejection): string
     case 'missing-display-name':
       return '先填显示名。'
     case 'unsupported-protocol':
-      return '本票只开放 OpenAI Chat Completions；其他协议请等后续版本。'
+      return '本票只开放 OpenAI Chat Completions 与 Gemini API；其他协议请等后续版本。'
     case 'missing-base-url':
       return '先填接口地址。'
     case 'invalid-base-url':
