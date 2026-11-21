@@ -1,3 +1,5 @@
+import type { ProviderCredentialProblem } from './provider-credentials'
+
 /**
  * 对话流在渲染层与主进程之间传递的形状。渲染层只认这套事件，
  * 不认识 SSE、HTTP 状态码或具体服务商。
@@ -7,6 +9,12 @@ export type ChatTurn = {
   role: 'user' | 'assistant'
   content: string
 }
+
+/**
+ * 凭据不可用的原因：直接复用主进程的 `ProviderCredentialProblem`，
+ * 渲染层只认这套，不问来源细节。
+ */
+export type ChatCredentialProblem = ProviderCredentialProblem
 
 /**
  * 思考强度必须显式传给模型服务：不传时服务端会回到“关闭思考”，
@@ -44,6 +52,11 @@ export type ProviderErrorCode =
 
 export type ChatError = {
   code: ChatErrorCode
+  /**
+   * 发送前就发现凭据不可用时的结构化原因。界面据此点名缺失的环境变量，
+   * 或明确说「本机密钥解不开」——不把两种情况混成一句「没配置」。
+   */
+  credential?: ChatCredentialProblem
   /** 稳定的失败分类；只用于后续重试策略与排障，不直接展示。 */
   kind?: ProviderErrorCode
   /** 服务端返回的 HTTP 状态码；网络异常等没有响应时为空。 */

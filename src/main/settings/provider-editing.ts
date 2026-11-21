@@ -16,6 +16,7 @@ import type {
 } from '../../shared/model-providers'
 import { isValidProviderId } from '../../shared/model-providers'
 import type { AppDatabase } from '../db/database'
+import { prepareProviderCredential } from './credentials'
 import type { SecretStore } from './secret-store'
 import { parseHttpUrl } from './base-url'
 import {
@@ -30,9 +31,8 @@ import {
  * #63 的 provider / 模型目录写入。
  *
  * 这里只做三件事：自定义 provider 的创建、provider 显示名与地址的编辑、
- * 单协议 provider 的模型行增删改与排序。密钥仍走现有 safeStorage 单一路径
- * （`apiKey` → 密文），不改凭据解析；#68 接入 authMode / envVar 时替换
- * `credentialColumns` 这一处即可，模型目录逻辑不需要知道密钥来源。
+ * 单协议 provider 的模型行增删改与排序。凭据来源（本机 / 环境变量）统一交给
+ * `credentials.ts` 的 `prepareProviderCredential`，模型目录逻辑不需要知道密钥来源。
  *
  * 所有写入都是纯本地动作，不发网络请求；校验失败不写半条配置。
  */
@@ -147,22 +147,6 @@ function metadataOf(
   }
 }
 
-/**
- * 自定义 provider 的凭据列。本票先沿用基线的本机密文存储；
- * #68 引入 authMode / envVar 后只替换这一处，不碰下面的模型目录写入。
- */
-function credentialColumns(
-  secrets: SecretStore,
-  apiKey: string
-): { authMode: 'stored'; envVar: string | null; secretCiphertext: string | null } {
-  const trimmed = apiKey.trim()
-  return {
-    authMode: 'stored',
-    envVar: null,
-    secretCiphertext: trimmed === '' ? null : secrets.encrypt(trimmed)
-  }
-}
-
 function insertModelRow(
   database: AppDatabase,
   providerId: string,
@@ -235,10 +219,21 @@ export function createCustomProvider(
     return { status: 'rejected', reason: 'missing-model' }
   }
 
+  // 先校验/加密凭据再开事务：加密不可用时连 provider 行都不写。
+  const credential = prepareProviderCredential(secrets, {
+    authMode: request.authMode,
+    envVar: request.envVar,
+    apiKey: request.apiKey,
+    // 自定义 API 可以是无需密钥的本地服务；内置目录添加仍必须填 key。
+    allowEmptyStoredKey: true
+  })
+  if (!credential.ok) {
+    return { status: 'rejected', reason: credential.reason }
+  }
+
   const now = nowOf(options)
   const providerId = randomUUID()
   const modelRowId = randomUUID()
-  const credential = credentialColumns(secrets, request.apiKey)
 
   const insert = database.transaction(() => {
     database

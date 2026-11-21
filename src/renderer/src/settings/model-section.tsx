@@ -1,17 +1,24 @@
 import { useState } from 'react'
-import type { ModelProviderSummary } from '../../../shared/model-providers'
+import type {
+  ModelProviderSummary,
+  ProviderAuthMode
+} from '../../../shared/model-providers'
 import { listBuiltinProviderSetups, type BuiltinProviderId } from '../../../shared/model-builtin'
+import type { UpdateProviderCredentialRequest } from '../../../shared/provider-credentials'
 import type { SettingsOverview } from '../../../shared/settings'
 import {
   activateProvider,
   addBuiltinProvider,
   deleteProvider,
-  loadSettingsOverview
+  loadSettingsOverview,
+  updateProviderCredential
 } from '../api'
 import { failureText } from '../errors'
+import { ProviderCredentialEditor } from './credential-editor'
 import { CustomProviderForm } from './custom-provider-form'
 import {
   checkText,
+  credentialIssueText,
   keyStateText,
   protocolText,
   providerModelsText,
@@ -42,11 +49,15 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
     setups[0]?.id ?? 'deepseek'
   )
   const [apiKey, setApiKey] = useState('')
+  const [addAuthMode, setAddAuthMode] = useState<ProviderAuthMode>('stored')
+  const [addEnvVar, setAddEnvVar] = useState(setups[0]?.envVar ?? '')
   const [busy, setBusy] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [addMode, setAddMode] = useState<'builtin' | 'custom'>('builtin')
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null)
+  const [credentialEditingId, setCredentialEditingId] = useState<string | null>(null)
+  const [credentialError, setCredentialError] = useState<string | null>(null)
 
   const setup = setups.find((candidate) => candidate.id === catalogId) ?? setups[0]
   const noActiveProvider =
@@ -75,25 +86,33 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
         return
       }
       const key = apiKey.trim()
-      if (key === '') {
-        setFormError('先填 API 密钥再保存。')
+      if (addAuthMode === 'stored' && key === '') {
+        setFormError('先填 API 密钥再保存；不想把密钥存在本机就选「使用环境变量」。')
         return
       }
       const result = await addBuiltinProvider({
         catalogProviderId: setup.id,
-        apiKey: key
+        authMode: addAuthMode,
+        envVar: addEnvVar.trim() === '' ? setup.envVar : addEnvVar,
+        apiKey: addAuthMode === 'stored' ? key : ''
       })
       if (result.status === 'rejected') {
         setFormError(
           result.reason === 'missing-key'
             ? '先填 API 密钥再保存。'
-            : '这个入口不在本版的内置目录里。'
+            : result.reason === 'invalid-env-var'
+              ? '环境变量名要字母或下划线开头，只含字母、数字与下划线。'
+              : '这个入口不在本版的内置目录里。'
         )
         return
       }
       setApiKey('')
       await refresh()
-      notify(`已保存 ${setup.displayName}；未验证（保存时不联网）`)
+      notify(
+        addAuthMode === 'env'
+          ? `已保存 ${setup.displayName}（使用环境变量）；未验证（保存时不联网）`
+          : `已保存 ${setup.displayName}；未验证（保存时不联网）`
+      )
     })
   }
 
@@ -124,6 +143,60 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
           : `已删除「${provider.displayName}」`
       )
     })
+  }
+
+  function startCredentialEdit(provider: ModelProviderSummary): void {
+    // 卡片内同时只开一个编辑面板，避免两个表单抢同一块位置。
+    setEditingProviderId(null)
+    setCredentialEditingId(provider.id)
+    setCredentialError(null)
+  }
+
+  function cancelCredentialEdit(): void {
+    setCredentialEditingId(null)
+    setCredentialError(null)
+  }
+
+  function credentialRejectionText(reason: string): string {
+    switch (reason) {
+      case 'confirm-required':
+        return '从本机切到环境变量会清除已存密钥，需要再确认一次。'
+      case 'missing-key':
+        return '本机模式要填一个 API 密钥；或改用环境变量。'
+      case 'invalid-env-var':
+        return '环境变量名要字母或下划线开头，只含字母、数字与下划线。'
+      default:
+        return '凭据没有保存成功，再试一次。'
+    }
+  }
+
+  async function submitCredential(request: UpdateProviderCredentialRequest): Promise<void> {
+    setBusy(`credential-${request.providerId}`)
+    setCredentialError(null)
+    try {
+      const result = await updateProviderCredential(request)
+      if (result.status === 'missing') {
+        setCredentialError('这套提供商已经不在了，刷新后再试。')
+        return
+      }
+      if (result.status === 'rejected') {
+        setCredentialError(credentialRejectionText(result.reason))
+        return
+      }
+      cancelCredentialEdit()
+      await refresh()
+      notify(
+        result.clearedStored
+          ? '已清除本机已存密钥；历史线程与钉住不受影响'
+          : result.authMode === 'env'
+            ? '已保存环境变量设置；本机不保存密文'
+            : '已更新本机密钥；历史线程与钉住不受影响'
+      )
+    } catch (error) {
+      setCredentialError(failureText(error, '凭据没有保存成功，再试一次。'))
+    } finally {
+      setBusy(null)
+    }
   }
 
   return (
@@ -184,13 +257,22 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                       className="link-button"
                       aria-label={`编辑提供商 ${provider.displayName}`}
                       disabled={busy !== null}
-                      onClick={() =>
+                      onClick={() => {
+                        setCredentialEditingId(null)
                         setEditingProviderId(
                           editingProviderId === provider.id ? null : provider.id
                         )
-                      }
+                      }}
                     >
                       编辑
+                    </button>
+                    <button
+                      type="button"
+                      className="link-button"
+                      disabled={busy !== null}
+                      onClick={() => startCredentialEdit(provider)}
+                    >
+                      编辑凭据
                     </button>
                     <button
                       type="button"
@@ -241,6 +323,22 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                     </div>
                   )}
                 </dl>
+
+                {credentialIssueText(provider) === null ? null : (
+                  <p className="field-error" role="alert">
+                    {credentialIssueText(provider)}
+                  </p>
+                )}
+
+                {credentialEditingId === provider.id ? (
+                  <ProviderCredentialEditor
+                    provider={provider}
+                    busy={busy !== null}
+                    error={credentialError}
+                    onSubmit={(request) => void submitCredential(request)}
+                    onCancel={cancelCredentialEdit}
+                  />
+                ) : null}
 
                 {editingProviderId === provider.id ? (
                   <ProviderEditForm
@@ -294,7 +392,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
         <h3>添加模型提供商</h3>
         <p className="settings-desc">
           内置目录自动带出地址与模型；自定义 API 由你自己填 Provider ID、协议与地址。
-          保存时不联网，断网也能存成「未验证」；密钥只以掩码显示。
+          保存时不联网，断网也能存成「未验证」。密钥可以加密存在本机，也可以只引用环境变量。
         </p>
 
         <div className="settings-segments" role="group" aria-label="添加方式">
@@ -324,9 +422,12 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                 aria-label="内置提供商"
                 value={catalogId}
                 disabled={busy !== null}
-                onChange={(event) =>
-                  setCatalogId(event.target.value as BuiltinProviderId)
-                }
+                onChange={(event) => {
+                  const next = event.target.value as BuiltinProviderId
+                  setCatalogId(next)
+                  const nextSetup = setups.find((candidate) => candidate.id === next)
+                  setAddEnvVar(nextSetup?.envVar ?? '')
+                }}
               >
                 {setups.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
@@ -367,18 +468,65 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
               </dl>
             )}
 
+            <fieldset className="credential-mode">
+              <legend className="settings-field-label">密钥来源</legend>
+              <label className="model-option">
+                <input
+                  type="radio"
+                  name="add-auth-mode"
+                  value="stored"
+                  checked={addAuthMode === 'stored'}
+                  disabled={busy !== null}
+                  onChange={() => setAddAuthMode('stored')}
+                />
+                <span>保存在本机</span>
+              </label>
+              <label className="model-option">
+                <input
+                  type="radio"
+                  name="add-auth-mode"
+                  value="env"
+                  checked={addAuthMode === 'env'}
+                  disabled={busy !== null}
+                  onChange={() => setAddAuthMode('env')}
+                />
+                <span>使用环境变量</span>
+              </label>
+            </fieldset>
+
             <label className="settings-field">
-              <span>API 密钥</span>
+              <span>环境变量名</span>
               <input
-                type="password"
-                aria-label="API 密钥"
+                type="text"
+                aria-label="环境变量名"
                 autoComplete="off"
                 spellCheck={false}
-                value={apiKey}
+                value={addEnvVar}
+                placeholder={setup?.envVar ?? 'MY_PROVIDER_KEY'}
                 disabled={busy !== null}
-                onChange={(event) => setApiKey(event.target.value)}
+                onChange={(event) => setAddEnvVar(event.target.value)}
               />
             </label>
+            <p className="field-hint">
+              {addAuthMode === 'env'
+                ? `只从环境变量 ${addEnvVar.trim() === '' ? (setup?.envVar ?? '') : addEnvVar.trim()} 读取，不加密、不写入本机。`
+                : '环境变量名可改；现在存本机，切到环境变量时再用这个名字。'}
+            </p>
+
+            {addAuthMode === 'stored' ? (
+              <label className="settings-field">
+                <span>API 密钥</span>
+                <input
+                  type="password"
+                  aria-label="API 密钥"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={apiKey}
+                  disabled={busy !== null}
+                  onChange={(event) => setApiKey(event.target.value)}
+                />
+              </label>
+            ) : null}
 
             {formError === null ? null : (
               <p className="field-error" role="alert">

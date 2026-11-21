@@ -99,6 +99,10 @@ import type {
   UpdateProviderResult
 } from '../../shared/model-providers'
 import type {
+  UpdateProviderCredentialRequest,
+  UpdateProviderCredentialResult
+} from '../../shared/provider-credentials'
+import type {
   AskThreadRequest,
   ChatThreadView,
   CreateThreadRequest,
@@ -565,6 +569,16 @@ export function deleteProvider(
   request: DeleteProviderRequest
 ): Promise<DeleteProviderResult> {
   return invoke('settings:provider-delete', request)
+}
+
+/**
+ * 编辑一套 provider 的密钥来源：本机 / 环境变量、变量名、新密钥，
+ * 以及从本机切到环境时清除已存密文的显式确认。
+ */
+export function updateProviderCredential(
+  request: UpdateProviderCredentialRequest
+): Promise<UpdateProviderCredentialResult> {
+  return invoke('settings:provider-credential', request)
 }
 
 /** 改全局阅读默认；单篇覆盖不受影响。 */

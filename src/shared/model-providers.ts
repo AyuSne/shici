@@ -71,6 +71,13 @@ export type ModelProviderSummary = {
   apiKeyMask: string | null
   /** 主进程解析出的密钥来源三态。 */
   keyState: ProviderKeyState
+  /** 库里是否存着本机密文（不论能否解开）；环境模式可能由历史遗留。 */
+  hasStoredCiphertext: boolean
+  /**
+   * 本机有密文但解不开。此时 `keyState` 仍是 `stored`（来源没变），
+   * 界面要给出「重新填写 / 改用环境变量」的动作提示，发送也必须明确报错。
+   */
+  credentialError: 'stored-decrypt-failed' | null
   retryPolicy: ProviderRetryPolicy
   verification: ProviderVerification
   lastError: ProviderCheckError | null
@@ -91,13 +98,26 @@ export type ModelProviderSummary = {
 export type AddBuiltinProviderRequest = {
   /** 目录入口 id：deepseek / kimi / glm。 */
   catalogProviderId: string
-  /** 写一次就加密保存，保存时不联网校验；结果里不会再回传。 */
-  apiKey: string
+  /** 密钥来源；不传按本机处理（兼容只传 apiKey 的旧调用）。 */
+  authMode?: ProviderAuthMode
+  /**
+   * 环境变量名：环境模式必填（不传用目录默认值）；本机模式也保存下来，
+   * 供以后切换到环境变量时直接带出。空串等于使用目录值。
+   */
+  envVar?: string | null
+  /**
+   * 只在本机模式使用。环境模式即使带了也直接忽略：不加密、不落密文，
+   * 保存时不联网。
+   */
+  apiKey?: string | null
 }
 
 export type AddBuiltinProviderResult =
   | { status: 'saved'; providerId: string; providerKey: string }
-  | { status: 'rejected'; reason: 'unknown-provider' | 'missing-key' }
+  | {
+      status: 'rejected'
+      reason: 'unknown-provider' | 'missing-key' | 'invalid-env-var'
+    }
 
 export type SetDefaultProviderModelRequest = {
   providerId: string
@@ -152,11 +172,15 @@ export type CreateCustomProviderRequest = {
   /** 本票只开放 OpenAI Chat Completions，但值仍来自共享协议表。 */
   protocol: ProviderProtocol
   baseUrl: string
+  /** 密钥来源；不传按本机处理。环境模式不需要先存本机密钥。 */
+  authMode?: ProviderAuthMode
+  /** 环境变量名：环境模式必填；本机模式也保留下来备用。 */
+  envVar?: string | null
   /**
-   * 保存到本机的密钥。空串表示这个地址不需要密钥（自部署/本地中转）。
-   * #68 接入凭据模式后，这一层由 authMode / envVar 取代。
+   * 本机模式下保存的密钥。空串表示这个地址不需要密钥（自部署 / 本地中转）。
+   * 环境模式即使带了也忽略：不加密、不落密文。
    */
-  apiKey: string
+  apiKey?: string
   /** 自定义 provider 至少要有一个模型才能保存。 */
   model: CustomProviderModelDraft
 }
@@ -169,6 +193,8 @@ export type CustomProviderRejection =
   | 'missing-base-url'
   | 'invalid-base-url'
   | 'missing-model'
+  | 'missing-key'
+  | 'invalid-env-var'
 
 export type CreateCustomProviderResult =
   | { status: 'saved'; providerId: string; providerKey: string }

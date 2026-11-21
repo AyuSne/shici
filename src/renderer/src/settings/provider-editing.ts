@@ -183,6 +183,10 @@ export function customProviderErrorText(reason: CustomProviderRejection): string
       return '接口地址要是 http(s) 开头的完整地址。'
     case 'missing-model':
       return '自定义 provider 至少要有一个模型才能保存。'
+    case 'missing-key':
+      return '本机模式要填一个 API 密钥；或改用环境变量。'
+    case 'invalid-env-var':
+      return '环境变量名要字母或下划线开头，只含字母、数字与下划线。'
   }
 }
 

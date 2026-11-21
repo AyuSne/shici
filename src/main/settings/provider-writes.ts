@@ -11,6 +11,7 @@ import type { CatalogModel } from '../../shared/model-catalog'
 import type { AppDatabase } from '../db/database'
 import { uniqueProviderKey } from '../db/provider-key'
 import { writeSetting } from '../db/settings'
+import { prepareProviderCredential } from './credentials'
 import {
   ACTIVE_PROVIDER_KEY,
   clearProviderSelection,
@@ -80,17 +81,24 @@ export function addBuiltinProvider(
   if (setup === null) {
     return { status: 'rejected', reason: 'unknown-provider' }
   }
-  const apiKey = request.apiKey.trim()
-  if (apiKey === '') {
-    return { status: 'rejected', reason: 'missing-key' }
+  // 环境变量名可改，默认带出目录值；环境模式必填，本机模式也保留下来备用。
+  const requestedEnvVar = request.envVar?.trim() ?? ''
+  const envVar = requestedEnvVar === '' ? setup.envVar : requestedEnvVar
+  // 先校验并加密再开事务：环境模式不加密，请求里带的 key 直接忽略；
+  // 校验不过时什么都不写。
+  const prepared = prepareProviderCredential(secrets, {
+    authMode: request.authMode,
+    envVar,
+    apiKey: request.apiKey
+  })
+  if (!prepared.ok) {
+    return { status: 'rejected', reason: prepared.reason }
   }
 
   const now = timestampOf(options)
   const providerId = randomUUID()
   const providerKey = uniqueProviderKey(setup.id, usedProviderKeys(database))
   const displayName = displayNameFor(database, setup.id, setup.displayName)
-  // 先加密再开事务：加密不可用时什么都不写。
-  const ciphertext = secrets.encrypt(apiKey)
   const models = setup.models.map((model, index) => ({
     id: randomUUID(),
     model,
@@ -106,7 +114,7 @@ export function addBuiltinProvider(
            secret_ciphertext, retry_policy, verification, last_error, last_checked_at,
            last_verified_at, source, catalog_provider_id, default_model_id, created_at,
            updated_at
-         ) VALUES (?, ?, ?, ?, ?, 'stored', ?, ?, '{"mode":"normal"}', 'unverified', NULL,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{"mode":"normal"}', 'unverified', NULL,
                    NULL, NULL, 'builtin', ?, ?, ?, ?)`
       )
       .run(
@@ -115,8 +123,9 @@ export function addBuiltinProvider(
         displayName,
         setup.protocol,
         setup.baseUrl,
-        setup.envVar,
-        ciphertext,
+        prepared.authMode,
+        prepared.envVar,
+        prepared.secretCiphertext,
         setup.id,
         defaultModelRowId,
         now,

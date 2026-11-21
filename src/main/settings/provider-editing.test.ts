@@ -248,6 +248,75 @@ describe('createCustomProvider', () => {
     }
     expect(summaries()).toEqual([])
   })
+
+  it('自定义 provider 可直接用环境变量创建：不落密文，模型编辑不改来源', () => {
+    const result = createCustomProvider(
+      database,
+      secrets,
+      relayRequest({
+        authMode: 'env',
+        envVar: ' CUSTOM_RELAY_KEY ',
+        apiKey: 'sk-must-be-ignored'
+      })
+    )
+    expect(result.status).toBe('saved')
+    if (result.status !== 'saved') return
+
+    expect(readModelProvider(database, result.providerId)).toMatchObject({
+      authMode: 'env',
+      envVar: 'CUSTOM_RELAY_KEY',
+      secretCiphertext: null
+    })
+    // 环境变量有值就是 env，没有就缺失；都只有变量名，没有掩码。
+    expect(
+      listModelProviders(database, {
+        secrets,
+        env: { CUSTOM_RELAY_KEY: 'env-key' }
+      })[0]
+    ).toMatchObject({ keyState: 'env', apiKeyMask: null, credentialError: null })
+    expect(listModelProviders(database, { secrets, env: {} })[0]).toMatchObject({
+      keyState: 'missing',
+      envVar: 'CUSTOM_RELAY_KEY'
+    })
+
+    // 模型目录编辑只碰模型行：凭据来源与密文列保持原样。
+    expect(
+      addProviderModel(database, {
+        providerId: result.providerId,
+        model: { modelId: 'second-model' }
+      })
+    ).toMatchObject({ status: 'saved' })
+    expect(readModelProvider(database, result.providerId)).toMatchObject({
+      authMode: 'env',
+      envVar: 'CUSTOM_RELAY_KEY',
+      secretCiphertext: null
+    })
+
+    // 直接创建后就能用这套环境变量发请求。
+    activateModelProvider(database, result.providerId)
+    expect(
+      resolveChatConfig(database, secrets, { CUSTOM_RELAY_KEY: 'env-key' })
+    ).toMatchObject({
+      apiKey: 'env-key',
+      baseUrl: 'https://relay.example.com/v1',
+      model: 'relay-model',
+      providerId: result.providerId
+    })
+  })
+
+  it('环境模式拒绝空变量名或非法变量名，不写半条配置', () => {
+    for (const envVar of ['', '  ', '2-BAD', 'bad name']) {
+      expect(
+        createCustomProvider(
+          database,
+          secrets,
+          relayRequest({ authMode: 'env', envVar, apiKey: '' })
+        ),
+        envVar
+      ).toEqual({ status: 'rejected', reason: 'invalid-env-var' })
+    }
+    expect(summaries()).toEqual([])
+  })
 })
 
 describe('updateModelProvider', () => {

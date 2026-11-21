@@ -292,6 +292,11 @@ function settingsHandlers() {
       status: 'deleted' as const,
       activeCleared: false
     }),
+    'settings:provider-credential': () => ({
+      status: 'saved' as const,
+      authMode: 'stored' as const,
+      clearedStored: false
+    }),
     'settings:reading-save': () => ({
       saved: true,
       preferences: settingsOverview.reading
@@ -357,7 +362,8 @@ describe('registerIpcHandlers', () => {
         'settings:provider-model-reorder',
         'settings:provider-default-model',
         'settings:provider-activate',
-        'settings:provider-delete'
+        'settings:provider-delete',
+        'settings:provider-credential'
       ])
     )
     expect(

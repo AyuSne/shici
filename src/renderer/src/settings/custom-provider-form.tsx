@@ -4,8 +4,16 @@ import {
   isCustomProviderProtocol
 } from '../../../shared/model-protocols'
 import type { ProviderProtocol } from '../../../shared/model-providers'
+import {
+  isValidEnvVarName,
+  type ProviderCredentialDraft
+} from '../../../shared/provider-credentials'
 import { createCustomProvider } from '../api'
 import { failureText } from '../errors'
+import {
+  CredentialEditor,
+  emptyCredentialDraft
+} from './credential-editor'
 import {
   baseUrlError,
   customProviderErrorText,
@@ -52,7 +60,7 @@ export function CustomProviderForm({
   const [displayName, setDisplayName] = useState('')
   const [protocol, setProtocol] = useState<ProviderProtocol>('openai-completions')
   const [baseUrl, setBaseUrl] = useState('')
-  const [apiKey, setApiKey] = useState('')
+  const [credential, setCredential] = useState<ProviderCredentialDraft>(emptyCredentialDraft())
   const [modelId, setModelId] = useState('')
   const [errors, setErrors] = useState<FieldErrors>(NO_ERRORS)
   const [formError, setFormError] = useState<string | null>(null)
@@ -79,6 +87,11 @@ export function CustomProviderForm({
     if (Object.values(next).some((message) => message !== null)) {
       return
     }
+    // 环境模式先做一次即时提示；主进程仍会再校验。
+    if (credential.authMode === 'env' && !isValidEnvVarName(credential.envVar)) {
+      setFormError('环境变量名要字母或下划线开头，只含字母、数字与下划线。')
+      return
+    }
 
     setBusy(true)
     try {
@@ -87,7 +100,9 @@ export function CustomProviderForm({
         displayName: displayName.trim(),
         protocol,
         baseUrl: baseUrl.trim(),
-        apiKey,
+        authMode: credential.authMode,
+        envVar: credential.envVar,
+        apiKey: credential.apiKey,
         model: { modelId: modelId.trim() }
       })
       if (result.status === 'rejected') {
@@ -113,11 +128,15 @@ export function CustomProviderForm({
       setProviderId('')
       setDisplayName('')
       setBaseUrl('')
-      setApiKey('')
+      setCredential(emptyCredentialDraft())
       setModelId('')
       setErrors(NO_ERRORS)
       await refresh()
-      notify(`已保存自定义提供商「${savedName}」；未验证（保存时不联网）`)
+      notify(
+        credential.authMode === 'env'
+          ? `已保存自定义提供商「${savedName}」（使用环境变量）；未验证（保存时不联网）`
+          : `已保存自定义提供商「${savedName}」；未验证（保存时不联网）`
+      )
     } catch (error) {
       setFormError(failureText(error, '自定义提供商没有保存成功，再试一次。'))
     } finally {
@@ -223,19 +242,17 @@ export function CustomProviderForm({
         </p>
       )}
 
-      <label className="settings-field">
-        <span>API 密钥</span>
-        <input
-          type="password"
-          aria-label="自定义 API 密钥"
-          autoComplete="off"
-          spellCheck={false}
-          value={apiKey}
-          disabled={busy}
-          placeholder="sk-…（本机保存；留空表示这个地址不需要密钥）"
-          onChange={(event) => setApiKey(event.target.value)}
-        />
-      </label>
+      <CredentialEditor
+        idPrefix="custom-provider-credential"
+        value={credential}
+        onChange={setCredential}
+        apiKeyLabel="自定义 API 密钥"
+        keyHint="留空表示这个地址不需要密钥（自部署 / 本地中转）；密钥只经系统密钥库加密保存。"
+        disabled={busy}
+      />
+      <p className="field-hint">
+        环境变量模式不写密文；切回本机或更换来源时由主进程按确认规则处理。
+      </p>
 
       <label className="settings-field">
         <span>首个模型</span>
