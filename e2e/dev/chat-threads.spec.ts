@@ -337,13 +337,13 @@ test.describe('线程主对象与上下文', () => {
     await expect(page.getByText('词条 approach · 3 条原句 · 2 篇')).toBeVisible()
 
     // 默认带主词形与最近收的那一句。
-    await expect(page.getByTestId('context-summary')).toHaveText(/^1 个词 · 1 条原句 · 约 \d+ 字$/)
+    await expect(page.getByTestId('context-summary')).toHaveText(/^1 条原句 · 1 个词 · 约 \d+ 字$/)
     const originalSentence = 'Another passage approaches the same idea.'
     await expect(page.locator('.context-chip-label')).toHaveText(['approach', originalSentence])
 
     // 每项可单独移除。
     await page.getByRole('button', { name: `移除上下文：${originalSentence}`, exact: true }).click()
-    await expect(page.getByTestId('context-summary')).toHaveText('1 个词 · 0 条原句 · 约 8 字')
+    await expect(page.getByTestId('context-summary')).toHaveText('1 个词 · 约 8 字')
 
     // 从候选里加回另一句。
     await page.getByRole('button', { name: '添加上下文' }).click()
@@ -352,7 +352,7 @@ test.describe('线程主对象与上下文', () => {
       .locator('.context-candidate[data-context-kind="sentence"]')
       .filter({ hasText: 'Employers approach hiring differently.' })
       .click()
-    await expect(page.getByTestId('context-summary')).toHaveText(/^1 个词 · 1 条原句 · 约 \d+ 字$/)
+    await expect(page.getByTestId('context-summary')).toHaveText(/^1 条原句 · 1 个词 · 约 \d+ 字$/)
     await page.getByRole('button', { name: '添加上下文' }).click()
 
     await ask(page, '这句里 approach 是什么用法？')
@@ -385,7 +385,7 @@ test.describe('线程主对象与上下文', () => {
     await expect(
       page.getByText('2026年6月 · 第1套 · 仔细阅读 Passage One · 段 1 · 第 1 句')
     ).toBeVisible()
-    await expect(page.getByTestId('context-summary')).toHaveText(/^1 个词 · 1 条原句 · 约 \d+ 字$/)
+    await expect(page.getByTestId('context-summary')).toHaveText(/^1 条原句 · 1 个词 · 约 \d+ 字$/)
 
     // 空白：线程栏里的「新的学习」。
     await page.getByRole('complementary', { name: '线程列表' }).getByRole('button', { name: '新的学习' }).click()
@@ -403,7 +403,7 @@ test.describe('线程主对象与上下文', () => {
     await expect(page.locator('.chat-subtitle')).toHaveText(
       /^\d{4}年\d{1,2}月 · 第\d+套 · .+ · \d+ 词$/
     )
-    await expect(page.getByTestId('context-summary')).toHaveText(/^0 个词 · 0 条原句 · 约 \d+ 字$/)
+    await expect(page.getByTestId('context-summary')).toHaveText(/^1 篇全文 · 约 \d+ 字$/)
   })
 })
 

@@ -217,17 +217,33 @@ test('就正文里点中的词提问时带上该词与那条原句', async ({ la
   }
 })
 
-test('阅读页顶部可以围绕当前文章对话', async ({ launch }) => {
-  const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
-  await page.getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '文章库' }).click()
-  await page.locator('.library-row').first().click()
-  await page.getByRole('complementary', { name: '文章详情' })
-    .getByRole('button', { name: '继续阅读' }).click()
-  const title = await page.locator('.reading-bar-title').innerText()
-  await page.getByRole('button', { name: '与这篇文章对话' }).click()
-  await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible()
-  await expect(page.getByTestId('context-summary')).toHaveText(/^0 个词 · 0 条原句 · 约 \d+ 字$/)
+test('文章对话把完整正文和准确摘要带给模型', async ({ launch }) => {
+  const stub = await startSseStub({ kind: 'stream', text: ['好的。'] })
+  try {
+    const { page } = await launch({ env: {
+      CORPUS_DIRECTORY: corpusDirectory,
+      DEEPSEEK_BASE_URL: stub.baseUrl,
+      DEEPSEEK_API_KEY: 'e2e-test-key',
+      DEEPSEEK_MODEL: 'deepseek-flash'
+    } })
+    await page.getByRole('navigation', { name: '全局导航' })
+      .getByRole('button', { name: '文章库' }).click()
+    await page.locator('.library-row').first().click()
+    await page.getByRole('complementary', { name: '文章详情' })
+      .getByRole('button', { name: '继续阅读' }).click()
+    const title = await page.locator('.reading-bar-title').innerText()
+    await page.getByRole('button', { name: '与这篇文章对话' }).click()
+    await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible()
+    const fullText = '1. Employers approach hiring differently.\n\n2. Approaching a new desk takes patience.'
+    await expect(page.getByTestId('context-summary')).toHaveText(`1 篇全文 · 约 ${Array.from(fullText).length} 字`)
+    await page.getByRole('textbox', { name: '输入问题' }).fill('概括全文')
+    await page.getByRole('button', { name: '发送' }).click()
+    await expect(page.getByText('好的。')).toBeVisible()
+    const messages = (stub.requests[0]?.body.messages ?? []) as { role: string; content: string }[]
+    expect(messages[0]?.content).toContain(fullText)
+  } finally {
+    await stub.close()
+  }
 })
 
 test('旧线程上下文已满时保留原内容，提示可以新开线程', async ({ launch, userDataDirectory }) => {

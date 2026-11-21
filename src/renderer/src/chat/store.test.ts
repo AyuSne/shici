@@ -55,6 +55,8 @@ function view(id: string, items: readonly ThreadContextItem[]): ChatThreadView {
     main: { kind: 'none' },
     context: [...items],
     contextSummary: {
+      articleCount: 0,
+      paragraphCount: 0,
       wordCount: items.length,
       sentenceCount: 0,
       charCount: items.reduce((total, item) => total + item.text.length, 0)
