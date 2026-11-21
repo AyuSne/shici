@@ -19,6 +19,7 @@ import { createCustomProvider } from '../settings/provider-editing'
 import { readProviderModels } from '../settings/providers'
 import type { SecretStore } from '../settings/secret-store'
 import { resolveChatConfig } from './config'
+import type { RetryTiming } from './retry'
 import { createChatService } from './service'
 
 /**
@@ -113,9 +114,16 @@ describe('OpenAI Responses 协议', () => {
     return added.providerId
   }
 
+  /** 只替换等待与抖动的系统边界：重试策略仍由生产代码按 normal 执行。 */
+  const fastRetry: RetryTiming = {
+    random: () => 0.5,
+    sleep: async () => true
+  }
+
   function service(): ReturnType<typeof createChatService> {
     return createChatService({
-      resolveConfig: () => resolveChatConfig(database, secrets, {})
+      resolveConfig: () => resolveChatConfig(database, secrets, {}),
+      retryTiming: fastRetry
     })
   }
 
@@ -305,7 +313,7 @@ describe('OpenAI Responses 协议', () => {
     [500, 'SERVER', 'server-busy'],
     [503, 'SERVER', 'server-busy']
   ] as const)(
-    'HTTP %i 归为 %s，保留 request id 且只发一次请求',
+    'HTTP %i 归为 %s，保留 request id；临时错误按 normal 重试到耗尽',
     async (status, kind, code) => {
       const target = await stub({
         kind: 'status',
@@ -332,9 +340,10 @@ describe('OpenAI Responses 协议', () => {
         }
       })
       expect(events.some((event) => event.type === 'done')).toBe(false)
-      // maxRetries: 0：失败一次不偷偷重发。
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      expect(target.requests).toHaveLength(1)
+      // 低层 maxRetries: 0；service 层只对 429/5xx 这类临时错误重试到耗尽。
+      expect(target.requests).toHaveLength(
+        code === 'rate-limited' || code === 'server-busy' ? 6 : 1
+      )
     }
   )
 

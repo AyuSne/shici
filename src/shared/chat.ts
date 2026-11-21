@@ -64,7 +64,7 @@ export type ChatError = {
   /** 供日志与排障使用的服务端报文，不直接展示给学习者。 */
   detail?: string
   requestId?: string
-  /** 服务端要求等待多久再试（Retry-After）；本批不自动重试。 */
+  /** 服务端要求等待多久再试（Retry-After）；自动重试不会早于这个时间。 */
   retryAfterMs?: number
 }
 

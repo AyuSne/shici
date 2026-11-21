@@ -24,6 +24,7 @@ import type { SecretStore } from '../settings/secret-store'
 import type { ChatConfig } from './config'
 import { resolveChatConfig } from './config'
 import type { ChatModelDescriptor } from './model-descriptor'
+import type { RetryTiming } from './retry'
 import { createChatService } from './service'
 
 /**
@@ -103,6 +104,12 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 5000): Promise<vo
 }
 
 const userTurn = { role: 'user' as const, content: '你好' }
+
+/** 只替换等待与抖动：策略仍按生产代码的 normal / 5 次执行。 */
+const fastRetry: RetryTiming = {
+  random: () => 0.5,
+  sleep: async () => true
+}
 
 function pathOf(url: string): string {
   return url.split('?')[0] ?? url
@@ -259,7 +266,10 @@ describe('Anthropic Messages 流式请求（真实 pi + 本地 SSE stub）', () 
             ? { 'request-id': 'req-anthropic-429', 'retry-after': '3' }
             : {}
     })
-    const service = createChatService({ resolveConfig: () => configFor(target) })
+    const service = createChatService({
+      resolveConfig: () => configFor(target),
+      retryTiming: fastRetry
+    })
     const { events, send, waitFor } = collector()
 
     service.start(
@@ -278,18 +288,24 @@ describe('Anthropic Messages 流式请求（真实 pi + 本地 SSE stub）', () 
         error: { requestId: 'req-anthropic-429', retryAfterMs: 3000 }
       })
     }
+    // 401/402/413 不重试；429/500/503 是临时错误，耗尽前共发 6 次。
+    expect(target.requests).toHaveLength(
+      code === 'rate-limited' || code === 'server-busy' ? 6 : 1
+    )
   })
 
-  it('失败的一次调用只发一次请求：maxRetries 为 0，不会在模型层偷偷重试', async () => {
+  it('service 层按 normal 重试 500 直到耗尽（6 次），低层仍是一次调用一次请求', async () => {
     const target = await stub({ kind: 'status', status: 500 })
-    const service = createChatService({ resolveConfig: () => configFor(target) })
+    const service = createChatService({
+      resolveConfig: () => configFor(target),
+      retryTiming: fastRetry
+    })
     const { send, waitFor } = collector()
 
     service.start({ threadId: 'thread-1', streamId: 'stream-once', messages: [userTurn] }, send)
     await waitFor((current) => current.some((event) => event.type === 'error'))
-    await new Promise((resolve) => setTimeout(resolve, 120))
 
-    expect(target.requests).toHaveLength(1)
+    expect(target.requests).toHaveLength(6)
   })
 
   it('连不上服务时归为网络异常，稳定分类是 TRANSPORT 且没有状态码', async () => {
@@ -301,7 +317,8 @@ describe('Anthropic Messages 流式请求（真实 pi + 本地 SSE stub）', () 
         baseUrl,
         model: descriptor.model,
         descriptor
-      })
+      }),
+      retryTiming: fastRetry
     })
     const { events, send, waitFor } = collector()
 
@@ -317,7 +334,10 @@ describe('Anthropic Messages 流式请求（真实 pi + 本地 SSE stub）', () 
 
   it('成功响应但没有任何内容块时归为 EMPTY_RESPONSE，不假装 done', async () => {
     const target = await stub({ kind: 'stream' })
-    const service = createChatService({ resolveConfig: () => configFor(target) })
+    const service = createChatService({
+      resolveConfig: () => configFor(target),
+      retryTiming: fastRetry
+    })
     const { events, send, waitFor } = collector()
 
     service.start({ threadId: 'thread-1', streamId: 'stream-empty', messages: [userTurn] }, send)

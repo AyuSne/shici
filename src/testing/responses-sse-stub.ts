@@ -17,7 +17,8 @@ import {
  * 与 `sse-stub.ts` 分开维护：每种协议都有自己的事件形状。测试与 E2E 共用
  * 本文件，全部请求都落在 127.0.0.1；传输外壳共用 `sse-transport.ts`。
  */
-export type ResponsesStubScript =
+/** 单个响应；`sequence` 里按请求顺序取用，最后一个脚本会被重复使用。 */
+export type ResponsesStubResponse =
   | {
       kind: 'stream'
       thinking?: readonly string[]
@@ -63,6 +64,11 @@ export type ResponsesStubScript =
       headers?: Readonly<Record<string, string>>
     }
 
+/** 默认脚本或脚本序列；序列用完后重复最后一个。 */
+export type ResponsesStubScript =
+  | ResponsesStubResponse
+  | { kind: 'sequence'; scripts: readonly ResponsesStubResponse[] }
+
 export type ResponsesStubRequest = LocalSseRequest
 
 export type ResponsesStub = {
@@ -77,9 +83,18 @@ export async function startResponsesStub(
   script: ResponsesStubScript
 ): Promise<ResponsesStub> {
   let current = script
-  const transport = await startLocalSseTransport((response) =>
-    respond(response, current)
-  )
+  let sequenceIndex = 0
+  const transport = await startLocalSseTransport((response) => {
+    const chosen =
+      current.kind === 'sequence'
+        ? (current.scripts[Math.min(sequenceIndex, current.scripts.length - 1)] ?? {
+            kind: 'status' as const,
+            status: 500
+          })
+        : current
+    sequenceIndex += 1
+    return respond(response, chosen)
+  })
 
   return {
     baseUrl: transport.baseUrl,
@@ -89,6 +104,7 @@ export async function startResponsesStub(
     },
     setScript(next) {
       current = next
+      sequenceIndex = 0
     },
     close() {
       return transport.close()
@@ -98,7 +114,7 @@ export async function startResponsesStub(
 
 async function respond(
   response: ServerResponse,
-  script: ResponsesStubScript
+  script: ResponsesStubResponse
 ): Promise<void> {
   if (script.kind === 'status') {
     response.writeHead(script.status, {

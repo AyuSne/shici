@@ -63,6 +63,11 @@ export type GeminiStubScript =
       kind: 'per-model'
       scripts: Readonly<Record<string, GeminiStubResponse>>
     }
+  | {
+      /** 按请求顺序换响应，覆盖「失败 N 次后成功」；用完后重复最后一个。 */
+      kind: 'sequence'
+      scripts: readonly GeminiStubResponse[]
+    }
 
 export type GeminiStubRequest = LocalSseRequest
 
@@ -78,9 +83,12 @@ export async function startGeminiSseStub(
   initialScript: GeminiStubScript
 ): Promise<GeminiSseStub> {
   let script = initialScript
-  const transport = await startLocalSseTransport((response, request) =>
-    respond(response, responseFor(script, request.url))
-  )
+  let sequenceIndex = 0
+  const transport = await startLocalSseTransport((response, request) => {
+    const selected = responseFor(script, request.url, sequenceIndex)
+    sequenceIndex += 1
+    return respond(response, selected)
+  })
 
   return {
     baseUrl: transport.baseUrl,
@@ -90,6 +98,7 @@ export async function startGeminiSseStub(
     },
     setScript(next) {
       script = next
+      sequenceIndex = 0
     },
     close() {
       return transport.close()
@@ -97,8 +106,21 @@ export async function startGeminiSseStub(
   }
 }
 
-/** 同一个端口上按模型 ID 选脚本；找不到就明确 404，避免测试静默连错。 */
-function responseFor(script: GeminiStubScript, url: string): GeminiStubResponse {
+/** 同一个端口上按请求序号/模型 ID 选脚本；找不到就明确 404，避免测试静默连错。 */
+function responseFor(
+  script: GeminiStubScript,
+  url: string,
+  sequenceIndex: number
+): GeminiStubResponse {
+  if (script.kind === 'sequence') {
+    return (
+      script.scripts[Math.min(sequenceIndex, script.scripts.length - 1)] ?? {
+        kind: 'status',
+        status: 500,
+        message: `stub has no script for ${url}`
+      }
+    )
+  }
   if (script.kind !== 'per-model') {
     return script
   }

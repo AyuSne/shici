@@ -7,6 +7,7 @@ import type {
 } from '../../shared/chat'
 import { type ChatConfig } from './config'
 import { streamChatCompletion } from './pi-stream'
+import { runWithRetry, type RetryTiming } from './retry'
 
 export type ChatUpdateSender = (update: ChatStreamUpdate) => void
 
@@ -21,6 +22,11 @@ export type ChatServiceOptions = {
   resolveConfig: () => ChatConfig | null
   /** 一次完整成功的调用之后把对应 provider 标成已验证。 */
   onVerified?: (providerId: string) => void
+  /**
+   * 重试等待与抖动的系统边界；生产不传，单测替换成确定性实现。
+   * 策略本身仍只来自 provider 配置，测试替身不能改动「最多 5 次」等规则。
+   */
+  retryTiming?: RetryTiming
 }
 
 /**
@@ -56,7 +62,7 @@ export function createChatService(options: ChatServiceOptions): ChatService {
         }
       }
 
-      void runStream(request, emit, controller, config)
+      void runStream(request, emit, controller, config, options.retryTiming)
         .catch(() => {
           if (!controller.signal.aborted) {
             emit({
@@ -91,7 +97,8 @@ async function runStream(
   request: ChatStartRequest,
   send: ChatUpdateSender,
   controller: AbortController,
-  config: ChatConfig | null
+  config: ChatConfig | null,
+  retryTiming: RetryTiming | undefined
 ): Promise<void> {
   if (!config) {
     send({
@@ -118,13 +125,22 @@ async function runStream(
     return
   }
 
-  await streamChatCompletion({
-    apiKey: config.apiKey,
-    descriptor: config.descriptor,
-    messages: request.messages,
-    systemPrompt: request.systemPrompt,
+  // 配置/缺钥匙的预检已经在上面的分支返回：它们不会进入重试执行层，
+  // 所以 always 策略也不会重试本地配置错误。
+  await runWithRetry({
+    policy: config.retryPolicy,
     signal: controller.signal,
-    onEvent: (event) => send({ streamId: request.streamId, event })
+    timing: retryTiming,
+    send: (event) => send({ streamId: request.streamId, event }),
+    runAttempt: (onEvent) =>
+      streamChatCompletion({
+        apiKey: config.apiKey,
+        descriptor: config.descriptor,
+        messages: request.messages,
+        systemPrompt: request.systemPrompt,
+        signal: controller.signal,
+        onEvent
+      })
   })
 }
 

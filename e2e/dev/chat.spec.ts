@@ -134,11 +134,16 @@ test.describe('空白线程的流式与思维链', () => {
       await ask(page)
 
       const alert = page.getByRole('alert')
-      await expect(alert).toContainText(scenario.title)
+      // 临时错误先自动重试 5 次（500ms→8s）才显示最终错误；不可重试的立刻出现。
+      await expect(alert).toContainText(scenario.title, {
+        timeout: scenario.retryable ? 30_000 : 10_000
+      })
       if (scenario.retryable) {
         await expect(alert.getByRole('button', { name: '重试' })).toBeVisible()
+        await expect.poll(() => stub.requests.length, { timeout: 30_000 }).toBe(6)
       } else {
         await expect(alert.getByRole('button', { name: '重试' })).toHaveCount(0)
+        expect(stub.requests.length).toBe(1)
       }
 
       if ('action' in scenario) {
@@ -158,7 +163,8 @@ test.describe('空白线程的流式与思维链', () => {
         stub.setScript({ kind: 'stream', thinking: ['想'], text: ['重试成功'] })
         await alert.getByRole('button', { name: '重试' }).click()
         await expect(page.getByText('重试成功')).toBeVisible()
-        await expect.poll(() => stub.requests.length).toBe(2)
+        // 自动耗尽 6 次之后，用户手动重试是第 7 次请求。
+        await expect.poll(() => stub.requests.length).toBe(7)
       }
     })
   }
@@ -169,7 +175,8 @@ test.describe('空白线程的流式与思维链', () => {
     await ask(page)
 
     const alert = page.getByRole('alert')
-    await expect(alert).toContainText('网络异常')
+    // TRANSPORT 也是临时错误：先自动重试 5 次，再显示最终的网络错误。
+    await expect(alert).toContainText('网络异常', { timeout: 30_000 })
     await expect(alert).toContainText('没连上模型服务')
     await expect(alert.getByRole('button', { name: '重试' })).toBeVisible()
   })

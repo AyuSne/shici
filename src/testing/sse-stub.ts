@@ -12,7 +12,8 @@ import {
  * DeepSeek 的真实 chunk（思维链先、正文后、末尾 finish_reason 与 [DONE]）。
  * 测试不联网。传输外壳在 `sse-transport.ts`；这里只保留本协议的事件形状。
  */
-export type StubScript =
+/** 单个响应；`sequence` 里按请求顺序取用，最后一个脚本会被重复使用。 */
+export type StubResponse =
   | {
       kind: 'stream'
       thinking?: readonly string[]
@@ -55,6 +56,14 @@ export type StubScript =
       headers?: Readonly<Record<string, string>>
     }
 
+/**
+ * 默认脚本或脚本序列。`sequence` 让同一个本地端点按请求顺序换响应，
+ * 用来真实覆盖「失败 N 次后成功」；脚本用完后重复最后一个。
+ */
+export type StubScript =
+  | StubResponse
+  | { kind: 'sequence'; scripts: readonly StubResponse[] }
+
 export type StubRequest = LocalSseRequest
 
 export type SseStub = {
@@ -67,9 +76,18 @@ export type SseStub = {
 
 export async function startSseStub(script: StubScript): Promise<SseStub> {
   let current = script
-  const transport = await startLocalSseTransport((response) =>
-    respond(response, current)
-  )
+  let sequenceIndex = 0
+  const transport = await startLocalSseTransport((response) => {
+    const chosen =
+      current.kind === 'sequence'
+        ? (current.scripts[Math.min(sequenceIndex, current.scripts.length - 1)] ?? {
+            kind: 'status' as const,
+            status: 500
+          })
+        : current
+    sequenceIndex += 1
+    return respond(response, chosen)
+  })
 
   return {
     baseUrl: transport.baseUrl,
@@ -79,6 +97,7 @@ export async function startSseStub(script: StubScript): Promise<SseStub> {
     },
     setScript(next) {
       current = next
+      sequenceIndex = 0
     },
     close() {
       return transport.close()
@@ -93,7 +112,7 @@ export function unusedBaseUrl(): Promise<string> {
   return unusedLocalBaseUrl()
 }
 
-async function respond(response: ServerResponse, script: StubScript): Promise<void> {
+async function respond(response: ServerResponse, script: StubResponse): Promise<void> {
   if (script.kind === 'status') {
     response.writeHead(script.status, {
       'Content-Type': 'application/json; charset=utf-8',

@@ -1,5 +1,6 @@
 import type { AppDatabase } from '../db/database'
 import type { ChatCredentialProblem } from '../../shared/chat'
+import type { ProviderRetryPolicy } from '../../shared/model-providers'
 import {
   isProviderSelectionCleared,
   readActiveChatProvider,
@@ -25,6 +26,11 @@ export type ChatConfig = {
   modelId?: string
   /** 这次调用冻结的描述符：协议、地址、容量与思考元数据都在这里。 */
   descriptor: ChatModelDescriptor
+  /**
+   * 这次调用冻结的重试策略：切换 provider 只影响之后的调用，正在跑的流
+   * 始终按启动时的策略重试。环境变量退路没有 provider 行，按 normal。
+   */
+  retryPolicy?: ProviderRetryPolicy
   /**
    * 配置写着「用本机密钥」或「读环境变量」，但凭据确实拿不到：
    * 发送前就明确报配置错误，不拿空密钥去撞服务端，也不换源。
@@ -80,6 +86,7 @@ export function resolveChatConfig(
       providerId: active.provider.id,
       modelId: active.model.id,
       descriptor,
+      retryPolicy: active.provider.retryPolicy,
       ...(credentialProblem === undefined
         ? {}
         : { missingCredential: true, credentialProblem })

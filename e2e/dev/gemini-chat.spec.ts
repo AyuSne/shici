@@ -123,14 +123,16 @@ test.describe('Google Gemini 内置入口与聊天', () => {
     expect(stub.requests.length).toBe(2)
 
     // Gemini 的错误也走同一条稳定分类：Electron 里同样捕获到 429 与响应头 request id。
+    // 429 是临时错误：默认 normal 会按 Retry-After（1s）重试 5 次才显示最终错误。
     stub.setScript({
       kind: 'status',
       status: 429,
       headers: { 'x-goog-request-id': 'req-e2e-gemini-429', 'retry-after': '1' }
     })
     await ask(page, '再问一次')
-    await expect(page.getByText('请求太频繁（429）')).toBeVisible()
+    await expect(page.getByText('请求太频繁（429）')).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('请求 ID：req-e2e-gemini-429')).toBeVisible()
-    expect(stub.requests.length).toBe(3)
+    // 前两次是成功/停止，429 共尝试 6 次。
+    expect(stub.requests.length).toBe(8)
   })
 })
