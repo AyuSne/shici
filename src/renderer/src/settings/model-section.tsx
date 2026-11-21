@@ -258,7 +258,7 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                             <input
                               type="radio"
                               name={`default-model-${provider.id}`}
-                              checked={provider.defaultModelId === model.id}
+                              checked={provider.defaultModelRowId === model.id}
                               disabled={busy !== null}
                               onChange={() => void onDefaultModel(provider, model.id)}
                             />

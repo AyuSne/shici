@@ -98,12 +98,42 @@ export function classifyStatus(status: number | undefined): ProviderErrorCode | 
   return 'UNKNOWN'
 }
 
-/** fetch 抛出异常 → 超时还是传输失败；不看错误 message 的具体措辞。 */
+/** 各运行时把超时放在 `code` 上的写法；message 的文字不作为分类依据。 */
+const TIMEOUT_CODES = new Set([
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT'
+])
+
+/** cause 链最多看这么多层；正常异常远到不了，坏数据也不会让分类陷进去。 */
+const MAX_CAUSE_DEPTH = 10
+
+/**
+ * fetch 抛出异常 → 超时还是传输失败；不看错误 message 的具体措辞。
+ *
+ * 原生 Node/undici 的 fetch 会把连接/响应头/响应体超时码放在 `error.cause`
+ * （有时还嵌一层），顶层只有 `TypeError('fetch failed')`。这里沿 cause 链找
+ * `name` 与 `code`，并用 visited 集合挡住打转的链。
+ */
 export function classifyFailure(error: unknown): TransportFailure {
-  const name = error instanceof Error ? error.name : ''
-  const code = (error as { code?: unknown } | null)?.code
-  if (/timeout/i.test(name) || code === 'ETIMEDOUT' || name === 'AbortError') {
-    return 'TIMEOUT'
+  const visited = new Set<unknown>()
+  let current: unknown = error
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth += 1) {
+    if (typeof current !== 'object' || current === null || visited.has(current)) {
+      break
+    }
+    visited.add(current)
+    const name = current instanceof Error ? current.name : ''
+    const code = (current as { code?: unknown }).code
+    if (
+      /timeout/i.test(name) ||
+      name === 'AbortError' ||
+      (typeof code === 'string' && TIMEOUT_CODES.has(code))
+    ) {
+      return 'TIMEOUT'
+    }
+    current = (current as { cause?: unknown }).cause
   }
   return 'TRANSPORT'
 }

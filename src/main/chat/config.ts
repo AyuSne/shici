@@ -1,6 +1,9 @@
-import type { ReasoningEffort } from '../../shared/chat'
 import type { AppDatabase } from '../db/database'
-import { isProviderSelectionCleared, readActiveChatProvider } from '../settings/providers'
+import {
+  isProviderSelectionCleared,
+  readActiveChatProvider,
+  readModelProviderRecords
+} from '../settings/providers'
 import type { SecretStore } from '../settings/secret-store'
 import {
   DEFAULT_BASE_URL,
@@ -11,12 +14,6 @@ import {
 } from './model-descriptor'
 
 export { DEFAULT_BASE_URL, DEFAULT_MODEL }
-
-/**
- * 首版固定把思考强度传成 high，设置界面不暴露（见 docs/product-scope.md）。
- * 真正发给服务端前还要按模型能力降级或省略，见 `thinking.ts`。
- */
-export const THINKING_EFFORT: ReasoningEffort = 'high'
 
 export type ChatConfig = {
   apiKey: string
@@ -61,11 +58,21 @@ export function resolveChatConfig(
   const active = readActiveChatProvider(database, { secrets, env })
   if (active !== null) {
     const descriptor = descriptorOfProvider(active.provider, active.model)
-    // 本机密文解不开、或环境变量缺失时，明确报「还没有配置」。
-    // 从未保存过密钥的本机配置（例如本地 Ollama）仍允许不带密钥发送。
+    if (descriptor === null) {
+      // 库里存了本版不认识的协议：明确没有可用配置，不拿别的协议去发请求。
+      return null
+    }
+    // 配置写着「用本机密钥」或「读环境变量」，但凭据确实拿不到：明确报「还没有配置」，
+    // 不拿空密钥去撞服务端，也不换源。
+    //
+    // 内置目录添加的 provider 一定存过密钥：备份会把密文抹成 NULL，恢复后再发送
+    // 必须当成缺失，而不是像本地 Ollama 那样允许无密钥。保留无密钥发送的只有
+    // 迁移来的 custom/本地配置（本批没有自定义编辑器，将来由显式 auth_mode 表达）。
     const missingCredential =
       active.apiKey.trim() === '' &&
-      (active.provider.authMode === 'env' || active.provider.secretCiphertext !== null)
+      (active.provider.authMode === 'env' ||
+        active.provider.secretCiphertext !== null ||
+        active.provider.source === 'builtin')
     return {
       apiKey: active.apiKey,
       // 模型行可以覆盖 provider 的地址（聚合网关按模型带地址）。
@@ -78,6 +85,12 @@ export function resolveChatConfig(
     }
   }
   if (isProviderSelectionCleared(database)) {
+    return null
+  }
+  // 环境变量退路只留给「还没有任何 provider 行」的开发态与 E2E。
+  // 有 provider 却一套都没启用时，设置页明说「现在没有使用中的提供商」，
+  // 这里就不能静默拿环境变量里的另一套凭据顶上。
+  if (readModelProviderRecords(database).length > 0) {
     return null
   }
   return readChatConfig(env)

@@ -117,9 +117,10 @@ describe('addBuiltinProvider', () => {
       catalogProviderId: 'deepseek',
       apiKeyMask: 'sk-·············0001',
       keyState: 'stored',
-      defaultModel: 'deepseek-flash',
+      defaultModelRowId: summary?.models[0]?.id,
       verification: 'unverified'
     })
+    expect(summary?.models[0]?.modelId).toBe('deepseek-flash')
     // 摘要与数据库里都没有明文密钥。
     expect(JSON.stringify(summary)).not.toContain('sk-deepseek-0001')
     database.pragma('wal_checkpoint(TRUNCATE)')
@@ -171,16 +172,16 @@ describe('addBuiltinProvider', () => {
     const glm = providers.find((provider) => provider.providerKey === 'glm')
     expect(kimi).toMatchObject({
       baseUrl: 'https://api.moonshot.cn/v1',
-      envVar: 'MOONSHOT_API_KEY',
-      defaultModel: 'kimi-k2.6'
+      envVar: 'MOONSHOT_API_KEY'
     })
+    expect(kimi?.models[0]?.modelId).toBe('kimi-k2.6')
     expect(kimi?.models).toHaveLength(6)
     expect(kimi?.models[0]).toMatchObject({ contextWindow: 262144, maxTokens: 262144 })
     expect(glm).toMatchObject({
       baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-      envVar: 'ZAI_API_KEY',
-      defaultModel: 'glm-4.7'
+      envVar: 'ZAI_API_KEY'
     })
+    expect(glm?.models[0]?.modelId).toBe('glm-4.7')
     expect(glm?.models).toHaveLength(7)
     expect(glm?.models[0]).toMatchObject({ contextWindow: 204800, maxTokens: 131072 })
   })
@@ -237,7 +238,7 @@ describe('addBuiltinProvider', () => {
     const modelId = readProviderModels(database, 'profile-old')[0]!.id
     expect(setDefaultProviderModel(database, 'profile-old', modelId)).toEqual({
       status: 'saved',
-      defaultModelId: modelId
+      defaultModelRowId: modelId
     })
 
     // 旧表迁移后只读：任何运行时写它都会撞上这个哨兵。
@@ -263,7 +264,7 @@ describe('setDefaultProviderModel', () => {
 
     expect(
       setDefaultProviderModel(database, providerId, pro!.id)
-    ).toEqual({ status: 'saved', defaultModelId: pro!.id })
+    ).toEqual({ status: 'saved', defaultModelRowId: pro!.id })
     expect(readDefaultModel(database, readModelProvider(database, providerId)!)?.modelId).toBe(
       'deepseek-v4-pro'
     )

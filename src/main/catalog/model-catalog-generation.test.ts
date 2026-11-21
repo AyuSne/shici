@@ -230,6 +230,22 @@ describe('共享模型目录生成', () => {
     expect(typeof module.buildModelCatalog).toBe('function')
   })
 
+  it('生成脚本的协议清单与共享 TS 契约逐项一致，不能静默漂移', async () => {
+    const script = await import(pathToFileURL(generator).href)
+    const shared = await import('../../shared/model-protocols')
+
+    // 生成脚本离线独立运行，保留自己的 JS 清单；两份必须同一个顺序、同一个集合。
+    expect([...script.MODEL_PROTOCOLS]).toEqual([...shared.MODEL_PROTOCOLS])
+    for (const protocol of shared.MODEL_PROTOCOLS) {
+      expect(script.MODEL_PROTOCOLS).toContain(protocol)
+      expect(shared.isModelProtocol(protocol)).toBe(true)
+    }
+    expect(shared.MODEL_PROTOCOLS.every((protocol: string) =>
+      script.MODEL_PROTOCOLS.includes(protocol)
+    )).toBe(true)
+    expect(shared.isModelProtocol('mistral-conversations')).toBe(false)
+  })
+
   it('模型清单与思考元数据来自已安装的 pi 目录', async () => {
     const { getBuiltinModels } = await import(
       '@earendil-works/pi-ai/providers/all'

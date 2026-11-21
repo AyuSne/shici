@@ -1,7 +1,7 @@
-import type { Api, Model } from '@earendil-works/pi-ai'
 import type { ModelThinkingLevel } from '../../shared/model-catalog'
 import type { ChatModelDescriptor } from './model-descriptor'
 import { loadPi } from './pi-modules'
+import { piModelOf } from './pi-model'
 
 /**
  * 首版思考强度固定 high（见 docs/product-scope.md），但界面不暴露不等于可以乱传：
@@ -26,28 +26,10 @@ export function chooseThinkingLevel(
   return LOWER_THAN_HIGH.find((level) => available.has(level))
 }
 
-const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
-
-/** 只给 `getSupportedThinkingLevels` 读 reasoning / thinkingLevelMap 用。 */
-function piModelOf(descriptor: ChatModelDescriptor): Model<Api> {
-  return {
-    id: descriptor.model,
-    name: descriptor.model,
-    api: descriptor.api,
-    provider: descriptor.provider,
-    baseUrl: descriptor.baseUrl,
-    input: [...descriptor.input],
-    cost: ZERO_COST,
-    contextWindow: descriptor.contextWindow,
-    maxTokens: descriptor.maxTokens,
-    reasoning: descriptor.reasoning,
-    ...(descriptor.thinkingLevelMap === undefined
-      ? {}
-      : { thinkingLevelMap: descriptor.thinkingLevelMap }),
-    ...(descriptor.compat === undefined ? {} : { compat: descriptor.compat })
-  } as Model<Api>
-}
-
+/**
+ * 能力查询与真实请求共用 `piModelOf`：判断思考档位时看到的模型，
+ * 必须与真正发给 pi 的那个完全一致。
+ */
 export async function resolveThinkingLevel(
   descriptor: ChatModelDescriptor
 ): Promise<EffectiveThinkingLevel | undefined> {

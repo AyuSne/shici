@@ -261,6 +261,35 @@ describe('resolveChatConfig', () => {
     expect(resolveChatConfig(database, secrets, {})).toBeNull()
   })
 
+  it('有 provider 但一套都没启用时不回落到环境变量，明确没有可用配置', () => {
+    seedProfiles([
+      { id: 'provider-one', name: '第一套', model: 'model-one', apiKey: 'sk-one' }
+    ])
+    migrate(database)
+
+    // 只保存、没点「使用这个」：设置页明说没有使用中的提供商，聊天不能再静默
+    // 拿环境变量里的另一套密钥顶上。
+    expect(
+      resolveChatConfig(database, secrets, {
+        DEEPSEEK_API_KEY: 'env-key',
+        DEEPSEEK_MODEL: 'env-model'
+      })
+    ).toBeNull()
+  })
+
+  it('使用中的模型协议本版不认识时明确没有可用配置，不拿别的协议发请求', () => {
+    seedProfiles([
+      { id: 'provider-unknown', name: '未知协议', model: 'model-one', apiKey: 'sk-one' }
+    ])
+    migrate(database)
+    activate('provider-unknown')
+    database
+      .prepare(`UPDATE model_provider_model SET api = 'mistral-conversations'`)
+      .run()
+
+    expect(resolveChatConfig(database, secrets, {})).toBeNull()
+  })
+
   it('删掉使用中的 provider 后不静默回落到环境变量里的另一套凭据', () => {
     seedProfiles([
       { id: 'provider-one', name: '第一套', model: 'model-one', apiKey: 'sk-one' }

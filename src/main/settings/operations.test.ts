@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createBackup } from '../data/backup'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate, migrations } from '../db/migrations'
+import { addBuiltinProvider } from './provider-writes'
 import { readSettingsOverview } from './operations'
 import type { SecretStore } from './secret-store'
 
@@ -84,20 +85,20 @@ describe('readSettingsOverview', () => {
 
     expect(overview.providers).toHaveLength(2)
     expect(overview.activeProviderId).toBe('profile-deepseek')
-    expect(overview.defaultModelId).toBe(overview.providers[0]?.defaultModelId)
+    expect(overview.defaultModelRowId).toBe(overview.providers[0]?.defaultModelRowId)
     expect(overview.activeModel).toBe('deepseek-flash')
     expect(overview.providers[0]).toMatchObject({
       displayName: 'DeepSeek 官方',
       protocol: 'openai-completions',
       active: true,
-      verification: 'verified',
-      defaultModel: 'deepseek-flash'
+      verification: 'verified'
     })
+    expect(overview.providers[0]?.models[0]?.modelId).toBe('deepseek-flash')
     expect(overview.providers[1]).toMatchObject({
       displayName: '备用',
-      active: false,
-      defaultModel: 'backup-model'
+      active: false
     })
+    expect(overview.providers[1]?.models[0]?.modelId).toBe('backup-model')
     expect(overview).toMatchObject({
       reading: {
         fontSize: 20,
@@ -125,8 +126,33 @@ describe('readSettingsOverview', () => {
     expect(overview).toMatchObject({
       providers: [],
       activeProviderId: null,
-      defaultModelId: null,
+      defaultModelRowId: null,
       activeModel: 'deepseek-v4-pro'
+    })
+  })
+
+  it('有 provider 但一套都没启用时不再把环境变量模型名当成使用中', () => {
+    migrate(database)
+    addBuiltinProvider(
+      database,
+      secrets,
+      { catalogProviderId: 'deepseek', apiKey: 'sk-provider-0001' },
+      { now }
+    )
+
+    const overview = readSettingsOverview(database, {
+      ...overviewOptions(),
+      env: { DEEPSEEK_API_KEY: 'env-key', DEEPSEEK_MODEL: 'env-model' },
+      fallbackModel: 'env-model'
+    })
+
+    // 设置页的警告说「现在没有使用中的提供商」，卡片与聊天行为必须一致：
+    // 没有使用中的 provider 就不该显示一个「会用到的模型名」。
+    expect(overview).toMatchObject({
+      providers: [expect.objectContaining({ active: false })],
+      activeProviderId: null,
+      defaultModelRowId: null,
+      activeModel: ''
     })
   })
 

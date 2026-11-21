@@ -1,8 +1,6 @@
 import type {
-  Api,
   AssistantMessage,
   Context,
-  Model,
   ProviderAuth,
   SimpleStreamOptions
 } from '@earendil-works/pi-ai'
@@ -11,6 +9,7 @@ import { chatErrorFromFailure, requestIdFromDetail } from './errors'
 import { classifyStatus, createRequestCapture, type CapturedRequest } from './http-capture'
 import type { ChatModelDescriptor } from './model-descriptor'
 import { loadPi } from './pi-modules'
+import { piModelOf } from './pi-model'
 import { loadProtocolApi } from './protocols'
 import { resolveThinkingLevel } from './thinking'
 
@@ -24,8 +23,6 @@ export type StreamChatOptions = {
   signal: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
 }
-
-const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
 
 /** `resolve` 只声明“密钥从调用处来”；请求级的 apiKey 优先，不会去环境里找别的凭据。 */
 const REQUEST_KEY_AUTH: ProviderAuth = {
@@ -93,12 +90,15 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
           break
         case 'done':
           if (!hasContent) {
+            // 空回答同样走失败构造器：200 状态、request id 与 Retry-After 都已捕获，
+            // 只把稳定分类固定成 EMPTY_RESPONSE，不丢排障信息。
             options.onEvent({
               type: 'error',
-              error: chatErrorFromFailure({
-                kind: 'EMPTY_RESPONSE',
-                detail: '模型服务返回了空回答'
-              })
+              error: failureError(
+                capture.snapshot(),
+                '模型服务返回了空回答',
+                'EMPTY_RESPONSE'
+              )
             })
             return
           }
@@ -135,25 +135,6 @@ export async function streamChatCompletion(options: StreamChatOptions): Promise<
       error: failureError(capture.snapshot(), describeError(error))
     })
   }
-}
-
-function piModelOf(descriptor: ChatModelDescriptor): Model<Api> {
-  return {
-    id: descriptor.model,
-    name: descriptor.model,
-    api: descriptor.api,
-    provider: descriptor.provider,
-    baseUrl: descriptor.baseUrl,
-    input: [...descriptor.input],
-    cost: ZERO_COST,
-    contextWindow: descriptor.contextWindow,
-    maxTokens: descriptor.maxTokens,
-    reasoning: descriptor.reasoning,
-    ...(descriptor.thinkingLevelMap === undefined
-      ? {}
-      : { thinkingLevelMap: descriptor.thinkingLevelMap }),
-    ...(descriptor.compat === undefined ? {} : { compat: descriptor.compat })
-  } as Model<Api>
 }
 
 function toContext(
@@ -198,10 +179,17 @@ function assistantMessage(
  * 分类优先级：HTTP 状态 > fetch 层超时/传输失败 > 拿到响应后断流按传输失败。
  * 请求还没发出去就失败（例如加载协议实现出错）算未知错误，不误导成“检查网络”。
  * request id 只认响应头；没有头时才从报文的 DeepSeek 括号格式兜底。
+ *
+ * `kindOverride` 给「没有 HTTP 失败但也不是成功」的空回答用：分类固定成
+ * EMPTY_RESPONSE，其余捕获信息照常带出。
  */
-function failureError(captured: CapturedRequest, detail: string): ChatError {
+function failureError(
+  captured: CapturedRequest,
+  detail: string,
+  kindOverride?: ProviderErrorCode
+): ChatError {
   const requestId = captured.requestId ?? requestIdFromDetail(detail)
-  const kind = failureKind(captured)
+  const kind = kindOverride ?? failureKind(captured)
   return chatErrorFromFailure({
     kind,
     ...(captured.status === undefined ? {} : { status: captured.status }),

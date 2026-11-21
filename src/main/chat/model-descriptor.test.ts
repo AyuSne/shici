@@ -100,7 +100,7 @@ describe('descriptorOfProvider', () => {
     const descriptor = descriptorOfProvider(
       readModelProvider(database, 'provider-custom')!,
       readProviderModels(database, 'provider-custom')[0]!
-    )
+    )!
 
     expect(descriptor).toEqual({
       provider: 'custom-gateway',
@@ -117,6 +117,20 @@ describe('descriptorOfProvider', () => {
     expect(descriptor.thinkingLevelMap).toBeUndefined()
     expect(descriptor.compat).toBeUndefined()
   })
+
+  it('模型行的协议本版不认识时没有描述符：不发请求，也不猜成别的协议', () => {
+    const providerId = addDeepSeek()
+    database
+      .prepare(`UPDATE model_provider_model SET api = 'mistral-conversations' WHERE provider_id = ?`)
+      .run(providerId)
+
+    expect(
+      descriptorOfProvider(
+        readModelProvider(database, providerId)!,
+        readProviderModels(database, providerId)[0]!
+      )
+    ).toBeNull()
+  })
 })
 
 describe('descriptorOfCatalogModel', () => {
@@ -126,7 +140,7 @@ describe('descriptorOfCatalogModel', () => {
     const kimiModel = findCatalogModel('kimi', 'kimi-k3')!
     const glmModel = findCatalogModel('glm', 'glm-4.7')!
 
-    expect(descriptorOfCatalogModel(kimi, kimiModel, kimi.baseUrl!, 'kimi')).toMatchObject({
+    expect(descriptorOfCatalogModel(kimiModel, kimi.baseUrl!, 'kimi')).toMatchObject({
       provider: 'kimi',
       model: 'kimi-k3',
       api: 'openai-completions',
@@ -146,7 +160,7 @@ describe('descriptorOfCatalogModel', () => {
       },
       compat: { thinkingFormat: 'openai', supportsReasoningEffort: true }
     })
-    expect(descriptorOfCatalogModel(glm, glmModel, glm.baseUrl!, 'glm')).toMatchObject({
+    expect(descriptorOfCatalogModel(glmModel, glm.baseUrl!, 'glm')).toMatchObject({
       provider: 'glm',
       model: 'glm-4.7',
       contextWindow: 204800,

@@ -39,8 +39,7 @@ function provider(patch: Partial<ModelProviderSummary> = {}): ModelProviderSumma
     source: 'custom',
     catalogProviderId: null,
     active: false,
-    defaultModelId: 'model-1',
-    defaultModel: 'deepseek-flash',
+    defaultModelRowId: 'model-1',
     models: [
       {
         id: 'model-1',
@@ -118,6 +117,10 @@ describe('protocolText', () => {
     expect(protocolText('openai-responses')).toBe('OpenAI Responses')
     expect(protocolText('anthropic-messages')).toBe('Anthropic Messages')
     expect(protocolText('google-generative-ai')).toBe('Gemini API')
+  })
+
+  it('库里存了不认识的协议时如实说，不冒充另一种协议', () => {
+    expect(protocolText(null)).toBe('未识别协议')
   })
 })
 

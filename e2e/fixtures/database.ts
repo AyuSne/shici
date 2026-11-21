@@ -4,6 +4,7 @@ import { openDatabase } from '../../src/main/db/database'
 import { migrate, migrations } from '../../src/main/db/migrations'
 import { addBuiltinProvider } from '../../src/main/settings/provider-writes'
 import type { SecretStore } from '../../src/main/settings/secret-store'
+import { readBuiltinProviderSetup } from '../../src/shared/model-builtin'
 
 /**
  * 应用把本机资料库写进 userData 目录，文件名与主进程里的常量一致。
@@ -100,7 +101,7 @@ export type BuiltinProviderSeed = {
   /** 环境变量模式的密钥变量名；聊天直接从 E2E 启动环境里读。 */
   envVar?: string
   /** 请求里真正发送的默认模型名；不传用目录第一条。 */
-  defaultModelId?: string
+  defaultModelName?: string
   active?: boolean
   displayName?: string
 }
@@ -138,16 +139,16 @@ export function seedBuiltinProvider(
       .run(
         seed.baseUrl,
         seed.envVar ?? 'E2E_PROVIDER_KEY',
-        seed.displayName ?? catalogDisplayName(seed.catalogProviderId),
+        seed.displayName ?? builtinDisplayName(seed.catalogProviderId),
         added.providerId
       )
-    if (seed.defaultModelId !== undefined) {
+    if (seed.defaultModelName !== undefined) {
       const model = database
         .prepare(
           'SELECT id FROM model_provider_model WHERE provider_id = ? AND model_id = ?'
         )
-        .get(added.providerId, seed.defaultModelId) as { id: string } | undefined
-      if (model === undefined) throw new Error(`目录里没有模型 ${seed.defaultModelId}`)
+        .get(added.providerId, seed.defaultModelName) as { id: string } | undefined
+      if (model === undefined) throw new Error(`目录里没有模型 ${seed.defaultModelName}`)
       database
         .prepare('UPDATE model_provider SET default_model_id = ? WHERE id = ?')
         .run(model.id, added.providerId)
@@ -168,8 +169,9 @@ export function seedBuiltinProvider(
   }
 }
 
-function catalogDisplayName(id: BuiltinProviderSeed['catalogProviderId']): string {
-  return id === 'glm' ? '智谱 GLM' : id === 'kimi' ? 'Kimi' : 'DeepSeek'
+/** 显示名取共享目录的 setup，不在这里再抄一份厂商名。 */
+function builtinDisplayName(id: BuiltinProviderSeed['catalogProviderId']): string {
+  return readBuiltinProviderSetup(id)?.displayName ?? id
 }
 
 export type ModelProviderSeed = {

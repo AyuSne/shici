@@ -244,7 +244,7 @@ function pinsHandlers() {
 const settingsOverview: SettingsOverview = {
   providers: [],
   activeProviderId: null,
-  defaultModelId: null,
+  defaultModelRowId: null,
   activeModel: '',
   reading: {
     fontSize: 20,
@@ -272,7 +272,7 @@ function settingsHandlers() {
     }),
     'settings:provider-default-model': () => ({
       status: 'saved' as const,
-      defaultModelId: 'model-1'
+      defaultModelRowId: 'model-1'
     }),
     'settings:provider-activate': () => ({
       status: 'activated' as const,

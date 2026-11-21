@@ -47,7 +47,7 @@ describe('共享模型目录', () => {
     expect(deepseek).toBeDefined()
     expect(model).toBeDefined()
     if (deepseek && model) {
-      expect(resolveModelProtocol(deepseek, model)).toBe('openai-completions')
+      expect(resolveModelProtocol(model)).toBe('openai-completions')
       expect(resolveModelBaseUrl(deepseek, model)).toBe(
         'https://api.deepseek.com'
       )
@@ -56,7 +56,7 @@ describe('共享模型目录', () => {
     const opencodeGo = findModelProvider('opencode-go')
     const opencodeModel = findCatalogModel('opencode-go', 'gpt-6-luna')
     if (opencodeGo && opencodeModel) {
-      expect(resolveModelProtocol(opencodeGo, opencodeModel)).toBe(
+      expect(resolveModelProtocol(opencodeModel)).toBe(
         'openai-responses'
       )
       expect(resolveModelBaseUrl(opencodeGo, opencodeModel)).toBe(

@@ -1,14 +1,8 @@
 import catalogJson from './model-catalog.json'
+import { MODEL_PROTOCOLS, isModelProtocol, type ModelProtocol } from './model-protocols'
 
-/** 首版支持的四条协议。值同时是 pi-ai 的 api 名称。 */
-export const MODEL_PROTOCOLS = [
-  'openai-completions',
-  'openai-responses',
-  'anthropic-messages',
-  'google-generative-ai'
-] as const
-
-export type ModelProtocol = (typeof MODEL_PROTOCOLS)[number]
+export { MODEL_PROTOCOLS, isModelProtocol }
+export type { ModelProtocol }
 
 export type ModelThinkingLevel =
   | 'off'
@@ -110,13 +104,6 @@ export const MODEL_PROVIDER_CATALOG = catalogJson as unknown as ModelProviderCat
 export const MODEL_PROVIDERS: readonly CatalogProvider[] =
   MODEL_PROVIDER_CATALOG.providers
 
-export function isModelProtocol(value: unknown): value is ModelProtocol {
-  return (
-    typeof value === 'string' &&
-    (MODEL_PROTOCOLS as readonly string[]).includes(value)
-  )
-}
-
 export function findModelProvider(
   providerId: string
 ): CatalogProvider | undefined {
@@ -132,11 +119,8 @@ export function findCatalogModel(
   )
 }
 
-/** 模型的请求协议；单协议入口与模型行一致，聚合入口按模型自身的 api。 */
-export function resolveModelProtocol(
-  _provider: CatalogProvider,
-  model: CatalogModel
-): ModelProtocol {
+/** 模型的请求协议：单协议入口与模型行一致，聚合入口按模型自身的 api。 */
+export function resolveModelProtocol(model: CatalogModel): ModelProtocol {
   return model.api
 }
 

@@ -11,8 +11,8 @@ export type SettingsOverview = {
   /** 只读的 provider 列表；名称、协议、模型、验证状态与「使用中」都在这里。 */
   providers: ModelProviderSummary[]
   activeProviderId: string | null
-  /** 使用中 provider 的默认模型行 id；没有可用配置时为 null。 */
-  defaultModelId: string | null
+  /** 使用中 provider 的默认模型**行 id**（库内 id，不是请求里发送的模型名）；没有可用配置时为 null。 */
+  defaultModelRowId: string | null
   /** 后续调用会用的模型名；没有本机配置时回退到环境变量里的那份，仍没有则为空。 */
   activeModel: string
   reading: ReadingPreferences

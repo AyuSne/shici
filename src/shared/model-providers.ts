@@ -3,12 +3,13 @@
  * 密钥明文只在主进程里出现；这里最多只有掩码，环境变量模式连掩码都没有。
  */
 
-/** 四种协议；OpenCode GO 的模型各自带 `api`，单协议 provider 的所有模型都跟它一致。 */
-export type ProviderProtocol =
-  | 'openai-completions'
-  | 'openai-responses'
-  | 'anthropic-messages'
-  | 'google-generative-ai'
+import type { ModelProtocol } from './model-protocols'
+
+/**
+ * 四种协议；OpenCode GO 的模型各自带 `api`，单协议 provider 的所有模型都跟它一致。
+ * 与共享目录同一个类型，协议 ID 只有一份清单（见 `model-protocols.ts`）。
+ */
+export type ProviderProtocol = ModelProtocol
 
 /** 密钥来源：存本机（safeStorage 密文）或读环境变量。 */
 export type ProviderAuthMode = 'stored' | 'env'
@@ -37,13 +38,16 @@ export type ProviderRetryPolicy = {
 export const DEFAULT_RETRY_POLICY: ProviderRetryPolicy = { mode: 'normal' }
 
 export type ModelProviderModelSummary = {
-  /** 模型行的库内 id；缺省模型指向它。 */
+  /** 模型行的库内 id；默认模型指向它。 */
   id: string
   /** 请求里真正发送的模型名。 */
   modelId: string
   displayName: string
-  /** 该模型的协议；聚合网关可以逐模型不同。 */
-  api: ProviderProtocol
+  /**
+   * 该模型的协议；聚合网关可以逐模型不同。
+   * null 表示库里存了本版不认识的协议：不猜成别的协议，也不拿它发请求。
+   */
+  api: ProviderProtocol | null
   baseUrl: string | null
   contextWindow: number | null
   maxTokens: number | null
@@ -58,7 +62,8 @@ export type ModelProviderSummary = {
   /** Provider ID：小写字母开头，只含小写字母、数字与连字符；创建后不可改。 */
   providerKey: string
   displayName: string
-  protocol: ProviderProtocol
+  /** 库里存的协议；null 表示本版不认识该值，不静默换成别的协议。 */
+  protocol: ProviderProtocol | null
   baseUrl: string | null
   authMode: ProviderAuthMode
   envVar: string | null
@@ -76,10 +81,8 @@ export type ModelProviderSummary = {
   catalogProviderId: string | null
   /** 切换只影响之后的调用，所以这里只标「使用中」。 */
   active: boolean
-  /** 该 provider 的默认模型行 id；没有模型时为 null。 */
-  defaultModelId: string | null
-  /** 默认模型的请求名，给聊天与卡片显示；没有模型时为 null。 */
-  defaultModel: string | null
+  /** 该 provider 的默认模型**行 id**（库内 id，不是请求里发送的模型名）；没有模型时为 null。 */
+  defaultModelRowId: string | null
   models: ModelProviderModelSummary[]
 }
 
@@ -103,7 +106,7 @@ export type SetDefaultProviderModelRequest = {
 }
 
 export type SetDefaultProviderModelResult =
-  | { status: 'saved'; defaultModelId: string }
+  | { status: 'saved'; defaultModelRowId: string }
   | { status: 'rejected'; reason: 'unknown-model' }
   | { status: 'missing' }
 
