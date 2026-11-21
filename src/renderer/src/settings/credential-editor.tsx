@@ -179,6 +179,15 @@ export type ProviderCredentialEditorProps = {
 }
 
 /**
+ * 正在等待用户确认的动作。这里连同「当时那份草稿」一起冻结：确认按钮只
+ * 提交快照里的值，草稿一改就作废，绝不能拿过期的表单内容去清密钥。
+ */
+type PendingConfirmation = {
+  kind: 'switch-env' | 'clear-key'
+  draft: ProviderCredentialDraft
+}
+
+/**
  * 卡片内联的凭据编辑：先确认再清除本机密文，取消不写库。
  * 清除密钥与切换来源都只改 provider 行，历史线程与钉住不受影响。
  */
@@ -192,7 +201,27 @@ export function ProviderCredentialEditor({
   const [draft, setDraft] = useState<ProviderCredentialDraft>(
     credentialDraftOfProvider(provider)
   )
-  const [pending, setPending] = useState<'switch-env' | 'clear-key' | null>(null)
+  const [pending, setPending] = useState<PendingConfirmation | null>(null)
+
+  /** 任何字段/来源变化都让此前的确认失效，避免确认按钮用过期的草稿。 */
+  function changeDraft(next: ProviderCredentialDraft): void {
+    setDraft(next)
+    setPending(null)
+  }
+
+  function submit(
+    draftToSubmit: ProviderCredentialDraft,
+    extra: { clearStoredKey?: boolean } = {}
+  ): void {
+    onSubmit({
+      providerId: provider.id,
+      authMode: draftToSubmit.authMode,
+      envVar: draftToSubmit.envVar,
+      apiKey: draftToSubmit.apiKey,
+      confirmClearStored: draftToSubmit.confirmClearStored,
+      ...extra
+    })
+  }
 
   function save(): void {
     if (
@@ -202,16 +231,16 @@ export function ProviderCredentialEditor({
       !draft.confirmClearStored
     ) {
       // 先让用户明确确认会删掉本机唯一的密钥；取消就保持原配置。
-      setPending('switch-env')
+      // 确认框锁住这份草稿；改回本机或改字段都会让它失效。
+      setPending({ kind: 'switch-env', draft: { ...draft } })
       return
     }
-    onSubmit({
-      providerId: provider.id,
-      authMode: draft.authMode,
-      envVar: draft.envVar,
-      apiKey: draft.apiKey,
-      confirmClearStored: draft.confirmClearStored
-    })
+    submit(draft)
+  }
+
+  function clearStoredKey(): void {
+    // 只在本机模式且确有密文时提供；确认框同样锁住此刻的草稿。
+    setPending({ kind: 'clear-key', draft: { ...draft, apiKey: '' } })
   }
 
   const idPrefix = `credential-${provider.id}`
@@ -221,7 +250,7 @@ export function ProviderCredentialEditor({
       <CredentialEditor
         idPrefix={idPrefix}
         value={draft}
-        onChange={setDraft}
+        onChange={changeDraft}
         hasStoredKey={provider.authMode === 'stored' && provider.hasStoredCiphertext}
         storedKeyUnreadable={provider.credentialError === 'stored-decrypt-failed'}
         defaultEnvVar={provider.envVar ?? ''}
@@ -229,7 +258,7 @@ export function ProviderCredentialEditor({
         error={error}
       />
 
-      {pending === 'switch-env' ? (
+      {pending?.kind === 'switch-env' ? (
         <div className="profile-confirm">
           <span>
             切到环境变量会清除这套本机已存的密钥，之后只读环境变量；取消则保持原配置。历史线程与钉住不受影响。
@@ -239,13 +268,9 @@ export function ProviderCredentialEditor({
             className="button button-danger button-small"
             disabled={busy}
             onClick={() =>
-              onSubmit({
-                providerId: provider.id,
-                authMode: 'env',
-                envVar: draft.envVar,
-                apiKey: draft.apiKey,
-                confirmClearStored: true
-              })
+              submit(
+                { ...pending.draft, authMode: 'env', confirmClearStored: true }
+              )
             }
           >
             确认清除并切换
@@ -259,7 +284,7 @@ export function ProviderCredentialEditor({
             取消
           </button>
         </div>
-      ) : pending === 'clear-key' ? (
+      ) : pending?.kind === 'clear-key' ? (
         <div className="profile-confirm">
           <span>
             清除本机密钥后，这套会显示「缺失」，发送时会明确报错；历史线程与钉住不受影响。
@@ -269,14 +294,15 @@ export function ProviderCredentialEditor({
             className="button button-danger button-small"
             disabled={busy}
             onClick={() =>
-              onSubmit({
-                providerId: provider.id,
-                authMode: 'stored',
-                envVar: provider.envVar ?? '',
-                apiKey: '',
-                confirmClearStored: false,
-                clearStoredKey: true
-              })
+              submit(
+                {
+                  ...pending.draft,
+                  authMode: 'stored',
+                  apiKey: '',
+                  confirmClearStored: false
+                },
+                { clearStoredKey: true }
+              )
             }
           >
             确认清除
@@ -300,12 +326,14 @@ export function ProviderCredentialEditor({
           >
             保存凭据
           </button>
-          {provider.authMode === 'stored' && provider.hasStoredCiphertext ? (
+          {provider.authMode === 'stored' &&
+          provider.hasStoredCiphertext &&
+          draft.authMode === 'stored' ? (
             <button
               type="button"
               className="link-button is-danger"
               disabled={busy}
-              onClick={() => setPending('clear-key')}
+              onClick={clearStoredKey}
             >
               清除已存密钥
             </button>

@@ -33,7 +33,11 @@ export function selectedCandidates(
   return candidates.filter((candidate) => selected.has(candidate.modelId))
 }
 
-/** 候选 → 保存用模型行；容量为 null 时不假装知道，交给目录/发送层兜底。 */
+/**
+ * 候选 → 保存用模型行；容量为 null 时不假装知道，交给目录/发送层兜底。
+ * 思考能力为 null（上游没给）时不写 reasoning，保存时由目录值兜底；
+ * 只有上游明确 true/false 才写进草稿。
+ */
 export function providerModelDraftOf(
   candidate: FetchedModelCandidate
 ): ProviderModelDraft {
@@ -42,7 +46,7 @@ export function providerModelDraftOf(
     displayName: candidate.displayName,
     contextWindow: candidate.contextWindow ?? undefined,
     maxTokens: candidate.maxTokens ?? undefined,
-    reasoning: candidate.reasoning,
+    ...(candidate.reasoning === null ? {} : { reasoning: candidate.reasoning }),
     source: 'fetched'
   }
 }

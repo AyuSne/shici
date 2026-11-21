@@ -25,6 +25,7 @@ import {
   providerSourceText,
   verificationText
 } from './format'
+import { credentialRejectionText } from './messages'
 import { ProviderEditForm } from './provider-edit-form'
 import { ProviderModelEditor } from './provider-model-editor'
 
@@ -156,19 +157,6 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
   function cancelCredentialEdit(): void {
     setCredentialEditingId(null)
     setCredentialError(null)
-  }
-
-  function credentialRejectionText(reason: string): string {
-    switch (reason) {
-      case 'confirm-required':
-        return '从本机切到环境变量会清除已存密钥，需要再确认一次。'
-      case 'missing-key':
-        return '本机模式要填一个 API 密钥；或改用环境变量。'
-      case 'invalid-env-var':
-        return '环境变量名要字母或下划线开头，只含字母、数字与下划线。'
-      default:
-        return '凭据没有保存成功，再试一次。'
-    }
   }
 
   async function submitCredential(request: UpdateProviderCredentialRequest): Promise<void> {

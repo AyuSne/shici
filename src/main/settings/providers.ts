@@ -274,15 +274,6 @@ export function maskApiKey(key: string): string {
   return `${prefix}${MASK_DOTS}${visible}`
 }
 
-/** 主进程内部用：按密钥来源解析出明文。解密失败不静默退回环境变量。 */
-export function readProviderApiKey(
-  provider: ModelProviderRecord,
-  options: ProviderReadOptions
-): string {
-  const credential = resolveProviderCredential(provider, options)
-  return credential.state === 'missing' ? '' : credential.apiKey
-}
-
 export function readModelProvider(
   database: AppDatabase,
   id: string

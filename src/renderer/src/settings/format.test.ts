@@ -230,6 +230,13 @@ describe('模型元数据文案', () => {
     expect(modelThinkingText(model)).toBe('不支持思考')
     expect(modelMetaText(model)).toBe('目录未提供容量 · 按通用上限兜底 · 不支持思考')
   })
+
+  it('获取的候选没给思考能力时写「未知」，不冒充不支持思考', () => {
+    expect(modelThinkingText({ reasoning: null })).toBe('思考能力未知')
+    expect(
+      modelMetaText({ ...model, contextWindow: 64_000, maxTokens: 4_096, reasoning: null })
+    ).toBe('上下文 64,000 · 输出 4,096 · 思考能力未知')
+  })
 })
 
 describe('providerSourceText', () => {

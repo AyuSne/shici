@@ -71,7 +71,7 @@ function relayRequest(
   patch: Partial<CreateCustomProviderRequest> = {}
 ): CreateCustomProviderRequest {
   return {
-    providerId: 'my-relay',
+    providerKey: 'my-relay',
     displayName: '我的中转',
     protocol: 'openai-completions',
     baseUrl: 'https://relay.example.com/v1',
@@ -182,8 +182,8 @@ describe('createCustomProvider', () => {
       '-relay',
       ''
     ]
-    for (const providerId of invalidIds) {
-      expect(createCustomProvider(database, secrets, relayRequest({ providerId }))).toEqual({
+    for (const providerKey of invalidIds) {
+      expect(createCustomProvider(database, secrets, relayRequest({ providerKey }))).toEqual({
         status: 'rejected',
         reason: 'invalid-provider-id'
       })
@@ -191,9 +191,9 @@ describe('createCustomProvider', () => {
     expect(summaries()).toEqual([])
 
     addDeepSeek()
-    expect(createCustomProvider(database, secrets, relayRequest({ providerId: 'deepseek' }))).toEqual(
-      { status: 'rejected', reason: 'duplicate-provider-id' }
-    )
+    expect(
+      createCustomProvider(database, secrets, relayRequest({ providerKey: 'deepseek' }))
+    ).toEqual({ status: 'rejected', reason: 'duplicate-provider-id' })
     expect(summaries()).toHaveLength(1)
   })
 
@@ -508,6 +508,180 @@ describe('updateProviderModel', () => {
     })
   })
 
+  it('改模型 ID 时按新模型重算隐藏元数据：旧 DeepSeek compat 与思考映射不残留', () => {
+    const providerId = createRelay({ model: { modelId: 'deepseek-flash' } })
+    const row = readProviderModels(database, providerId)[0]!
+    expect(row).toMatchObject({
+      modelId: 'deepseek-flash',
+      contextWindow: 1_000_000,
+      maxTokens: 384_000,
+      reasoning: true
+    })
+    expect(row.compat).toMatchObject({ thinkingFormat: 'deepseek' })
+    expect(row.thinkingLevelMap).not.toBeNull()
+
+    expect(
+      updateProviderModel(database, {
+        providerId,
+        modelRowId: row.id,
+        // 界面上只改 ID：容量与思考能力没有显式填写，按新模型的目录元数据重算。
+        model: { modelId: 'glm-4.7' }
+      })
+    ).toEqual({ status: 'saved' })
+
+    const next = readProviderModels(database, providerId)[0]!
+    expect(next).toMatchObject({
+      modelId: 'glm-4.7',
+      displayName: 'GLM-4.7',
+      contextWindow: 204_800,
+      maxTokens: 131_072,
+      input: 'text',
+      reasoning: true
+    })
+    expect(next.compat).toMatchObject({ thinkingFormat: 'zai', supportsReasoningEffort: false })
+    expect(next.thinkingLevelMap).toBeNull()
+
+    // 发请求用的描述符与 pi 模型必须带新 compat，不能再按 DeepSeek 思考格式发。
+    expect(activateModelProvider(database, providerId)).toMatchObject({ status: 'activated' })
+    const config = resolveChatConfig(database, secrets, {})
+    expect(config?.descriptor).toMatchObject({
+      model: 'glm-4.7',
+      contextWindow: 204_800,
+      maxTokens: 131_072,
+      reasoning: true,
+      compat: { thinkingFormat: 'zai' }
+    })
+    expect(config?.descriptor.thinkingLevelMap).toBeUndefined()
+  })
+
+  it('改到目录外模型时清空旧元数据，缺容量留给发送层兜底', () => {
+    const providerId = createRelay({ model: { modelId: 'deepseek-flash' } })
+    const row = readProviderModels(database, providerId)[0]!
+    // 逐模型地址属于旧身份：换 ID 后不能继续把新模型发到旧模型的地址。
+    database
+      .prepare('UPDATE model_provider_model SET base_url = ? WHERE id = ?')
+      .run('https://old-model.example.com/v1', row.id)
+
+    expect(
+      updateProviderModel(database, {
+        providerId,
+        modelRowId: row.id,
+        model: { modelId: 'mystery-model' }
+      })
+    ).toEqual({ status: 'saved' })
+
+    const next = readProviderModels(database, providerId)[0]!
+    expect(next).toMatchObject({
+      modelId: 'mystery-model',
+      displayName: 'mystery-model',
+      baseUrl: null,
+      contextWindow: null,
+      maxTokens: null,
+      input: 'text',
+      reasoning: false,
+      thinkingLevelMap: null,
+      compat: null
+    })
+
+    expect(activateModelProvider(database, providerId)).toMatchObject({ status: 'activated' })
+    const descriptor = resolveChatConfig(database, secrets, {})?.descriptor
+    expect(descriptor).toMatchObject({
+      model: 'mystery-model',
+      baseUrl: 'https://relay.example.com/v1',
+      contextWindow: 1_000_000,
+      maxTokens: 128_000,
+      input: ['text'],
+      reasoning: false
+    })
+    // 没有旧 DeepSeek 的思考格式或思考档位。
+    expect(descriptor?.compat).toBeUndefined()
+    expect(descriptor?.thinkingLevelMap).toBeUndefined()
+  })
+
+  it('改 ID 时用户显式给的容量与思考开关优先于新目录值', () => {
+    const providerId = createRelay({ model: { modelId: 'deepseek-flash' } })
+    const row = readProviderModels(database, providerId)[0]!
+
+    expect(
+      updateProviderModel(database, {
+        providerId,
+        modelRowId: row.id,
+        model: {
+          modelId: 'glm-4.7',
+          contextWindow: 64_000,
+          maxTokens: 4_096,
+          reasoning: false
+        }
+      })
+    ).toEqual({ status: 'saved' })
+
+    expect(readProviderModels(database, providerId)[0]).toMatchObject({
+      modelId: 'glm-4.7',
+      contextWindow: 64_000,
+      maxTokens: 4_096,
+      reasoning: false,
+      // 隐藏元数据仍按新模型重算，不保留旧模型的 compat。
+      compat: { thinkingFormat: 'zai' }
+    })
+  })
+
+  it('同 ID 的普通编辑保留已调好的隐藏元数据与容量，不重算成目录默认值', () => {
+    const providerId = createRelay({
+      model: { modelId: 'deepseek-flash', contextWindow: 123_456, maxTokens: 7_890 }
+    })
+    const row = readProviderModels(database, providerId)[0]!
+    // 模拟此前按用户环境保存的自定义思考映射/compat：同 ID 编辑时不能被目录值覆盖。
+    database
+      .prepare(
+        `UPDATE model_provider_model
+            SET thinking_level_map = ?, compat = ?
+          WHERE id = ?`
+      )
+      .run('{"high":"custom-high"}', '{"thinkingFormat":"custom"}', row.id)
+
+    expect(
+      updateProviderModel(database, {
+        providerId,
+        modelRowId: row.id,
+        model: { modelId: 'deepseek-flash', displayName: '我的 Flash' }
+      })
+    ).toEqual({ status: 'saved' })
+
+    const next = readProviderModels(database, providerId)[0]!
+    expect(next).toMatchObject({
+      modelId: 'deepseek-flash',
+      displayName: '我的 Flash',
+      contextWindow: 123_456,
+      maxTokens: 7_890,
+      reasoning: true,
+      thinkingLevelMap: { high: 'custom-high' },
+      compat: { thinkingFormat: 'custom' }
+    })
+  })
+
+  it('拒绝 0、小数与不安全大整数的容量，不把请求限制写坏', () => {
+    const providerId = createRelay()
+    const before = readProviderModels(database, providerId)
+
+    const invalidCapacities = [
+      { contextWindow: 0 },
+      { maxTokens: 0 },
+      { contextWindow: 1.5 },
+      { maxTokens: Number.MAX_SAFE_INTEGER + 1 }
+    ]
+    for (const capacity of invalidCapacities) {
+      expect(
+        updateProviderModel(database, {
+          providerId,
+          modelRowId: before[0]!.id,
+          model: { modelId: 'relay-model', ...capacity }
+        }),
+        JSON.stringify(capacity)
+      ).toEqual({ status: 'rejected', reason: 'invalid-capacity' })
+    }
+    expect(readProviderModels(database, providerId)).toEqual(before)
+  })
+
   it('拒绝空 ID、重复 ID、非法容量与不存在的模型行', () => {
     const providerId = createRelay()
     addProviderModel(database, { providerId, model: { modelId: 'other-model' } })
@@ -800,7 +974,9 @@ describe('createCustomProvider 一次事务保存多个候选模型', () => {
       [[{ modelId: 'relay-model' }], 'duplicate-model-id'],
       [[{ modelId: 'relay-a' }, { modelId: 'relay-a' }], 'duplicate-model-id'],
       [[{ modelId: '   ' }], 'missing-model'],
-      [[{ modelId: 'bad-capacity', contextWindow: -1 }], 'invalid-capacity']
+      [[{ modelId: 'bad-capacity', contextWindow: -1 }], 'invalid-capacity'],
+      [[{ modelId: 'zero-capacity', maxTokens: 0 }], 'invalid-capacity'],
+      [[{ modelId: 'fraction-capacity', contextWindow: 1.5 }], 'invalid-capacity']
     ]
 
     for (const [additionalModels, reason] of cases) {

@@ -14,13 +14,18 @@ import type {
 /** 候选来源：内置目录直接读本地；自定义 API 从远端返回。 */
 export type FetchedModelOrigin = 'catalog' | 'remote'
 
-/** 一条可加入目录的候选；容量拿不到时保持 null，由目录/发送层兜底。 */
+/** 一条可加入目录的候选；容量与思考能力拿不到时保持 null，由目录/发送层兜底。 */
 export type FetchedModelCandidate = {
   modelId: string
   displayName: string
   contextWindow: number | null
   maxTokens: number | null
-  reasoning: boolean
+  /**
+   * `true` / `false` 表示上游明确给出；`null` 表示列表没提这件事（OpenAI 与
+   * Anthropic 的模型列表通常如此）。不能把「没提」写成 false，否则保存一个
+   * 目录里已知支持思考的模型时会把本地目录的 true 覆盖掉。
+   */
+  reasoning: boolean | null
   origin: FetchedModelOrigin
 }
 

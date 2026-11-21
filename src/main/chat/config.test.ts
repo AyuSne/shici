@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { UNKNOWN_CONTEXT_WINDOW, UNKNOWN_MAX_TOKENS } from './model-descriptor'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate, migrations } from '../db/migrations'
+import { updateProviderCredential } from '../settings/credential-writes'
 import { deleteModelProvider } from '../settings/provider-writes'
 import type { SecretStore } from '../settings/secret-store'
 import { DEFAULT_BASE_URL, DEFAULT_MODEL, readChatConfig, resolveChatConfig } from './config'
@@ -181,7 +182,7 @@ describe('resolveChatConfig', () => {
     })
   })
 
-  it('本地配置没有密钥时也照常解析，交给服务端决定要不要密钥', () => {
+  it('从来只有空密钥的本地 custom 也明确报缺失，不再匿名发送', () => {
     seedProfiles([
       {
         id: 'provider-local',
@@ -194,15 +195,78 @@ describe('resolveChatConfig', () => {
     migrate(database)
     activate('provider-local')
 
+    // 三态是严格的：stored 模式没有密文就是「缺失」，不管地址是不是本机。
+    // 缺少密钥时发送前就报配置错误，不拿空 Authorization 去撞服务端。
     expect(resolveChatConfig(database, secrets, {})).toMatchObject({
       apiKey: '',
       baseUrl: 'http://127.0.0.1:11434/v1',
       model: 'qwen2.5:7b',
       providerId: 'provider-local',
-      modelId: expect.any(String)
+      modelId: expect.any(String),
+      missingCredential: true,
+      credentialProblem: { kind: 'stored-missing' }
     })
-    // 从来没存过密钥的本机配置（本地 Ollama）允许不带密钥发送。
-    expect(resolveChatConfig(database, secrets, {})?.missingCredential).toBeUndefined()
+  })
+
+  it('显式清除自定义 provider 的已存密钥后，发送前明确报缺失且不换源', () => {
+    seedProfiles([
+      {
+        id: 'provider-clear',
+        name: '可清除的中转',
+        model: 'relay-model',
+        apiKey: 'sk-before-clear',
+        baseUrl: 'https://relay.example.com/v1'
+      }
+    ])
+    migrate(database)
+    activate('provider-clear')
+
+    expect(
+      updateProviderCredential(database, secrets, {
+        providerId: 'provider-clear',
+        authMode: 'stored',
+        envVar: '',
+        apiKey: '',
+        confirmClearStored: false,
+        clearStoredKey: true
+      })
+    ).toMatchObject({ status: 'saved', clearedStored: true })
+
+    // 环境里另有一套可用密钥：清除后也绝不静默改读它。
+    expect(
+      resolveChatConfig(database, secrets, {
+        DEEPSEEK_API_KEY: 'sk-env-must-not-be-used'
+      })
+    ).toMatchObject({
+      apiKey: '',
+      providerId: 'provider-clear',
+      missingCredential: true,
+      credentialProblem: { kind: 'stored-missing' }
+    })
+  })
+
+  it('备份恢复清掉密文后与显式清除一致：明确报缺失，不匿名发送', () => {
+    seedProfiles([
+      {
+        id: 'provider-restored',
+        name: '从备份恢复',
+        model: 'relay-model',
+        apiKey: 'sk-before-backup',
+        baseUrl: 'https://relay.example.com/v1'
+      }
+    ])
+    migrate(database)
+    activate('provider-restored')
+    // 备份按票剥离 model_provider.secret_ciphertext；恢复后就是这一状态。
+    database
+      .prepare('UPDATE model_provider SET secret_ciphertext = NULL WHERE id = ?')
+      .run('provider-restored')
+
+    expect(resolveChatConfig(database, secrets, {})).toMatchObject({
+      apiKey: '',
+      missingCredential: true,
+      credentialProblem: { kind: 'stored-missing' }
+    })
   })
 
   it('本机密文解不开或环境变量缺失时明确标缺凭据，不换源', () => {
@@ -266,8 +330,31 @@ describe('resolveChatConfig', () => {
     })
   })
 
-  it('本机密文解不开时报解不开，环境变量即使可用也不换源', () => {
+  it('环境变量名撞上对象继承属性时聊天配置仍可读，明确报变量缺失', () => {
     seedProfiles([
+      { id: 'provider-inherited', name: '继承字段', model: 'model-one', apiKey: 'sk-one' }
+    ])
+    migrate(database)
+    activate('provider-inherited')
+    database
+      .prepare(
+        `UPDATE model_provider
+            SET auth_mode = 'env', env_var = 'constructor', secret_ciphertext = NULL
+          WHERE id = ?`
+      )
+      .run('provider-inherited')
+
+    // process.env.constructor 是继承函数；不能对它 trim 抛错，也不能匿名发送。
+    expect(() => resolveChatConfig(database, secrets, process.env)).not.toThrow()
+    expect(resolveChatConfig(database, secrets, process.env)).toMatchObject({
+      apiKey: '',
+      providerId: 'provider-inherited',
+      missingCredential: true,
+      credentialProblem: { kind: 'env-missing', envVar: 'constructor' }
+    })
+  })
+
+  it('本机密文解不开时报解不开，环境变量即使可用也不换源', () => {    seedProfiles([
       { id: 'provider-broken', name: '坏密文', model: 'model-one', apiKey: 'sk-one' }
     ])
     migrate(database)

@@ -216,7 +216,7 @@ describe('createBridge', () => {
     const bridge = createBridge(ipc)
 
     await bridge.invoke('settings:provider-create', {
-      providerId: 'my-relay',
+      providerKey: 'my-relay',
       displayName: '我的中转',
       protocol: 'openai-completions',
       baseUrl: 'https://relay.example.com/v1',
@@ -261,7 +261,7 @@ describe('createBridge', () => {
       {
         channel: 'settings:provider-create',
         payload: {
-          providerId: 'my-relay',
+          providerKey: 'my-relay',
           displayName: '我的中转',
           protocol: 'openai-completions',
           baseUrl: 'https://relay.example.com/v1',

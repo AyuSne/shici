@@ -42,3 +42,14 @@ export function findProviderCatalogModel(
   }
   return null
 }
+
+/**
+ * OpenCode GO 这类聚合入口的模型目录首版只读：能选默认模型，不能手加、改、
+ * 删或重排。主进程的写入口与渲染层的按钮状态共用这一条判定，避免两边各写
+ * 一份、新增只读入口时漏掉一层。
+ */
+export function isModelDirectoryReadOnly(provider: {
+  catalogProviderId: string | null
+}): boolean {
+  return provider.catalogProviderId === 'opencode-go'
+}

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { isModelDirectoryReadOnly } from '../../../shared/model-directory'
 import type { FetchedModelCandidate } from '../../../shared/model-discovery'
 import type { ModelProviderSummary } from '../../../shared/model-providers'
 import type { ProviderCredentialDraft } from '../../../shared/provider-credentials'
@@ -11,7 +12,6 @@ import { ModelDiscoveryPanel } from './model-discovery-panel'
 import {
   baseUrlError,
   displayNameError,
-  modelDirectoryReadOnly,
   modelWriteErrorText,
   providerUpdateErrorText
 } from './provider-editing'
@@ -186,7 +186,7 @@ export function ProviderEditForm({
         storedKeyUnreadable={provider.credentialError === 'stored-decrypt-failed'}
         knownModelIds={provider.models.map((model) => model.modelId)}
         onApply={applyDiscovered}
-        readOnly={modelDirectoryReadOnly(provider)}
+        readOnly={isModelDirectoryReadOnly(provider)}
         resetToken={discoveryReset}
         disabled={busy}
       />

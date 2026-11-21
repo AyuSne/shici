@@ -222,6 +222,12 @@
   color: var(--danger);
 }
 
+/* 禁用态只用 ink-3，不加透明度：避免对比度二次衰减（token 表 §7）。 */
+.link-button:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
 .profile-facts {
   display: flex;
   flex-direction: column;
@@ -310,6 +316,12 @@
   accent-color: var(--amber);
 }
 
+/* 模型行单选、候选复选框都走键盘焦点：2px 琥珀描边，不用默认蓝框。 */
+.model-option input:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
 .model-id {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 12px;
@@ -336,7 +348,9 @@
 }
 
 .model-row.is-dragging {
-  opacity: 0.55;
+  background: var(--hover);
+  outline: 1px dashed var(--rule-hover);
+  outline-offset: -1px;
 }
 
 .model-row.is-drop-target {
@@ -396,9 +410,9 @@
 
 .model-edit-form {
   margin: 4px 0 8px 24px;
-  padding: 8px 12px;
+  padding: 12px 16px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--sunken);
 }
 
@@ -487,9 +501,9 @@
 
 .profile-edit-form {
   margin: 12px 0;
-  padding: 8px 12px;
+  padding: 12px 16px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--sunken);
 }
 
@@ -530,9 +544,9 @@
 
 .credential-editor-panel {
   margin-top: 12px;
-  padding: 12px;
+  padding: 12px 16px;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--sunken);
 }
 

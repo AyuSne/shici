@@ -12,6 +12,7 @@ import {
   selectedCandidates,
   toggleSelectedModelId
 } from './model-discovery'
+import { readOnlyDirectoryHint } from './messages'
 
 export type ModelDiscoveryPanelProps = {
   /** 内置身份返回本地目录（零 HTTP）；自定义按当前地址请求。 */
@@ -236,7 +237,7 @@ export function ModelDiscoveryPanel({
           </button>
           <span className="settings-hint" data-discovery-apply-hint="true">
             {readOnly
-              ? 'OpenCode GO 的模型目录首版只读：可以获取查看，不能加入。'
+              ? readOnlyDirectoryHint('discovery')
               : selected.length === 0
                 ? '先勾选要加入目录的模型；获取和勾选都不会自动保存。'
                 : `已选 ${selected.length} 个；加入后追加到目录末尾，不改已有模型、默认模型与顺序。`}

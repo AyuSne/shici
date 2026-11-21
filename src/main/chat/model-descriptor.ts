@@ -1,5 +1,6 @@
 import type { CatalogModel, ModelProtocol } from '../../shared/model-catalog'
 import { findCatalogModel } from '../../shared/model-catalog'
+import { readEnvValue } from '../process-env'
 import type {
   ModelProviderModelRecord,
   ModelProviderRecord,
@@ -113,12 +114,12 @@ export type EnvChatConfig = {
  * 仍优先按目录里的 DeepSeek 描述符发请求，目录里没有的模型走通用兜底。
  */
 export function readEnvChatConfig(env: NodeJS.ProcessEnv): EnvChatConfig | null {
-  const apiKey = env.DEEPSEEK_API_KEY?.trim()
-  if (!apiKey) {
+  const apiKey = readEnvValue(env, 'DEEPSEEK_API_KEY')
+  if (apiKey === null) {
     return null
   }
-  const baseUrl = env.DEEPSEEK_BASE_URL?.trim() || DEFAULT_BASE_URL
-  const model = env.DEEPSEEK_MODEL?.trim() || DEFAULT_MODEL
+  const baseUrl = readEnvValue(env, 'DEEPSEEK_BASE_URL') ?? DEFAULT_BASE_URL
+  const model = readEnvValue(env, 'DEEPSEEK_MODEL') ?? DEFAULT_MODEL
   const catalogModel = findCatalogModel('deepseek', model)
   const descriptor =
     catalogModel !== undefined

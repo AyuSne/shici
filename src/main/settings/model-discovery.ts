@@ -16,6 +16,7 @@ import type { ProviderProtocol } from '../../shared/model-providers'
 import { isModelProtocol } from '../../shared/model-protocols'
 import { classifyFailure, type FetchLike } from '../chat/http-capture'
 import type { AppDatabase } from '../db/database'
+import { readEnvValue } from '../process-env'
 import { parseHttpUrl } from './base-url'
 import { resolveProviderCredential } from './credentials'
 import { readModelProvider } from './providers'
@@ -29,8 +30,8 @@ import type { SecretStore } from './secret-store'
  * 未保存的地址、协议与密钥来源问一次服务商。
  *
  * 凭据规则与聊天一致：环境模式只读当前环境变量名、忽略请求里的密钥；本机模式
- * 新密钥优先，只有明确编辑同一套自定义 provider 时才复用它已存的密文，解不开
- * 就明确报错，绝不改读环境变量。响应正文只用于解析模型列表，不进入用户报错。
+ * 新密钥优先，只有明确编辑同一套自定义 provider 时才复用它已存的密文。拿不到
+ * 密钥就明确报缺失，绝不匿名发请求；内置目录本身不需要密钥，也照常可用。
  */
 
 export type ModelDiscoveryOptions = {
@@ -125,8 +126,9 @@ function resolveDiscoveryCredential(
     if (envVar === '') {
       return credentialFailure('missing-credential', 'env-var-unset')
     }
-    const value = env[envVar]?.trim() ?? ''
-    if (value === '') {
+    // 变量名可编辑：继承属性与非字符串值都按缺失处理，不能对函数调 trim。
+    const value = readEnvValue(env, envVar)
+    if (value === null) {
       return credentialFailure('missing-credential', 'env-missing', envVar)
     }
     return { ok: true, apiKey: value }
@@ -139,9 +141,9 @@ function resolveDiscoveryCredential(
 
   const providerId = request.providerId?.trim() ?? ''
   if (providerId === '') {
-    // 新建的未保存自定义 API：保持「本地 / 自部署可以没有密钥」的既有行为，
-    // 但不能从任何已有 provider 借密钥。
-    return { ok: true, apiKey: '' }
+    // 新建的未保存自定义 API：可以先把空密钥存成缺失草稿，但获取模型要真发
+    // 请求，缺密钥就在这里明确报错；不从任何已有 provider 借密钥，也不匿名请求。
+    return credentialFailure('missing-credential', 'stored-missing')
   }
 
   const provider = readModelProvider(database, providerId)
@@ -163,8 +165,8 @@ function resolveDiscoveryCredential(
     return credentialFailure('missing-credential', 'stored-missing')
   }
   if (provider.secretCiphertext === null) {
-    // 这套本来就是无密钥的本地端点：与聊天保持同样的无密钥行为。
-    return { ok: true, apiKey: '' }
+    // 清除密钥或备份恢复后的状态：与聊天一致，明确报缺失而不是匿名请求。
+    return credentialFailure('missing-credential', 'stored-missing')
   }
   const resolved = resolveProviderCredential(provider, { secrets, env })
   if (resolved.state === 'missing') {
@@ -442,7 +444,7 @@ export function parseModelList(
         displayName: firstString(item.displayName) ?? id,
         contextWindow: firstNumber(item.inputTokenLimit),
         maxTokens: firstNumber(item.outputTokenLimit),
-        reasoning: item.thinking === true
+        reasoning: booleanOrNull(item.thinking)
       })
     }
     return parsed
@@ -467,7 +469,7 @@ export function parseModelList(
           displayName: id,
           contextWindow: null,
           maxTokens: null,
-          reasoning: false
+          reasoning: null
         })
       }
       continue
@@ -494,10 +496,27 @@ export function parseModelList(
         item.output_token_limit,
         item.outputTokenLimit
       ),
-      reasoning: item.reasoning === true || item.supports_reasoning === true
+      reasoning: reasoningOf(item)
     })
   }
   return parsed
+}
+
+/**
+ * 列表里的思考能力：只有上游明确给了布尔值才当真，没给字段就是未知。
+ * OpenAI / Anthropic 的模型列表通常不带思考能力，不能因此断言「不支持思考」。
+ */
+function reasoningOf(item: Record<string, unknown>): boolean | null {
+  for (const value of [item.reasoning, item.supports_reasoning]) {
+    if (typeof value === 'boolean') {
+      return value
+    }
+  }
+  return null
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null
 }
 
 function hasGenerationMethod(value: unknown): boolean {

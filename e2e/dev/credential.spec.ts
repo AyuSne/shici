@@ -328,6 +328,79 @@ test.describe('密钥来源三态与凭据编辑', () => {
     })
   })
 
+  test('待确认的凭据变更随草稿失效：改回本机或改字段都保留原密钥，确认后才清；清后发送明确报缺失且不匿名请求', async ({
+    launch,
+    userDataDirectory
+  }) => {
+    const stub = await createStub({ kind: 'stream', text: ['清除后不该匿名发出。'] })
+    const handle = await launch({ env: noEnvironmentFallback })
+    const { page } = handle
+    await openSettings(page)
+
+    await page.getByLabel('内置提供商').selectOption('deepseek')
+    await page.getByLabel('API 密钥').fill('sk-e2e-pending-7777')
+    await page.getByRole('button', { name: '保存提供商' }).click()
+    await expect(page.getByRole('status')).toContainText('未验证（保存时不联网）')
+    const card = page.locator('[data-provider-key="deepseek"]')
+    await expect(card).toContainText('本机 · sk-·············7777')
+    await card.getByRole('button', { name: '使用这个' }).click()
+    pointProviderAtStub(userDataDirectory, 'deepseek', stub.baseUrl)
+    expect(readProviderRow(userDataDirectory, 'deepseek').secret_ciphertext).toMatch(
+      /^dpapi:v1:/
+    )
+
+    // 切到环境变量先出确认；此时改回「保存在本机」，确认必须作废，
+    // 再保存不能拿过期的 authMode=env 去清掉唯一的本机密钥。
+    await card.getByRole('button', { name: '编辑凭据' }).click()
+    await card.getByRole('radio', { name: '使用环境变量' }).check()
+    await card.getByLabel('环境变量名').fill('E2E_PENDING_SWITCH')
+    await card.getByRole('button', { name: '保存凭据' }).click()
+    const switchConfirm = card.locator('.profile-confirm')
+    await expect(switchConfirm).toContainText('清除这套本机已存的密钥')
+    await card.getByRole('radio', { name: '保存在本机' }).check()
+    await expect(switchConfirm).toHaveCount(0)
+    await card.getByRole('button', { name: '保存凭据' }).click()
+    expect(readProviderRow(userDataDirectory, 'deepseek')).toMatchObject({
+      auth_mode: 'stored',
+      secret_ciphertext: expect.stringMatching(/^dpapi:v1:/)
+    })
+
+    // 清除密钥的确认同样锁住当时草稿：改一个字段就作废，保存仍是「保留原密文」。
+    await card.getByRole('button', { name: '编辑凭据' }).click()
+    await card.getByRole('button', { name: '清除已存密钥' }).click()
+    const clearConfirm = card.locator('.profile-confirm')
+    await expect(clearConfirm).toContainText('清除本机密钥后')
+    await card.getByLabel('环境变量名').fill('E2E_PENDING_EDITED')
+    await expect(clearConfirm).toHaveCount(0)
+    await card.getByRole('button', { name: '保存凭据' }).click()
+    expect(readProviderRow(userDataDirectory, 'deepseek')).toEqual({
+      auth_mode: 'stored',
+      env_var: 'E2E_PENDING_EDITED',
+      secret_ciphertext: expect.stringMatching(/^dpapi:v1:/)
+    })
+
+    // 真正确认清除后才落库；之后发送在本地就报缺失，stub 一个请求也收不到。
+    await card.getByRole('button', { name: '编辑凭据' }).click()
+    await card.getByRole('button', { name: '清除已存密钥' }).click()
+    await card
+      .locator('.profile-confirm')
+      .getByRole('button', { name: '确认清除' })
+      .click()
+    await expect(card).toContainText('缺失')
+    expect(readProviderRow(userDataDirectory, 'deepseek')).toEqual({
+      auth_mode: 'stored',
+      env_var: 'E2E_PENDING_EDITED',
+      secret_ciphertext: null
+    })
+
+    await openChat(page)
+    await sendMessage(page, '清除密钥后发送')
+    const error = page.locator('.message-error')
+    await expect(error).toContainText('这套提供商还没有密钥')
+    await expect(error).toContainText('填一个密钥')
+    expect(stub.requests).toHaveLength(0)
+  })
+
   test('自定义 API 可直接用环境变量创建（无需先存本机密钥），也能改回本机', async ({
     launch,
     userDataDirectory

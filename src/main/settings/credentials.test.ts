@@ -11,7 +11,7 @@ import {
   type CredentialReadOptions
 } from './credentials'
 import { updateProviderCredential } from './credential-writes'
-import { readModelProvider, type ModelProviderRecord } from './providers'
+import { listModelProviders, readModelProvider, type ModelProviderRecord } from './providers'
 import type { SecretStore } from './secret-store'
 
 let directory: string
@@ -225,6 +225,54 @@ describe('resolveProviderCredential', () => {
       problem: { kind: 'env-var-unset' }
     })
   })
+
+  it('变量名撞上对象继承属性时按缺失处理并点名变量，不抛 TypeError', () => {
+    for (const [index, envVar] of ['constructor', '__proto__', 'toString'].entries()) {
+      const id = insertProvider({
+        id: `provider-inherited-${index}`,
+        authMode: 'env',
+        envVar
+      })
+
+      expect(() => resolveProviderCredential(recordOf(id), options()), envVar).not.toThrow()
+      expect(resolveProviderCredential(recordOf(id), options()), envVar).toEqual({
+        state: 'missing',
+        problem: { kind: 'env-missing', envVar }
+      })
+    }
+  })
+
+  it('真实 process.env 上的继承字段也按缺失处理，设置页仍能读出三态', () => {
+    const id = insertProvider({ authMode: 'env', envVar: 'constructor' })
+
+    // process.env.constructor 继承自 Object.prototype；不读、不打印任何真实值。
+    expect(() =>
+      resolveProviderCredential(recordOf(id), { secrets, env: process.env })
+    ).not.toThrow()
+    expect(resolveProviderCredential(recordOf(id), { secrets, env: process.env })).toEqual({
+      state: 'missing',
+      problem: { kind: 'env-missing', envVar: 'constructor' }
+    })
+    expect(() =>
+      listModelProviders(database, { secrets, env: process.env })
+    ).not.toThrow()
+    expect(listModelProviders(database, { secrets, env: process.env })[0]).toMatchObject({
+      keyState: 'missing',
+      envVar: 'constructor',
+      credentialError: null
+    })
+  })
+
+  it('自有属性但值不是字符串时也算缺失，不对它调用 trim', () => {
+    const id = insertProvider({ authMode: 'env', envVar: 'E2E_NON_STRING_KEY' })
+    const env = { E2E_NON_STRING_KEY: 42 } as unknown as NodeJS.ProcessEnv
+
+    expect(() => resolveProviderCredential(recordOf(id), options(env))).not.toThrow()
+    expect(resolveProviderCredential(recordOf(id), options(env))).toEqual({
+      state: 'missing',
+      problem: { kind: 'env-missing', envVar: 'E2E_NON_STRING_KEY' }
+    })
+  })
 })
 
 describe('prepareProviderCredential', () => {
@@ -280,13 +328,13 @@ describe('prepareProviderCredential', () => {
     expect(secrets.encryptCalls).toEqual([])
   })
 
-  it('允许无密钥的自定义本地地址：显式开关下本机模式留空不加密', () => {
+  it('允许把空密钥先存成缺失草稿：显式开关下本机模式留空不加密', () => {
     expect(
       prepareProviderCredential(secrets, {
         authMode: 'stored',
         envVar: 'LOCAL_ENV',
         apiKey: '',
-        allowEmptyStoredKey: true
+        allowMissingStoredKey: true
       })
     ).toEqual({
       ok: true,
