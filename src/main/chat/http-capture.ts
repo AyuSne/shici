@@ -43,6 +43,12 @@ export type RequestCaptureOptions = {
   fetchImpl?: FetchLike
   /** 只在把 HTTP 日期换算成毫秒时用；测试可注入固定时间。 */
   now?: () => number
+  /**
+   * 每次捕获到新信息（响应头 / 传输失败）时通知调用方。测试连接用它把
+   * 「响应头已到、正文挂住」时的 request id 带出超时结果；通知失败不能
+   * 影响请求本身。
+   */
+  onCapture?: (captured: CapturedRequest) => void
 }
 
 const REQUEST_ID_HEADERS = [
@@ -153,6 +159,14 @@ export function createRequestCapture(options: RequestCaptureOptions = {}): Reque
   const now = options.now ?? Date.now
   let captured: CapturedRequest = {}
 
+  function notify(): void {
+    try {
+      options.onCapture?.({ ...captured })
+    } catch {
+      // 旁路通知失败不能影响请求。
+    }
+  }
+
   /** 响应头 → 状态、request id、Retry-After；两条 fetch 路径共用这一处。 */
   function recordResponse(status: number, headers: Headers): void {
     const requestId = readRequestId(headers)
@@ -162,6 +176,7 @@ export function createRequestCapture(options: RequestCaptureOptions = {}): Reque
       ...(requestId === undefined ? {} : { requestId }),
       ...(retryAfterMs === undefined ? {} : { retryAfterMs })
     }
+    notify()
   }
 
   function recordFailure(error: unknown, signal?: AbortSignal): void {
@@ -170,6 +185,7 @@ export function createRequestCapture(options: RequestCaptureOptions = {}): Reque
       return
     }
     captured = { ...captured, transport: classifyFailure(error) }
+    notify()
   }
 
   return {

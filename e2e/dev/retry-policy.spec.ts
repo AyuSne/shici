@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3'
 import { expect, test } from '../fixtures/app'
+import { openSettings } from '../fixtures/chat'
 import { databasePath, seedBuiltinProvider } from '../fixtures/database'
 
 /**
@@ -20,13 +21,11 @@ test.describe('provider 重试策略设置', () => {
 
     const handle = await launch({ env: { DEEPSEEK_API_KEY: '' } })
     const { page } = handle
-    await page
-      .getByRole('navigation', { name: '全局导航' })
-      .getByRole('button', { name: '设置' })
-      .click()
-    await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible()
+    await openSettings(page)
 
     const card = page.locator('[data-provider-key="deepseek"]')
+    // 卡片本身要能看到当前策略，不必先打开编辑表单。
+    await expect(card).toContainText('只重试临时错误（默认，最多 5 次）')
     await card.getByRole('button', { name: '编辑提供商' }).click()
     const form = card.locator('.profile-edit-form')
     await expect(form.getByRole('radio', { name: '只重试临时错误' })).toBeChecked()
@@ -40,6 +39,7 @@ test.describe('provider 重试策略设置', () => {
     await expect(form).toContainText('所有失败都重试（最多 5 次）')
     await form.getByRole('button', { name: '保存修改' }).click()
     await expect(page.getByRole('status')).toContainText('已保存')
+    await expect(card).toContainText('所有失败都重试（最多 5 次）')
 
     await handle.close()
 
@@ -58,11 +58,9 @@ test.describe('provider 重试策略设置', () => {
     }
 
     const reopened = await launch({ userDataDirectory, env: { DEEPSEEK_API_KEY: '' } })
-    await reopened.page
-      .getByRole('navigation', { name: '全局导航' })
-      .getByRole('button', { name: '设置' })
-      .click()
+    await openSettings(reopened.page)
     const reopenedCard = reopened.page.locator('[data-provider-key="deepseek"]')
+    await expect(reopenedCard).toContainText('所有失败都重试（最多 5 次）')
     await reopenedCard.getByRole('button', { name: '编辑提供商' }).click()
     await expect(
       reopenedCard

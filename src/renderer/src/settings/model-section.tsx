@@ -28,6 +28,7 @@ import {
   providerSourceText,
   providerTestFailureText,
   providerTestVerifiedText,
+  retryPolicyText,
   verificationText
 } from './format'
 import { credentialRejectionText, modelSectionDescription } from './messages'
@@ -345,6 +346,10 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
                     <dd>
                       <code>{providerModelsText(provider)}</code>
                     </dd>
+                  </div>
+                  <div>
+                    <dt>重试策略</dt>
+                    <dd>{retryPolicyText(provider.retryPolicy)}</dd>
                   </div>
                   <div>
                     <dt>密钥</dt>

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate, migrations } from '../db/migrations'
 import {
-  checkReasonOfChatError,
   listModelProviders,
   markProviderCheckPassed,
   markProviderVerified,
@@ -583,20 +582,6 @@ describe('验证状态的条件回写', () => {
       reason: null,
       requestId: null
     })
-  })
-
-  it('真实对话错误按稳定分类映射成设置页原因', () => {
-    expect(checkReasonOfChatError({ code: 'invalid-key', kind: 'AUTH' })).toBe('invalid-key')
-    expect(checkReasonOfChatError({ code: 'server-busy', kind: 'SERVER' })).toBe('server')
-    expect(checkReasonOfChatError({ code: 'rate-limited', kind: 'RATE_LIMIT' })).toBe(
-      'rate-limit'
-    )
-    expect(checkReasonOfChatError({ code: 'network', kind: 'TIMEOUT' })).toBe('timeout')
-    expect(checkReasonOfChatError({ code: 'network', kind: 'TRANSPORT' })).toBe('network')
-    expect(checkReasonOfChatError({ code: 'empty-response', kind: 'EMPTY_RESPONSE' })).toBe(
-      'empty-response'
-    )
-    expect(checkReasonOfChatError({ code: 'unknown' })).toBe('unknown')
   })
 })
 

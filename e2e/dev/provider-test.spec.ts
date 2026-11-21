@@ -1,9 +1,8 @@
-import type { Page } from '@playwright/test'
 import Database from 'better-sqlite3'
-import { join } from 'node:path'
 import { startSseStub, type SseStub, type StubScript } from '../../src/testing/sse-stub'
 import { expect, test } from '../fixtures/app'
-import { seedModelProvider } from '../fixtures/database'
+import { ask, openChat, openSettings } from '../fixtures/chat'
+import { databasePath, seedModelProvider } from '../fixtures/database'
 
 const stubs: SseStub[] = []
 
@@ -15,31 +14,6 @@ async function createStub(script: StubScript): Promise<SseStub> {
   const stub = await startSseStub(script)
   stubs.push(stub)
   return stub
-}
-
-function databaseFile(userDataDirectory: string): string {
-  return join(userDataDirectory, 'english-learning.db')
-}
-
-async function openSettings(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '设置' })
-    .click()
-  await expect(page.getByRole('heading', { name: '设置', level: 1 })).toBeVisible()
-}
-
-async function openChat(page: Page): Promise<void> {
-  await page
-    .getByRole('navigation', { name: '全局导航' })
-    .getByRole('button', { name: '对话' })
-    .click()
-  await expect(page.getByRole('textbox', { name: '输入问题' })).toBeVisible()
-}
-
-async function ask(page: Page, text: string): Promise<void> {
-  await page.getByRole('textbox', { name: '输入问题' }).fill(text)
-  await page.getByRole('button', { name: '发送' }).click()
 }
 
 /** 挡住开发态 .env，并给环境变量模式准备一把本地密钥。 */
@@ -96,7 +70,7 @@ test.describe('保存与测试连接分离', () => {
     expect(request.body.reasoning_effort).toBeUndefined()
 
     await handle.close()
-    const database = new Database(databaseFile(userDataDirectory), {
+    const database = new Database(databasePath(userDataDirectory), {
       readonly: true,
       fileMustExist: true
     })
@@ -132,7 +106,7 @@ test.describe('保存与测试连接分离', () => {
       status: 401,
       headers: { 'x-request-id': 'req-e2e-401' }
     })
-    seedModelProvider(databaseFile(userDataDirectory), {
+    seedModelProvider(databasePath(userDataDirectory), {
       id: 'provider-failing',
       providerKey: 'failing-relay',
       displayName: '失败中转',
@@ -154,12 +128,13 @@ test.describe('保存与测试连接分离', () => {
     await expect(card).toContainText('未验证')
     await expect(card.locator('.profile-check')).toContainText('密钥无效')
     await expect(card.locator('.profile-check')).toContainText('请求 ID req-e2e-401')
-    await expect(card.locator('[data-test-result="provider-failing"]')).toContainText(
-      '测试没通过：密钥无效 · 请求 ID req-e2e-401'
-    )
+    const failureText = card.locator('[data-test-result="provider-failing"]')
+    await expect(failureText).toContainText('测试没通过：密钥无效')
+    await expect(failureText).toContainText('换一个有效的密钥')
+    await expect(failureText).toContainText('请求 ID req-e2e-401')
 
     await handle.close()
-    const database = new Database(databaseFile(userDataDirectory), {
+    const database = new Database(databasePath(userDataDirectory), {
       readonly: true,
       fileMustExist: true
     })
@@ -193,7 +168,7 @@ test.describe('真实对话与验证状态', () => {
     userDataDirectory
   }) => {
     const stub = await createStub({ kind: 'stream', text: ['真实回答。'] })
-    seedModelProvider(databaseFile(userDataDirectory), {
+    seedModelProvider(databasePath(userDataDirectory), {
       id: 'provider-chat',
       providerKey: 'chat-relay',
       displayName: '对话中转',
@@ -209,12 +184,15 @@ test.describe('真实对话与验证状态', () => {
     await openChat(page)
     await ask(page, '第一问')
     await expect(page.getByText('真实回答。').first()).toBeVisible()
+    const requestsBeforeFailure = stub.requests.length
 
     await openSettings(page)
     const card = page.locator('[data-provider-key="chat-relay"]')
     await expect(card).toContainText('已验证')
 
     // 服务端故障的真实对话：只记录最后错误，不把已验证降级。
+    // normal 会把 SERVER 重试到上限（退避合计约 15.5 秒），所以给最终错误
+    // 一个明确的 30 秒有界等待；重试本身不能被关掉。
     stub.setScript({
       kind: 'status',
       status: 500,
@@ -222,7 +200,9 @@ test.describe('真实对话与验证状态', () => {
     })
     await openChat(page)
     await ask(page, '第二问')
-    await expect(page.getByText(/服务繁忙/).first()).toBeVisible()
+    await expect(page.getByText(/服务繁忙/).first()).toBeVisible({ timeout: 30_000 })
+    // 第二问共尝试 6 次（初次 + 5 次重试），确认 normal 的完整重试确实发生。
+    expect(stub.requests.length - requestsBeforeFailure).toBe(6)
 
     await openSettings(page)
     await expect(card).toContainText('已验证')
@@ -231,7 +211,7 @@ test.describe('真实对话与验证状态', () => {
     await expect(card.locator('.profile-check')).toContainText('请求 ID req-e2e-500')
 
     await handle.close()
-    const database = new Database(databaseFile(userDataDirectory), {
+    const database = new Database(databasePath(userDataDirectory), {
       readonly: true,
       fileMustExist: true
     })

@@ -13,6 +13,7 @@ import { streamChatCompletion } from '../chat/pi-stream'
 import type { AppDatabase } from '../db/database'
 import { resolveProviderCredential } from './credentials'
 import {
+  checkReasonOfChatError,
   markProviderCheckPassed,
   readDefaultModel,
   readModelProvider,
@@ -97,7 +98,8 @@ export async function testProviderConnection(
     return fail(database, provider, expectedUpdatedAt, checkedAt, 'timeout', {
       code: 'network',
       kind: 'TIMEOUT',
-      detail: `测试连接在 ${options.timeoutMs ?? PROVIDER_TEST_TIMEOUT_MS} 毫秒内没有完成。`
+      detail: `测试连接在 ${options.timeoutMs ?? PROVIDER_TEST_TIMEOUT_MS} 毫秒内没有完成。`,
+      ...(probe.requestId === undefined ? {} : { requestId: probe.requestId })
     })
   }
   if (probe.outcome === 'failed') {
@@ -106,7 +108,7 @@ export async function testProviderConnection(
       provider,
       expectedUpdatedAt,
       checkedAt,
-      reasonOf(probe.error),
+      checkReasonOfChatError(probe.error),
       probe.error
     )
   }
@@ -125,7 +127,8 @@ export async function testProviderConnection(
 
 type ProbeOutcome =
   | { outcome: 'verified' }
-  | { outcome: 'timeout' }
+  /** 超时可能发生在响应头之后：那时 request id 仍然可用，不能丢。 */
+  | { outcome: 'timeout'; requestId?: string }
   | { outcome: 'failed'; error: ChatError }
 
 /**
@@ -139,8 +142,9 @@ async function runProbe(
 ): Promise<ProbeOutcome> {
   const controller = new AbortController()
   let settled = false
-  let timedOut = false
   let result: ProbeOutcome | null = null
+  // 响应头一到就记下 request id：正文挂住而超时时，排障信息还在。
+  let capturedRequestId: string | undefined
   let finish!: () => void
   const settledPromise = new Promise<void>((resolve) => {
     finish = resolve
@@ -156,9 +160,11 @@ async function runProbe(
   }
 
   const timer = setTimeout(() => {
-    timedOut = true
     controller.abort()
-    complete({ outcome: 'timeout' })
+    complete({
+      outcome: 'timeout',
+      ...(capturedRequestId === undefined ? {} : { requestId: capturedRequestId })
+    })
   }, timeoutMs)
 
   const running = streamChatCompletion({
@@ -167,6 +173,11 @@ async function runProbe(
     messages: [{ role: 'user', content: PROVIDER_TEST_PROMPT }],
     signal: controller.signal,
     probe: { maxOutputTokens: PROVIDER_TEST_MAX_OUTPUT_TOKENS },
+    onCaptured: (captured) => {
+      if (captured.requestId !== undefined) {
+        capturedRequestId = captured.requestId
+      }
+    },
     onEvent: (event) => {
       if (settled) {
         return
@@ -196,9 +207,7 @@ async function runProbe(
   // 超时后不等待底层请求收尾（它已被 abort），但要把最终 rejection 吃掉。
   void running
 
-  if (timedOut) {
-    return { outcome: 'timeout' }
-  }
+  // 正常收口只有 complete 一条路；走到这里一定已有 result。
   return result ?? { outcome: 'timeout' }
 }
 
@@ -231,48 +240,5 @@ function fail(
     reason,
     error,
     ...(error.requestId === undefined ? {} : { requestId: error.requestId })
-  }
-}
-
-/** 请求层错误 → 落库 / 展示的分类；只认结构化分类，不读报文案。 */
-function reasonOf(error: ChatError): ProviderCheckError {
-  switch (error.kind) {
-    case 'AUTH':
-      return 'invalid-key'
-    case 'INVALID_REQUEST':
-    case 'CONTEXT_WINDOW':
-      return 'invalid-config'
-    case 'QUOTA':
-      return 'quota'
-    case 'RATE_LIMIT':
-      return 'rate-limit'
-    case 'SERVER':
-      return 'server'
-    case 'TIMEOUT':
-      return 'timeout'
-    case 'TRANSPORT':
-      return 'network'
-    case 'EMPTY_RESPONSE':
-      return 'empty-response'
-    default:
-      break
-  }
-  switch (error.code) {
-    case 'invalid-key':
-      return 'invalid-key'
-    case 'context-too-long':
-      return 'invalid-config'
-    case 'insufficient-balance':
-      return 'quota'
-    case 'rate-limited':
-      return 'rate-limit'
-    case 'server-busy':
-      return 'server'
-    case 'network':
-      return 'network'
-    case 'empty-response':
-      return 'empty-response'
-    default:
-      return 'unknown'
   }
 }
