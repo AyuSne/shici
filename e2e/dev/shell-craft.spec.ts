@@ -72,11 +72,12 @@ test('全局栏与阅读工具栏使用同一套 1.5px currentColor 线框图标
   await expect(page.locator('[data-reading-page="true"]')).toBeVisible()
 
   const toolIcons = page.locator('.reading-bar-actions .icon')
-  await expect(toolIcons).toHaveCount(5)
+  // 阅读顶栏：搜索 / 问模型 / 注释 / 阅读设置；「新开一条」已收归对话页内部。
+  await expect(toolIcons).toHaveCount(4)
   const toolMetrics = await toolIcons.evaluateAll((icons) =>
     icons.map((icon) => getComputedStyle(icon).strokeWidth)
   )
-  expect(toolMetrics).toEqual(['1.5px', '1.5px', '1.5px', '1.5px', '1.5px'])
+  expect(toolMetrics).toEqual(['1.5px', '1.5px', '1.5px', '1.5px'])
 })
 
 test('全局滚动条是 6px 级别的暖色细条，词条页不再并排两条滚动条', async ({
