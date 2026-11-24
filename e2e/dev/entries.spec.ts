@@ -87,8 +87,43 @@ function entryRow(page: Page, name: string) {
   })
 }
 
+/** 原句的低频动作收在 `···` 菜单里：先悬停露出动作行，再点菜单项。 */
+async function sentenceAction(
+  sentence: ReturnType<Page['locator']>,
+  label: string
+): Promise<void> {
+  await sentence.hover()
+  await sentence.getByRole('button', { name: '更多原句操作' }).click()
+  await sentence.getByRole('menuitem', { name: label }).click()
+}
+
+/** 右栏顶部的四项维护动作。 */
+async function openMore(page: Page, label: string) {
+  const rail = page.locator('.entries-rail-open')
+  await rail.getByRole('button', { name: '词条维护' }).click()
+  await rail.getByRole('menuitem', { name: label }).click()
+}
+
+/** 可搜索目标选择器：输入关键词后点中候选，按标签精确匹配而不是整段无障碍名。 */
+async function chooseTarget(
+  scope: ReturnType<Page['locator']>,
+  label: string,
+  query: string,
+  option: string
+) {
+  const combo = scope.getByRole('combobox', { name: label })
+  await combo.fill(query)
+  const escaped = option.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  await scope
+    .locator('.target-picker-label')
+    .filter({ hasText: new RegExp(`^${escaped}$`) })
+    .first()
+    .locator('..')
+    .click()
+}
+
 test.describe('词条页', () => {
-  test('窄窗口仍能看清词条标题并使用两种对话入口', async ({ launch, userDataDirectory }) => {
+  test('窄窗口仍能看清词条标题并使用统一的问模型入口', async ({ launch, userDataDirectory }) => {
     seed(userDataDirectory, [{ entry: firstArticle, paragraphIndex: 0, needle: 'approach' }])
     const { page, electronApp } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     if (electronApp === null) throw new Error('需要开发版 Electron 进程')
@@ -103,8 +138,11 @@ test.describe('词条页', () => {
     const title = main.getByRole('heading', { name: 'approach', level: 2 })
     await expect(title).toBeVisible()
     expect((await title.boundingBox())?.width ?? 0).toBeGreaterThan(64)
-    await expect(main.getByRole('button', { name: '开始对话' })).toBeVisible()
-    await expect(main.getByRole('button', { name: '新开一条' })).toBeVisible()
+    await expect(
+      main.locator('.entries-main-actions').getByRole('button', { name: '问模型', exact: true })
+    ).toBeVisible()
+    await expect(main.getByRole('button', { name: '新开一条' })).toHaveCount(0)
+    await expect(main.getByRole('button', { name: '开始对话' })).toHaveCount(0)
     const dimensions = await main.evaluate((element) => ({
       scroll: element.scrollWidth,
       client: element.clientWidth
@@ -214,11 +252,11 @@ test.describe('词条页', () => {
     await expect(first.locator('.entry-note-pin')).toHaveCount(0)
 
     // 从「更多」里移到另一个词条。
-    await rail.getByRole('button', { name: '移动学习内容…' }).click()
+    await openMore(page, '移动学习内容…')
     await rail
       .getByRole('combobox', { name: '要移动的学习内容' })
       .selectOption({ label: '第二条：approach to training' })
-    await rail.getByRole('combobox', { name: '移动到词条' }).selectOption({ label: 'Context' })
+    await chooseTarget(rail, '移动到词条', 'Con', 'Context')
     await rail.getByRole('button', { name: '移过去' }).click()
     await expect(rail.locator('.entry-note-body')).toHaveText([
       '记：approach 在原文是「做法」。'
@@ -246,7 +284,7 @@ test.describe('词条页', () => {
     await page.getByRole('button', { name: '展开学习内容' }).click()
 
     const rail = page.locator('.entries-rail-open')
-    await rail.getByRole('button', { name: '换主词形…' }).click()
+    await openMore(page, '换主词形…')
     await rail.getByRole('combobox', { name: '新的主词形' }).selectOption({ label: 'Approaching' })
     await rail.getByRole('button', { name: '换主词形', exact: true }).click()
     await expect(page.getByRole('region', { name: '词条内容' }).getByRole('heading', { level: 2 })).toHaveText(
@@ -257,8 +295,8 @@ test.describe('词条页', () => {
     await expect(entryRow(page, 'Approaching')).toHaveCount(1)
 
     // 把 Context 并进来：4 条原句、2 篇，Context 从列表消失。
-    await rail.getByRole('button', { name: '合并词条…' }).click()
-    await rail.getByRole('combobox', { name: '要并进来的词条' }).selectOption({ label: 'Context（1 句）' })
+    await openMore(page, '合并词条…')
+    await chooseTarget(rail, '要并进来的词条', 'Con', 'Context')
     await expect(rail.getByText('合并后的主词形')).toBeVisible()
     await rail.getByRole('button', { name: '合并', exact: true }).click()
     await expect(
@@ -279,8 +317,8 @@ test.describe('词条页', () => {
     await page.getByRole('button', { name: '展开学习内容' }).click()
 
     const rail = page.locator('.entries-rail-open')
-    await rail.getByRole('button', { name: '拆分原句…' }).click()
-    await rail.getByRole('combobox', { name: '拆到哪个词条' }).selectOption({ label: 'approach' })
+    await openMore(page, '拆分原句…')
+    await chooseTarget(rail, '拆到哪个词条', 'approach', 'approach')
     await expect(rail.getByText('这是最后一条原句')).toBeVisible()
     await rail.getByRole('button', { name: '拆走并删除词条' }).click()
 
@@ -352,8 +390,7 @@ test.describe('词条页', () => {
       .getByRole('region', { name: '词条内容' })
       .locator('.entry-sentence')
       .first()
-    await sentence.hover()
-    await sentence.getByRole('button', { name: '重新圈定' }).click()
+    await sentenceAction(sentence, '重新圈定')
 
     await expect(page.locator('.reading-context-text')).toContainText(
       '重新圈定「approach hiring」· 在这一句里圈出正确范围'
@@ -365,8 +402,7 @@ test.describe('词条页', () => {
     await page.getByRole('button', { name: '回词条', exact: true }).click()
 
     await entryRow(page, 'approach hiring').click()
-    await sentence.hover()
-    await sentence.getByRole('button', { name: '重新圈定' }).click()
+    await sentenceAction(sentence, '重新圈定')
     await selectText(page, 0, 'approach')
 
     await expect(page.getByText('已重新圈定为「approach」。')).toBeVisible()
@@ -390,8 +426,7 @@ test.describe('词条页', () => {
     await entryRow(page, 'approach').click()
 
     const sentence = page.getByRole('region', { name: '词条内容' }).locator('.entry-sentence').first()
-    await sentence.hover()
-    await sentence.getByRole('button', { name: '删除' }).click()
+    await sentenceAction(sentence, '删除')
 
     const dialog = page.getByRole('alertdialog', { name: '删除最后一条原句' })
     await expect(dialog).toContainText('这是最后一条原句。')
@@ -431,8 +466,7 @@ test.describe('词条页', () => {
 
     const main = page.getByRole('region', { name: '词条内容' })
     const sentence = main.locator('.entry-sentence').first()
-    await sentence.hover()
-    await sentence.getByRole('button', { name: '删除' }).click()
+    await sentenceAction(sentence, '删除')
     await page
       .getByRole('alertdialog', { name: '删除最后一条原句' })
       .getByRole('button', { name: '删除词条与原句' })
@@ -486,8 +520,7 @@ test.describe('词条页', () => {
     })
 
     const sentence = page.getByRole('region', { name: '词条内容' }).locator('.entry-sentence').first()
-    await sentence.hover()
-    await sentence.getByRole('button', { name: '删除' }).click()
+    await sentenceAction(sentence, '删除')
     await page
       .getByRole('alertdialog', { name: '删除最后一条原句' })
       .getByRole('button', { name: '删除词条与原句' })
@@ -524,16 +557,14 @@ test.describe('词条页', () => {
 
     const main = page.getByRole('region', { name: '词条内容' })
     const sentence = main.locator('.entry-sentence').first()
-    await sentence.hover()
-    await sentence.getByRole('button', { name: '删除' }).click()
+    await sentenceAction(sentence, '删除')
 
     const dialog = page.getByRole('alertdialog', { name: '删除最后一条原句' })
     await expect(dialog).toContainText('1 条学习内容也会一起删除')
     await dialog.getByRole('button', { name: '取消' }).click()
     await expect(main.locator('.entry-sentence')).toHaveCount(1)
 
-    await sentence.hover()
-    await sentence.getByRole('button', { name: '删除' }).click()
+    await sentenceAction(sentence, '删除')
     await page.getByRole('alertdialog').getByRole('button', { name: '删除词条与原句' }).click()
 
     await expect(page.getByText('原句与「Context」已删除。')).toBeVisible()

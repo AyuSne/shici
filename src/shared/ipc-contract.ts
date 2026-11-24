@@ -19,6 +19,7 @@ import type {
   EntryListResult,
   EntryPage,
   EntrySentenceTarget,
+  EntrySentenceSnapshot,
   LearningNoteResult,
   MergeEntriesRequest,
   MergeEntriesResult,
@@ -28,6 +29,7 @@ import type {
   PinLearningNoteRequest,
   ReselectEntrySentenceRequest,
   ReselectEntrySentenceResult,
+  RestoreEntrySentenceResult,
   SetEntryLaterRequest,
   SetEntryLaterResult,
   UpdateLearningNoteRequest,
@@ -198,6 +200,10 @@ export interface IpcContract {
   'entries:delete-sentence': {
     payload: { entrySentenceId: string }
     result: DeleteEntrySentenceResult
+  }
+  'entries:restore-sentence': {
+    payload: { snapshot: EntrySentenceSnapshot }
+    result: RestoreEntrySentenceResult
   }
   'entries:list': { payload: EntryListRequest; result: EntryListResult }
   'entries:page': { payload: { entryId: string }; result: EntryPage | null }
@@ -387,6 +393,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'dictionary:lookup': true,
   'entries:card': true,
   'entries:delete-sentence': true,
+  'entries:restore-sentence': true,
   'entries:list': true,
   'entries:page': true,
   'entries:sentence': true,

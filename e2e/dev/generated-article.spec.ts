@@ -197,7 +197,8 @@ test('生成文章全链路：回答完成后存为文章，AI 段阅读、选�
   await page.locator('.assistant-actions').getByRole('button', { name: '钉住' }).click()
   const pinDialog = page.getByRole('dialog', { name: '钉到哪儿' })
   await pinDialog.getByRole('button', { name: /^文章 · / }).click()
-  await pinDialog.getByRole('combobox', { name: '选择文章' }).selectOption({ label: '我的 AI 文章' })
+  await pinDialog.getByRole('combobox', { name: '选择文章' }).fill('我的 AI')
+  await pinDialog.getByRole('option', { name: /我的 AI 文章/ }).click()
   await pinDialog.getByRole('button', { name: '钉住', exact: true }).click()
   await expect(page.getByText('已钉到文章 我的 AI 文章')).toBeVisible()
 
@@ -216,7 +217,7 @@ test('生成文章全链路：回答完成后存为文章，AI 段阅读、选�
   await expect(aiSection.getByRole('button', { name: '去词条页选词' })).toBeVisible()
 
   await openChat(page)
-  await page.getByRole('button', { name: /^钉板 \d+ · 本对话$/ }).click()
+  await page.getByRole('button', { name: /^钉板 / }).click()
   const board = page.getByRole('complementary', { name: '钉板', exact: true })
   await board.getByRole('tab', { name: '未归档 1' }).click()
   await expect(board).toContainText('Approach shapes how we read.')

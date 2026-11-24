@@ -9,12 +9,22 @@
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr) auto;
   height: 100%;
+  transition: grid-template-columns 200ms var(--ease-paper);
+}
+
+.chat-page[data-rail-collapsed='true'] {
+  grid-template-columns: 0 minmax(0, 1fr) auto;
+}
+
+.chat-page[data-rail-collapsed='true'] .chat-rail {
+  display: none;
 }
 
 /* ---------- 线程栏 ---------- */
 
 .chat-rail {
   display: flex;
+  grid-column: 1;
   flex-direction: column;
   min-height: 0;
   padding: 16px 8px;
@@ -134,6 +144,7 @@
 
 .chat-main {
   display: flex;
+  grid-column: 2;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
@@ -151,11 +162,19 @@
 }
 
 .chat-rail-toggle {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 8px;
   border: 1px solid var(--rule);
   border-radius: 8px;
   background: var(--panel);
+}
+
+.chat-rail-toggle:hover {
+  border-color: var(--rule-hover);
+  background: var(--hover);
+  color: var(--ink);
 }
 
 .chat-title {
@@ -1037,6 +1056,14 @@
 
   .chat-page {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-page[data-rail-collapsed='true'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-page[data-rail-collapsed='true'] .chat-rail {
+    display: flex;
   }
 
   .chat-rail {

@@ -31,7 +31,13 @@ export function AnswerText({ text, saved }: { text: string; saved?: SavedAnswer 
         }
       }
       decorations.set(range, {
-        className: hits.some((pin) => pin.id === marks.sourceHitPinId) ? 'is-pinned is-source-hit' : 'is-pinned',
+        className: [
+          'is-pinned',
+          hits.some((pin) => pin.id === marks.sourceHitPinId) ? 'is-source-hit' : '',
+          fresh.length > 0 ? 'is-fresh-pin' : ''
+        ]
+          .filter(Boolean)
+          .join(' '),
         fresh
       })
     }

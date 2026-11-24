@@ -34,6 +34,7 @@ import type {
   EntryListRequest,
   EntryListResult,
   EntryPage,
+  EntrySentenceSnapshot,
   EntrySentenceTarget,
   LearningNoteResult,
   MergeEntriesRequest,
@@ -44,6 +45,7 @@ import type {
   PinLearningNoteRequest,
   ReselectEntrySentenceRequest,
   ReselectEntrySentenceResult,
+  RestoreEntrySentenceResult,
   SetEntryLaterRequest,
   SetEntryLaterResult,
   UpdateLearningNoteRequest,
@@ -294,6 +296,13 @@ export function loadWordEntryCard(entryId: string): Promise<WordEntryCard | null
 /** 删掉一条原句；词条只剩这一条时连词条一起删。 */
 export function deleteEntrySentence(entrySentenceId: string): Promise<DeleteEntrySentenceResult> {
   return invoke('entries:delete-sentence', { entrySentenceId })
+}
+
+/** 撤销删除非最后一条原句：按删除时返回的不可变快照原样恢复。 */
+export function restoreEntrySentence(
+  snapshot: EntrySentenceSnapshot
+): Promise<RestoreEntrySentenceResult> {
+  return invoke('entries:restore-sentence', { snapshot })
 }
 
 /** 词条页左栏：计数、搜索、排序与筛选。 */

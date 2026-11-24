@@ -808,3 +808,114 @@ button:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------- 可搜索目标选择器（词条 / 文章共用） ---------- */
+
+.target-picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.target-picker-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.target-picker-input:hover {
+  border-color: var(--rule-hover);
+}
+
+.target-picker-input:focus-visible {
+  border-color: var(--ink-2);
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
+.target-picker-input::placeholder {
+  color: var(--ink-3);
+}
+
+.target-picker-current {
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.target-picker-current strong {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.target-picker-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 40;
+  max-height: 220px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(60, 48, 30, 0.06);
+  list-style: none;
+}
+
+[data-theme='dark'] .target-picker-list {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.target-picker-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.target-picker-option[data-active='true'] {
+  background: var(--hover);
+}
+
+.target-picker-option[aria-selected='true'] {
+  color: var(--amber);
+}
+
+.target-picker-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-picker-detail {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-picker-empty {
+  padding: 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}

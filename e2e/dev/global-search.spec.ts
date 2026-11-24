@@ -701,7 +701,7 @@ test('对话页从来源回跳后打开搜索：来源横条与被高亮段落�
 
   await openEntries(page)
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
-  await page.getByRole('button', { name: /^学习内容/ }).click()
+  await page.getByRole('button', { name: /^展开学习内容/ }).click()
   await page
     .locator('.entry-note')
     .filter({ hasText: 'approach 是接近' })

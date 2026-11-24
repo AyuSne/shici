@@ -15,7 +15,7 @@ export function PinBoardPanel({
   threadEntryId,
   busyPinId,
   freshPinIds,
-  onOpenUnfiled,
+  onOpen,
   onClose,
   onSelectTab,
   onOpenSource,
@@ -32,7 +32,8 @@ export function PinBoardPanel({
   threadEntryId: string | null
   busyPinId: string | null
   freshPinIds: readonly string[]
-  onOpenUnfiled: () => void
+  /** 边缘磁吸拉手：有当前对话钉住就看当前对话，否则直接看未归档。 */
+  onOpen: () => void
   onClose: () => void
   onSelectTab: (tab: PinTab) => void
   onOpenSource: (pin: Pin) => void
@@ -43,17 +44,19 @@ export function PinBoardPanel({
   onViewEntry: (entryId: string) => void
 }) {
   if (!open) {
+    const total = board.threadPins.length + board.unfiledCount
     return (
       <aside className="pin-board pin-board-collapsed" aria-label="钉板">
         <button
           type="button"
           className="pin-board-handle"
-          aria-label={`未归档 ${board.unfiledCount}`}
+          aria-label={`钉板 ${total} · 当前对话 ${board.threadPins.length} · 未归档 ${board.unfiledCount}`}
           aria-expanded={false}
-          onClick={onOpenUnfiled}
+          onClick={onOpen}
         >
-          <span className="pin-board-count">{board.unfiledCount}</span>
-          <span className="pin-board-label">未归档</span>
+          <span className="pin-board-count">{total}</span>
+          <span className="pin-board-label">钉板</span>
+          {total > 0 ? <span className="pin-board-dot" aria-hidden="true" /> : null}
         </button>
       </aside>
     )

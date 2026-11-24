@@ -177,7 +177,7 @@ test.describe('内置词典', () => {
     await expect(rail.locator('.entry-note-body')).toContainText('方法, 途径')
   })
 
-  test('对话里选中词时浮卡多一个「释义」，查到同一个离线词典', async ({ launch }) => {
+  test('对话里选中片段只浮出钉住/追问/复制三项，不带词典释义', async ({ launch }) => {
     const stub = await startSseStub({ kind: 'stream', text: ['Approach matters here.'] })
     stubs.push(stub)
     const { page } = await launch({
@@ -197,25 +197,19 @@ test.describe('内置词典', () => {
     await page.getByRole('button', { name: '发送' }).click()
     await expect(page.locator('.assistant-text')).toContainText('Approach matters here.')
 
-    // 选一个单词：浮卡出现「释义」，点开是同一份离线释义。
+    // 选中单词或短语都只有统一的三个动作；离线词典只在词条右栏查。
     await selectAnswerWord(page, 'Approach')
-    const card = page.locator('.pin-selection-card')
-    await card.getByRole('button', { name: '释义' }).click()
-    const block = card.getByRole('group', { name: '词典' })
-    await expect(block.locator('.dictionary-word')).toHaveText('approach')
-    await expect(block.locator('.dictionary-phonetic')).toHaveText('/əˈprəutʃ/')
-    await expect(block.locator('.dictionary-sense-text').first()).toContainText('方法')
+    const capsule = page.locator('.selection-capsule')
+    await expect(capsule.getByRole('button')).toHaveText(['钉住', '追问', '复制'])
+    await expect(capsule.getByRole('button', { name: '释义' })).toHaveCount(0)
 
-    // 选一句短语不给「释义」，免得把整句送进词典换回一句没收录。
     await selectAnswerWord(page, 'Approach matters')
-    await expect(
-      page.locator('.pin-selection-card').getByRole('button', { name: '释义' })
-    ).toHaveCount(0)
+    await expect(capsule.getByRole('button')).toHaveText(['钉住', '追问', '复制'])
   })
 })
 
-/** 在第一条回答里选中一小段文字，模拟鼠标松开后浮出划词卡。 */
+/** 在第一条回答里选中一小段文字，模拟鼠标松开后浮出划词胶囊。 */
 async function selectAnswerWord(page: Page, needle: string): Promise<void> {
   await selectAnswerText(page, needle)
-  await expect(page.locator('.pin-selection-card')).toBeVisible()
+  await expect(page.locator('.selection-capsule')).toBeVisible()
 }

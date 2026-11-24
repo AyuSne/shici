@@ -374,6 +374,34 @@ describe('createBridge', () => {
     ])
   })
 
+  it('撤销删除原句的快照穿过白名单', async () => {
+    const { ipc } = fakeRenderer()
+    const calls: unknown[] = []
+    const bridge = createBridge({
+      ...ipc,
+      async invoke(channel, payload) {
+        calls.push({ channel, payload })
+        return { status: 'restored' }
+      }
+    })
+    const snapshot = {
+      id: 'entry-sentence-1',
+      entryId: 'entry-1',
+      articleId: 'article-1',
+      paragraphId: 'paragraph-1',
+      sentenceOrdinal: 0,
+      surface: 'approach',
+      start: 10,
+      end: 18,
+      collectedAt: '2026-11-18T08:00:00.000Z'
+    }
+
+    await expect(
+      bridge.invoke('entries:restore-sentence', { snapshot })
+    ).resolves.toEqual({ status: 'restored' })
+    expect(calls).toEqual([{ channel: 'entries:restore-sentence', payload: { snapshot } }])
+  })
+
   it('未知 channel 立即报错，且不发给主进程', async () => {
     const { ipc, invocations } = fakeRenderer()
     const bridge = createBridge(ipc)

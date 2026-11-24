@@ -55,6 +55,7 @@ import {
   readEntrySentenceTarget,
   readWordEntryCard
 } from './entries/queries'
+import { restoreEntrySentence } from './entries/sentence-undo'
 import { registerIpcHandlers } from './ipc/register'
 import { searchEverything } from './search/global'
 import { readSearchShortcuts } from './search/shortcuts'
@@ -277,6 +278,7 @@ function start(): void {
     'dictionary:lookup': (payload) => lookupDictionary.lookup(payload.word),
     'entries:card': (payload) => readWordEntryCard(opened, payload.entryId),
     'entries:delete-sentence': (payload) => deleteEntrySentence(opened, payload.entrySentenceId),
+    'entries:restore-sentence': (payload) => restoreEntrySentence(opened, payload.snapshot),
     'entries:list': (payload) => readEntryList(opened, payload),
     'entries:page': (payload) =>
       readEntryPage(opened, payload.entryId, { dictionary: entryDictionary }),

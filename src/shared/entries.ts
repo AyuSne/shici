@@ -108,6 +108,25 @@ export type CollectSelectionResult =
       reason: CollectRejection
     }
 
+/**
+ * 一条被删原句的不可变快照。只用于非最后一条原句的 5 秒撤销：
+ * 恢复时原样写回 id、句锚点、词形与收集时间，不重新解析选区，也不新建词条。
+ */
+export type EntrySentenceSnapshot = {
+  id: string
+  entryId: string
+  articleId: string
+  paragraphId: string
+  /** 段内句序，0 起。 */
+  sentenceOrdinal: number
+  surface: string
+  /** 段内字符区间，与原句在原文里的位置一致。 */
+  start: number
+  end: number
+  /** ISO 8601 UTC；恢复后仍是这个时间。 */
+  collectedAt: string
+}
+
 export type DeleteEntrySentenceResult =
   | {
       status: 'deleted'
@@ -117,15 +136,34 @@ export type DeleteEntrySentenceResult =
       /** 被删原句所在的那一篇；`marks` 只属于这一篇。 */
       articleId: string
       marks: ReadingCollectionMark[]
+      /**
+       * 非最后一条原句才给撤销快照；最后一条会连词条与学习内容一起删，
+       * 走显式危险确认，不提供恢复。旧记录没有这个字段。
+       */
+      snapshot?: EntrySentenceSnapshot
     }
   | {
       status: 'missing'
     }
 
+/** 撤销删除：只按快照恢复，不复活已删的文章 / 原句 / 词条，也不覆盖后来改动。 */
+export type RestoreEntrySentenceResult =
+  | {
+      status: 'restored'
+      entry: EntrySummary
+      sentence: EntrySentence
+      articleId: string
+      marks: ReadingCollectionMark[]
+    }
+  | { status: 'missing' }
+  | { status: 'rejected'; reason: 'source' | 'entry' | 'conflict' }
+
 /** 词条页左栏的一行。 */
 export type EntryListItem = {
   id: string
   mainForm: string
+  /** 已收集到的其他词形，按首次收集时间排；不含主词形。 */
+  variants: string[]
   sentenceCount: number
   articleCount: number
   noteCount: number

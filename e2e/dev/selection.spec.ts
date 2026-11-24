@@ -46,9 +46,10 @@ test.describe('选词与原句', () => {
       await openTestArticle(page)
       const excerpt = 'hiring differently. Approaching a new desk'
       await selectText(page, 0, excerpt)
-      await expect(page.getByRole('button', { name: '带这段去对话' })).toBeVisible()
+      const excerptToolbar = page.getByRole('toolbar', { name: '摘录操作' })
+      await expect(excerptToolbar.getByRole('button', { name: '问模型' })).toBeVisible()
       await expect(page.locator('.reading-selected')).toHaveCount(0)
-      await page.getByRole('button', { name: '带这段去对话' }).click()
+      await excerptToolbar.getByRole('button', { name: '问模型' }).click()
       await expect(page.getByTestId('context-summary')).toContainText('1 条摘录')
       const chip = page.locator('.context-chip').filter({ hasText: '摘录' })
       await expect(chip).toContainText('摘录')
@@ -66,7 +67,7 @@ test.describe('选词与原句', () => {
   test('跨段摘录复用文章对话并保留两段正文与出处', async ({ launch }) => {
     const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openTestArticle(page)
-    await page.getByRole('button', { name: '与这篇文章对话' }).click()
+    await page.getByRole('button', { name: '问模型' }).click()
     await expect(page.getByTestId('context-summary')).toBeVisible()
     const threadHash = await page.evaluate(() => window.location.hash)
     await openTestArticle(page)
@@ -83,7 +84,10 @@ test.describe('选词与原句', () => {
       selection.addRange(range)
       document.querySelector('.reading-body')?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
     })
-    await page.getByRole('button', { name: '带这段去对话' }).click()
+    await page
+      .getByRole('toolbar', { name: '摘录操作' })
+      .getByRole('button', { name: '问模型' })
+      .click()
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(threadHash)
     const chip = page.locator('.context-chip').filter({ hasText: '摘录' })
     await expect(chip.locator('.context-chip-label')).toHaveAttribute('title', /段 1、段 2/)

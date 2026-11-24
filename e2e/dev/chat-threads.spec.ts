@@ -134,6 +134,16 @@ async function openEntry(page: Page, name: string): Promise<void> {
   await expect(page.getByRole('heading', { name, level: 2 })).toBeVisible()
 }
 
+/** 原句的低频动作（删除 / 重新圈定）收在 `···` 菜单里。 */
+async function sentenceAction(
+  sentence: ReturnType<Page['locator']>,
+  label: string
+): Promise<void> {
+  await sentence.hover()
+  await sentence.getByRole('button', { name: '更多原句操作' }).click()
+  await sentence.getByRole('menuitem', { name: label }).click()
+}
+
 function requestMessages(stub: SseStub, index: number): { role: string; content: string }[] {
   const body = stub.requests[index]?.body ?? {}
   return (body.messages ?? []) as { role: string; content: string }[]
@@ -165,23 +175,20 @@ test.describe('线程主对象与上下文', () => {
     await expect(page.locator('.thread-row')).toHaveCount(2)
   })
 
-  test('词条连点复用线程，头部回词条并可明确新开', async ({ launch, userDataDirectory }) => {
+  test('词条连点复用最近线程，头部回词条；新开对话只在对话页内部', async ({ launch, userDataDirectory }) => {
     seed(userDataDirectory)
     const page = await launchApp(launch, { env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openEntry(page, 'approach')
-    await page.getByRole('button', { name: '开始对话' }).dblclick()
+    await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).dblclick()
     await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
     const firstUrl = page.url()
     await expect(page.locator('.thread-row')).toHaveCount(1)
     await page.getByRole('button', { name: /词条 approach · 3 条原句/ }).click()
     await expect(page.getByRole('heading', { name: 'approach', level: 2 })).toBeVisible()
-    await page.getByRole('button', { name: '开始对话' }).click()
+    await expect(page.getByRole('button', { name: '新开一条' })).toHaveCount(0)
+    await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).click()
     await expect.poll(() => page.url()).toBe(firstUrl)
     await expect(page.locator('.thread-row')).toHaveCount(1)
-    await page.getByRole('button', { name: /词条 approach · 3 条原句/ }).click()
-    await page.getByRole('button', { name: '新开一条' }).dblclick()
-    await expect(page.locator('.thread-row')).toHaveCount(2)
-    expect(page.url()).not.toBe(firstUrl)
   })
 
   test('原句线程头回词条并定位那条原句', async ({ launch, userDataDirectory }) => {
@@ -190,7 +197,7 @@ test.describe('线程主对象与上下文', () => {
     await openEntry(page, 'approach')
     const sentence = page.locator('.entry-sentence').filter({ hasText: 'Employers approach hiring differently.' })
     await sentence.hover()
-    await sentence.getByRole('button', { name: '用这句提问' }).click()
+    await sentence.getByRole('button', { name: '问模型' }).click()
     await page.getByRole('button', { name: /2026年6月 · 第1套.*第 1 句/ }).click()
     await expect(page.getByRole('heading', { name: 'approach', level: 2 })).toBeVisible()
     await expect(sentence).toHaveAttribute('data-focused', 'true')
@@ -198,7 +205,7 @@ test.describe('线程主对象与上下文', () => {
     expect(page.url()).toContain('?sentence=')
   })
 
-  test('词条原句可以复用已有线程或另开线程，各自保留对话和原句上下文', async ({ launch, userDataDirectory }) => {
+  test('词条原句复用最近线程并保留原句上下文；新建对话只留在对话页内部', async ({ launch, userDataDirectory }) => {
     seed(userDataDirectory)
     const stub = await createStub({ kind: 'stream', text: ['好的。'] })
     const { page, electronApp } = await launch({ env: seededEnvironment(stub.baseUrl) })
@@ -211,39 +218,33 @@ test.describe('线程主对象与上下文', () => {
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeLessThanOrEqual(900)
     await openEntry(page, 'approach')
     const sentence = page.locator('.entry-sentence').filter({ hasText: 'Employers approach hiring differently.' })
-    await sentence.getByRole('button', { name: '用这句提问' }).click()
+    await sentence.getByRole('button', { name: '问模型' }).click()
     await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
     await ask(page, '原线程的问题')
     await expect(page.getByRole('button', { name: '重新生成' })).toBeVisible()
     const firstHash = await page.evaluate(() => window.location.hash)
 
     await page.locator('.chat-subtitle button').click()
-    await sentence.getByRole('button', { name: '用这句提问' }).click()
+    await sentence.getByRole('button', { name: '问模型' }).click()
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstHash)
     await expect(page.locator('.chat-scroll').getByText('原线程的问题')).toBeVisible()
+
+    // 回到词条页：不再有并排的「新建对话」，只有问模型。
     await page.locator('.chat-subtitle button').click()
-    await sentence.getByRole('button', { name: '为这句新建对话' }).click()
-    await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
-    await expect(page.locator('.chat-scroll').getByText('原线程的问题')).toHaveCount(0)
-    expect(await page.evaluate(() => window.location.hash)).not.toBe(firstHash)
-    await ask(page, '新线程的问题')
-    await expect(page.getByRole('button', { name: '重新生成' })).toBeVisible()
-    await expect.poll(() => stub.requests.length).toBe(2)
-    expect(requestMessages(stub, 1)[0]?.content).toContain('[原句] Employers approach hiring differently.')
-    await page.goBack()
-    await page.goBack()
+    await expect(page.getByRole('button', { name: '为这句新建对话' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '新开一条' })).toHaveCount(0)
+    await sentence.getByRole('button', { name: '问模型' }).click()
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstHash)
     await expect(page.locator('.chat-scroll').getByText('原线程的问题')).toBeVisible()
-    await expect(page.locator('.chat-scroll').getByText('新线程的问题')).toHaveCount(0)
-    await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
+    await expect.poll(() => stub.requests.length).toBe(1)
   })
 
-  test('文章连点复用线程，头部回阅读并可明确新开', async ({ launch, userDataDirectory }) => {
+  test('文章连点复用最近线程，头部回阅读；不再并排新开入口', async ({ launch, userDataDirectory }) => {
     seed(userDataDirectory)
     const page = await launchApp(launch, { env: { CORPUS_DIRECTORY: corpusDirectory } })
     await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '文章库' }).click()
     const detailTitle = await page.locator('.library-detail-title').innerText()
-    await page.getByRole('button', { name: '与这篇对话' }).dblclick()
+    await page.getByRole('button', { name: '问模型' }).dblclick()
     await expect(page.getByRole('heading', { name: detailTitle, level: 1 })).toBeVisible()
     const firstUrl = page.url()
     await expect(page.locator('.thread-row')).toHaveCount(1)
@@ -251,13 +252,14 @@ test.describe('线程主对象与上下文', () => {
     await expect.poll(() => page.url()).toContain('#/reading/')
     await page.goBack()
     await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '文章库' }).click()
-    await page.getByRole('button', { name: '与这篇对话' }).click()
+    await page.getByRole('button', { name: '问模型' }).click()
     await expect.poll(() => page.url()).toBe(firstUrl)
     await expect(page.locator('.thread-row')).toHaveCount(1)
     await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '文章库' }).click()
-    await page.getByRole('button', { name: '新开一条' }).click()
-    await expect(page.locator('.thread-row')).toHaveCount(2)
-    expect(page.url()).not.toBe(firstUrl)
+    await expect(page.getByRole('button', { name: '新开一条' })).toHaveCount(0)
+    await page.getByRole('button', { name: '问模型' }).click()
+    await expect.poll(() => page.url()).toBe(firstUrl)
+    await expect(page.locator('.thread-row')).toHaveCount(1)
   })
 
   test('并发 IPC 按主对象打开只创建一条，查询返回同一条', async ({ launch, userDataDirectory }) => {
@@ -287,11 +289,10 @@ test.describe('线程主对象与上下文', () => {
     await openEntry(page, 'approach')
     const sentence = page.locator('.entry-sentence').filter({ hasText: 'Employers approach hiring differently.' })
     await sentence.hover()
-    await sentence.getByRole('button', { name: '用这句提问' }).click()
+    await sentence.getByRole('button', { name: '问模型' }).click()
     const threadUrl = page.url()
     await openEntry(page, 'approach')
-    await sentence.hover()
-    await sentence.getByRole('button', { name: '删除' }).click()
+    await sentenceAction(sentence, '删除')
     await expect(sentence).toHaveCount(0)
     await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '对话' }).click()
     await page.locator('.chat-subtitle button').click()
@@ -304,7 +305,7 @@ test.describe('线程主对象与上下文', () => {
     await expect(page.getByRole('heading', { name: '词条', level: 1 })).toBeVisible()
   })
 
-  test('来源词条已删除时，开始对话在当前页面提示并提供刷新', async ({ launch, userDataDirectory }) => {
+  test('来源词条已删除时，问模型在当前页面提示并提供刷新', async ({ launch, userDataDirectory }) => {
     seed(userDataDirectory)
     const page = await launchApp(launch, { env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openEntry(page, 'approach')
@@ -317,7 +318,7 @@ test.describe('线程主对象与上下文', () => {
         await api.invoke('entries:delete-sentence', { entrySentenceId })
       }
     }, ids)
-    await page.getByRole('button', { name: '开始对话' }).click()
+    await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).click()
     await expect(page.getByRole('alert')).toContainText('关联的内容已删除')
     await expect(page.getByRole('button', { name: '刷新列表' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '词条', level: 1 })).toBeVisible()
@@ -334,7 +335,7 @@ test.describe('线程主对象与上下文', () => {
     })
 
     await openEntry(page, 'approach')
-    await page.getByRole('button', { name: '开始对话' }).click()
+    await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).click()
 
     await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
     await expect(page.getByText('词条 approach · 3 条原句 · 2 篇')).toBeVisible()
@@ -374,16 +375,16 @@ test.describe('线程主对象与上下文', () => {
     const page = await launchApp(launch, { env: seededEnvironment(stub.baseUrl) })
 
     await openEntry(page, 'approach')
-    await page.getByRole('button', { name: '开始对话' }).click()
+    await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).click()
     await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
 
-    // 原句：词条页一条原句上的「提问」。
+    // 原句：词条页一条原句上的「问模型」。
     await openEntry(page, 'approach')
     const sentence = page
       .locator('.entry-sentence')
       .filter({ hasText: 'Employers approach hiring differently.' })
     await sentence.hover()
-    await sentence.getByRole('button', { name: '用这句提问' }).click()
+    await sentence.getByRole('button', { name: '问模型' }).click()
     await expect(page.getByRole('heading', { name: 'approach · 原句', level: 1 })).toBeVisible()
     await expect(
       page.getByText('2026年6月 · 第1套 · 仔细阅读 Passage One · 段 1 · 第 1 句')
@@ -395,13 +396,13 @@ test.describe('线程主对象与上下文', () => {
     await expect(page.getByRole('heading', { name: '新的学习', level: 1 })).toBeVisible()
     await expect(page.getByText('从词或文章开始')).toBeVisible()
 
-    // 文章：文章库详情的「与这篇对话」。
+    // 文章：文章库详情的「问模型」。
     await page
       .getByRole('navigation', { name: '全局导航' })
       .getByRole('button', { name: '文章库' })
       .click()
     const detailTitle = await page.locator('.library-detail-title').innerText()
-    await page.getByRole('button', { name: '与这篇对话' }).click()
+    await page.getByRole('button', { name: '问模型' }).click()
     await expect(page.getByRole('heading', { name: detailTitle, level: 1 })).toBeVisible()
     await expect(page.locator('.chat-subtitle')).toHaveText(
       /^\d{4}年\d{1,2}月 · 第\d+套 · .+ · \d+ 词$/

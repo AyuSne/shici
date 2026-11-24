@@ -6,43 +6,52 @@ import {
   moveEntrySentence,
   moveLearningNote
 } from '../api'
+import { SearchableTargetPicker } from '../components/searchable-target-picker'
+import type { SearchableTarget } from '../components/target-search'
 import { failureText } from '../errors'
 import { noteExcerpt, sentenceSourceText } from './format'
 
-type MoreForm = 'merge' | 'split' | 'main-form' | 'move-note'
+export type MoreForm = 'merge' | 'split' | 'main-form' | 'move-note'
 
 type SentenceChoice = { sentence: EntrySentence; articleTitle: string }
 
 /**
- * 右栏「更多」：合并词条、拆分原句、换主词形、移动学习内容。
- * 每次只铺开一种表单，改完让词条页重读并说一句结果。
+ * 右栏顶部 `···` 里的四项维护动作。菜单只占一次点击，选中某项后才在原地铺开表单；
+ * 目标词条统一用可搜索选择器，输入即时过滤，↑/↓ 移动、Enter 选中。
  */
 export function MoreActions({
   page,
   entries,
+  form,
+  onPick,
+  onClose,
   onChanged,
   onEntryGone
 }: {
   page: EntryPage
-  /** 全部词条，给合并、拆分与移动挑目标。 */
   entries: readonly EntryListItem[]
+  /** null 时渲染菜单；给具体表单时渲染那张表单。 */
+  form: MoreForm | null
+  /** 菜单里选了一项。 */
+  onPick: (form: MoreForm) => void
+  /** 取消当前表单。 */
+  onClose: () => void
   onChanged: (message: string) => void
   onEntryGone: (entryId: string) => void
 }) {
-  const [form, setForm] = useState<MoreForm | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
   const otherEntries = entries.filter((entry) => entry.id !== page.entry.id)
   const forms = [page.entry.mainForm, ...page.entry.variants]
   const sentences: SentenceChoice[] = page.groups.flatMap((group) =>
     group.sentences.map((sentence) => ({ sentence, articleTitle: group.articleTitle }))
   )
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const dropsEntry = page.entry.sentenceCount <= 1
 
   const [mergeTargetId, setMergeTargetId] = useState('')
   const [mergeMainForm, setMergeMainForm] = useState(page.entry.mainForm)
   const [splitSentenceId, setSplitSentenceId] = useState(sentences[0]?.sentence.id ?? '')
-  const [splitTarget, setSplitTarget] = useState('new')
+  const [splitTarget, setSplitTarget] = useState(defaultSplitTarget())
   const [mainForm, setMainForm] = useState(page.entry.mainForm)
   const [moveNoteId, setMoveNoteId] = useState(page.notes[0]?.id ?? '')
   const [moveTarget, setMoveTarget] = useState('')
@@ -50,26 +59,27 @@ export function MoreActions({
   const mergeTarget = otherEntries.find((entry) => entry.id === mergeTargetId) ?? null
   const splitChoice = sentences.find((choice) => choice.sentence.id === splitSentenceId) ?? null
   const moveNote = page.notes.find((note) => note.id === moveNoteId) ?? null
-  const dropsEntry = page.entry.sentenceCount <= 1
 
   /** 已经属于本词条的词形不能再建新词条；默认挑一个能用的目标。 */
-  function defaultSplitTarget(choice: SentenceChoice | null): string {
+  function defaultSplitTarget(choice: SentenceChoice | null = sentences[0] ?? null): string {
     if (choice === null) return ''
     if (choice.sentence.canSplitToNew) return 'new'
     return otherEntries[0]?.id ?? ''
   }
 
-  function open(next: MoreForm): void {
-    setForm(next)
-    setError(null)
-    setMergeTargetId('')
-    setMergeMainForm(page.entry.mainForm)
-    setSplitSentenceId(sentences[0]?.sentence.id ?? '')
-    setSplitTarget(defaultSplitTarget(sentences[0] ?? null))
-    setMainForm(page.entry.mainForm)
-    setMoveNoteId(page.notes[0]?.id ?? '')
-    setMoveTarget('')
-  }
+  const entryTargets: SearchableTarget[] = otherEntries.map((entry) => ({
+    id: entry.id,
+    label: entry.mainForm,
+    detail: [entry.variants.length > 0 ? entry.variants.join('、') : '', `${entry.sentenceCount} 句`]
+      .filter(Boolean)
+      .join(' · ')
+  }))
+  const splitTargets: SearchableTarget[] = [
+    ...(splitChoice?.sentence.canSplitToNew ?? true
+      ? [{ id: 'new', label: '新词条', detail: '按这条原句的词形新建' }]
+      : []),
+    ...entryTargets
+  ]
 
   async function submitMerge(): Promise<void> {
     if (mergeTarget === null || busy) return
@@ -82,7 +92,7 @@ export function MoreActions({
         mainForm: mergeMainForm
       })
       if (result.status === 'merged') {
-        setForm(null)
+        onClose()
         const repeated =
           result.repeatedSentences > 0 ? `，其中 ${result.repeatedSentences} 条并成一条` : ''
         onChanged(`已把「${mergeTarget.mainForm}」并进来，迁入 ${result.movedSentences} 条原句${repeated}。`)
@@ -114,7 +124,7 @@ export function MoreActions({
         target: splitTarget === 'new' ? { kind: 'new' } : { kind: 'entry', entryId: splitTarget }
       })
       if (result.status === 'moved') {
-        setForm(null)
+        onClose()
         onChanged(`原句已拆到「${result.to.mainForm}」。`)
         if (result.from === null) {
           onEntryGone(page.entry.id)
@@ -144,7 +154,7 @@ export function MoreActions({
     try {
       const result = await changeEntryMainForm({ entryId: page.entry.id, mainForm })
       if (result.status === 'changed') {
-        setForm(null)
+        onClose()
         onChanged(`主词形已换成「${mainForm}」。`)
         return
       }
@@ -168,7 +178,7 @@ export function MoreActions({
       const result = await moveLearningNote({ noteId: moveNote.id, entryId: moveTarget })
       if (result.status === 'saved') {
         const target = entries.find((entry) => entry.id === result.note.entryId)
-        setForm(null)
+        onClose()
         onChanged(`学习内容已移到「${target?.mainForm ?? '另一个词条'}」。`)
         return
       }
@@ -186,26 +196,34 @@ export function MoreActions({
 
   if (form === null) {
     return (
-      <div className="entry-more-list">
-        <button type="button" className="button" onClick={() => open('merge')}>
+      <div className="entry-menu entry-menu-maintenance" role="menu" aria-label="词条维护">
+        <button type="button" role="menuitem" className="entry-menu-item" onClick={() => onPick('merge')}>
           合并词条…
         </button>
         <button
           type="button"
-          className="button"
+          role="menuitem"
+          className="entry-menu-item"
           disabled={sentences.length === 0}
-          onClick={() => open('split')}
+          onClick={() => onPick('split')}
         >
           拆分原句…
         </button>
-        <button type="button" className="button" disabled={forms.length <= 1} onClick={() => open('main-form')}>
+        <button
+          type="button"
+          role="menuitem"
+          className="entry-menu-item"
+          disabled={forms.length <= 1}
+          onClick={() => onPick('main-form')}
+        >
           换主词形…
         </button>
         <button
           type="button"
-          className="button"
+          role="menuitem"
+          className="entry-menu-item"
           disabled={page.notes.length === 0}
-          onClick={() => open('move-note')}
+          onClick={() => onPick('move-note')}
         >
           移动学习内容…
         </button>
@@ -219,22 +237,18 @@ export function MoreActions({
         <>
           <label className="entry-more-field">
             <span>把哪个词条并进来</span>
-            <select
-              aria-label="要并进来的词条"
-              value={mergeTargetId}
-              onChange={(event) => {
-                setMergeTargetId(event.target.value)
+            <SearchableTargetPicker
+              label="要并进来的词条"
+              targets={entryTargets}
+              value={mergeTargetId === '' ? null : mergeTargetId}
+              onChange={(entryId) => {
+                setMergeTargetId(entryId)
                 setMergeMainForm(page.entry.mainForm)
                 setError(null)
               }}
-            >
-              <option value="">选一个词条</option>
-              {otherEntries.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.mainForm}（{entry.sentenceCount} 句）
-                </option>
-              ))}
-            </select>
+              emptyText="没有匹配的词条"
+              autoFocus
+            />
           </label>
           {mergeTarget !== null && mergeTarget.mainForm !== page.entry.mainForm ? (
             <fieldset className="entry-more-forms">
@@ -260,7 +274,7 @@ export function MoreActions({
             <button type="button" className="button" disabled={mergeTarget === null || busy} onClick={() => void submitMerge()}>
               合并
             </button>
-            <button type="button" className="button" onClick={() => setForm(null)}>
+            <button type="button" className="button" onClick={onClose}>
               取消
             </button>
           </div>
@@ -290,25 +304,14 @@ export function MoreActions({
           </label>
           <label className="entry-more-field">
             <span>拆到</span>
-            <select
-              aria-label="拆到哪个词条"
-              value={splitTarget}
-              onChange={(event) => setSplitTarget(event.target.value)}
-            >
-              <option value="" disabled>
-                选一个词条
-              </option>
-              <option value="new" disabled={splitChoice !== null && !splitChoice.sentence.canSplitToNew}>
-                {splitChoice !== null && !splitChoice.sentence.canSplitToNew
-                  ? '新词条（这个词形已属于本词条）'
-                  : '新词条'}
-              </option>
-              {otherEntries.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.mainForm}
-                </option>
-              ))}
-            </select>
+            <SearchableTargetPicker
+              label="拆到哪个词条"
+              targets={splitTargets}
+              value={splitTarget === '' ? null : splitTarget}
+              onChange={setSplitTarget}
+              emptyText="没有匹配的目标"
+              autoFocus
+            />
           </label>
           {splitChoice !== null &&
           !splitChoice.sentence.canSplitToNew &&
@@ -324,7 +327,7 @@ export function MoreActions({
             >
               {dropsEntry ? '拆走并删除词条' : '拆过去'}
             </button>
-            <button type="button" className="button" onClick={() => setForm(null)}>
+            <button type="button" className="button" onClick={onClose}>
               取消
             </button>
           </div>
@@ -356,7 +359,7 @@ export function MoreActions({
             <button type="button" className="button" disabled={busy} onClick={() => void submitMainForm()}>
               换主词形
             </button>
-            <button type="button" className="button" onClick={() => setForm(null)}>
+            <button type="button" className="button" onClick={onClose}>
               取消
             </button>
           </div>
@@ -379,18 +382,14 @@ export function MoreActions({
           </label>
           <label className="entry-more-field">
             <span>移到</span>
-            <select
-              aria-label="移动到词条"
-              value={moveTarget}
-              onChange={(event) => setMoveTarget(event.target.value)}
-            >
-              <option value="">选一个词条</option>
-              {otherEntries.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.mainForm}
-                </option>
-              ))}
-            </select>
+            <SearchableTargetPicker
+              label="移动到词条"
+              targets={entryTargets}
+              value={moveTarget === '' ? null : moveTarget}
+              onChange={setMoveTarget}
+              emptyText="没有匹配的词条"
+              autoFocus
+            />
           </label>
           <div className="entries-rail-actions">
             <button
@@ -401,7 +400,7 @@ export function MoreActions({
             >
               移过去
             </button>
-            <button type="button" className="button" onClick={() => setForm(null)}>
+            <button type="button" className="button" onClick={onClose}>
               取消
             </button>
           </div>
