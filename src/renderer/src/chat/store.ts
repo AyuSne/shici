@@ -81,8 +81,6 @@ export type PendingSave = {
   error: ChatError | null
   /** 生成时的模型快照，不随后来的默认模型改变。 */
   model: string
-  baseAnswerVersions: number
-  baseContinuationCount: number
   /** 界面展示用：继续生成时把底稿接在前面。 */
   displayText: string
   displayThinking: string
@@ -288,6 +286,19 @@ export function openChatThread(threadId: string | null): void {
   )
 }
 
+/**
+ * 路由同步：只有地址真的切到另一条对话/对象时才当成用户打开。
+ * ChatPage mount 对同一条 route 再调用一次不是新的对话意图，不能取消正在
+ * create/ask 的空白首问；显式「新的学习」走 openChatThread(null) 主动 claim。
+ */
+export function syncChatThread(threadId: string | null): void {
+  if (threadId === state.currentId) {
+    void refreshThreads()
+    return
+  }
+  openChatThread(threadId)
+}
+
 export function refreshThreads(): Promise<void> {
   const sequence = ++threadListSequence
   return loadThreads().then(
@@ -333,7 +344,11 @@ export async function removeChatThread(threadId: string): Promise<boolean> {
 }
 
 /** 共享打开操作的调用方；全部取消后，晚到的结果不能激活/报错去污染新对话。 */
-type OpenClaimants = { signals: (AbortSignal | null)[] }
+type OpenClaimants = {
+  signals: (AbortSignal | null)[]
+  /** 新的有效调用方加入时，把共享数据的展示意图推进到最新。 */
+  reclaim: () => void
+}
 
 /** 一次操作自己是否还有有效调用方，以及它是否仍是最新意图。 */
 type OpenOwnership = {
@@ -384,7 +399,10 @@ export function openThreadForMain(
 ): Promise<string | null> {
   const signal = options.signal ?? null
   if (main.kind === 'none') {
-    const intent = claimConversationIntent()
+    const intent =
+      signal !== null && signal.aborted
+        ? conversationIntentSequence
+        : claimConversationIntent()
     const ownership: OpenOwnership = {
       isLive: () => signal === null || !signal.aborted,
       isLatest: () => intentIsCurrent(intent)
@@ -404,8 +422,15 @@ export function openThreadForMain(
   })
   let opening = openingThreads.get(key)
   if (opening === undefined) {
-    const claimants: OpenClaimants = { signals: [signal] }
-    const intent = claimConversationIntent()
+    const validAtStart = signal === null || !signal.aborted
+    // 已取消的调用方不能抢占当前意图；它只作为共享数据的一个（无效）claimant。
+    let intent = validAtStart ? claimConversationIntent() : conversationIntentSequence
+    const claimants: OpenClaimants = {
+      signals: [signal],
+      reclaim: () => {
+        intent = claimConversationIntent()
+      }
+    }
     const ownership: OpenOwnership = {
       isLive: () => liveClaimant(claimants),
       isLatest: () => intentIsCurrent(intent)
@@ -419,6 +444,9 @@ export function openThreadForMain(
     // 同一次共享操作多了一个调用方：它取消不影响另一个仍有效的人。
     // 没有 signal 的调用方按「始终有效」记一个 null，不能因为前一个调用方取消就算全取消。
     opening.claimants.signals.push(signal)
+    // 新 valid claimant 重新打开同一主对象，是最新的展示意图；旧 operation 的
+    // captured intent 不能一直压住它。已 abort 的调用方不得抢 intent。
+    if (signal === null || !signal.aborted) opening.claimants.reclaim()
   }
   const pending = opening.promise
   if (signal === null) return pending
@@ -512,7 +540,8 @@ export async function openGroupThread(
   }
   // caller 取消、离开页面或开始下一次尝试都会推进序号；迟到的结果不许再改当前状态。
   const operation = ++groupOpenSequence
-  const intent = claimConversationIntent()
+  const intent =
+    options.signal?.aborted === true ? conversationIntentSequence : claimConversationIntent()
   const isCurrent = (): boolean =>
     operation === groupOpenSequence &&
     intentIsCurrent(intent) &&
@@ -551,7 +580,8 @@ export async function openArticlePackThread(
   } = {}
 ): Promise<PackArticleWordsResult | null> {
   const operation = ++packOpenSequence
-  const intent = claimConversationIntent()
+  const intent =
+    options.signal?.aborted === true ? conversationIntentSequence : claimConversationIntent()
   const isCurrent = (): boolean =>
     operation === packOpenSequence &&
     intentIsCurrent(intent) &&
@@ -593,12 +623,18 @@ export async function ensureBlankContextThread(): Promise<ChatThreadView | null>
   }
 }
 
+/** 当前线程还有未保存回答时，先保存，不继续推进对话分支。 */
+function pendingOnCurrent(): boolean {
+  return state.currentId !== null && state.pendingSaves[state.currentId] !== undefined
+}
+
 export function sendChatMessage(raw: string): boolean {
   const text = raw.trim()
   if (
     text === '' ||
     generationPending() ||
     state.busy ||
+    pendingOnCurrent() ||
     currentThreadBeingDeleted() ||
     state.editing !== null
   ) {
@@ -640,9 +676,8 @@ async function submitQuestion(text: string): Promise<void> {
         return
       }
       view = created.thread
-      // 路由 mount effect 可能在新线程创建回来前先把空白对话记为当前意图；
-      // 只要此刻没有另一条当前线程，这条新线程仍是用户要的对话。
-      if (presentationOwned() || state.currentId === null) {
+      // 显式新的空白对话是比旧 create 更新的意图；旧 A 只能留在后台数据/生成。
+      if (presentationOwned()) {
         set({ current: view, currentId: view.id })
         replaceRoute('chat', { threadId: view.id })
       }
@@ -709,7 +744,13 @@ export function stopChat(): void {
 /** 重新生成上一条回答：同一提问下多出一个版本，旧版仍在。 */
 export function regenerateLastAnswer(): void {
   const view = state.current
-  if (view === null || generationPending() || state.busy || currentThreadBeingDeleted()) {
+  if (
+    view === null ||
+    generationPending() ||
+    state.busy ||
+    pendingOnCurrent() ||
+    currentThreadBeingDeleted()
+  ) {
     return
   }
   const turn = lastTurn(view)
@@ -729,7 +770,13 @@ export function regenerateLastAnswer(): void {
 /** 继续生成：新的正文接在当前回答这一路后面，不产生新版本。 */
 export function continueLastAnswer(): void {
   const view = state.current
-  if (view === null || generationPending() || state.busy || currentThreadBeingDeleted()) {
+  if (
+    view === null ||
+    generationPending() ||
+    state.busy ||
+    pendingOnCurrent() ||
+    currentThreadBeingDeleted()
+  ) {
     return
   }
   const answer = lastTurn(view)?.answer
@@ -759,12 +806,6 @@ function startGeneration(
   }
 ): void {
   const streamId = newId()
-  const answer = target.questionId === null
-    ? null
-    : view.turns.find((turn) => turn.question.id === target.questionId)?.answer ?? null
-  const continued = target.answerId === null
-    ? null
-    : view.turns.find((turn) => turn.answer?.id === target.answerId)?.answer ?? null
   dispatchSession({
     type: 'begin',
     threadId: view.id,
@@ -776,9 +817,7 @@ function startGeneration(
     baseThinking: target.baseThinking,
     baseThinkingMs: target.baseThinkingMs,
     now: Date.now(),
-    model: chatModel,
-    baseAnswerVersions: answer?.versions.length ?? 0,
-    baseContinuationCount: continued?.continuationIds.length ?? 0
+    model: chatModel
   })
 
   const systemPrompt = threadSystemPrompt(view.context)
@@ -849,8 +888,6 @@ async function persistGeneration(generation: LiveGeneration): Promise<void> {
     phase,
     error: generation.error,
     model: generation.model,
-    baseAnswerVersions: generation.baseAnswerVersions,
-    baseContinuationCount: generation.baseContinuationCount,
     displayText: generation.mode === 'continue' ? generation.baseText + text : text,
     displayThinking:
       generation.mode === 'continue'
@@ -871,7 +908,8 @@ async function persistGeneration(generation: LiveGeneration): Promise<void> {
             thinkingMs,
             phase,
             error: generation.error,
-            model: generation.model
+            model: generation.model,
+            attemptId: generation.streamId
           })
         : await saveThreadAnswer({
             threadId: generation.threadId,
@@ -881,14 +919,14 @@ async function persistGeneration(generation: LiveGeneration): Promise<void> {
             thinkingMs,
             phase,
             error: generation.error,
-            model: generation.model
+            model: generation.model,
+            attemptId: generation.streamId
           })
 
     if (result.status === 'saved') {
-      // 只有同一次生成的保存成功才清掉它的快照；A 里后来另一问的成功
+      // 只有同一次生成的成功才清掉它的快照；A 里后来另一问的成功
       // 不能把先前仍未保存的回答一起抹掉。
-      const existing = state.pendingSaves[generation.threadId]
-      if (existing?.streamId === generation.streamId) clearPendingSave(generation.threadId)
+      clearPendingSave(generation.threadId, generation.streamId)
       if (state.currentId === generation.threadId) {
         set({ current: result.thread })
       }
@@ -916,64 +954,41 @@ async function persistGeneration(generation: LiveGeneration): Promise<void> {
 }
 
 function rememberPendingSave(snapshot: PendingSave): void {
+  // 同一线程只保留一份 pending（发送/生成已 gated）；不同 stream 的失败
+  // 不能互相覆盖，更不能被后来的 clear 误删。
+  const existing = state.pendingSaves[snapshot.threadId]
+  if (existing !== undefined && existing.streamId !== snapshot.streamId) return
   set({ pendingSaves: { ...state.pendingSaves, [snapshot.threadId]: snapshot } })
 }
 
-function updatePendingSave(threadId: string, patch: Partial<PendingSave>): void {
+function updatePendingSave(
+  threadId: string,
+  streamId: string,
+  patch: Partial<PendingSave>
+): void {
   const current = state.pendingSaves[threadId]
-  if (current === undefined) return
+  if (current === undefined || current.streamId !== streamId) return
   set({ pendingSaves: { ...state.pendingSaves, [threadId]: { ...current, ...patch } } })
 }
 
-function clearPendingSave(threadId: string): void {
-  if (state.pendingSaves[threadId] === undefined) return
+function clearPendingSave(threadId: string, streamId?: string): void {
+  const current = state.pendingSaves[threadId]
+  if (current === undefined) return
+  if (streamId !== undefined && current.streamId !== streamId) return
   const next = { ...state.pendingSaves }
   delete next[threadId]
   set({ pendingSaves: next })
 }
 
-/** 读回确认：回复丢了但库其实已经写成功时，不要重复 append 同一版回答/续写。 */
-function pendingAlreadySaved(view: ChatThreadView, pending: PendingSave): boolean {
-  if (pending.mode === 'answer') {
-    const turn = view.turns.find((candidate) => candidate.question.id === pending.questionId)
-    return (
-      turn !== undefined &&
-      turn.answer !== null &&
-      turn.answer.versions.length > pending.baseAnswerVersions
-    )
-  }
-  const turn = view.turns.find((candidate) => candidate.answer?.id === pending.answerId)
-  return (
-    turn !== undefined &&
-    turn.answer !== null &&
-    turn.answer.continuationIds.length > pending.baseContinuationCount
-  )
-}
-
 /**
  * 重试保存捕获的 A 快照；绝不调用模型、绝不读写当前 B 的 turn/error。
- * 先读回一次，处理「保存其实成功但 IPC 回复丢失」的模糊结果。
+ * 幂等由后端 attemptId 保证：同一 stream 重复保存不会 append 第二份。
  */
 export async function retryPendingSave(threadId: string): Promise<void> {
   const pending = state.pendingSaves[threadId]
   if (pending === undefined || state.savingPendingThread !== null) return
   set({ savingPendingThread: threadId })
   try {
-    const loaded = await loadThread(threadId)
-    if (loaded === null) {
-      updatePendingSave(threadId, {
-        failure: '这条对话已经不在了，未保存的回答无法再写回。',
-        retryable: false
-      })
-      return
-    }
-    if (pendingAlreadySaved(loaded, pending)) {
-      clearPendingSave(threadId)
-      if (state.currentId === threadId) set({ current: loaded })
-      void refreshThreads()
-      return
-    }
-
     const result =
       pending.mode === 'continue'
         ? await saveThreadContinuation({
@@ -984,7 +999,8 @@ export async function retryPendingSave(threadId: string): Promise<void> {
             thinkingMs: pending.thinkingMs,
             phase: pending.phase,
             error: pending.error,
-            model: pending.model
+            model: pending.model,
+            attemptId: pending.streamId
           })
         : await saveThreadAnswer({
             threadId,
@@ -994,16 +1010,17 @@ export async function retryPendingSave(threadId: string): Promise<void> {
             thinkingMs: pending.thinkingMs,
             phase: pending.phase,
             error: pending.error,
-            model: pending.model
+            model: pending.model,
+            attemptId: pending.streamId
           })
 
     if (result.status === 'saved') {
-      clearPendingSave(threadId)
+      clearPendingSave(threadId, pending.streamId)
       if (state.currentId === threadId) set({ current: result.thread })
       void refreshThreads()
       return
     }
-    updatePendingSave(threadId, {
+    updatePendingSave(threadId, pending.streamId, {
       failure:
         result.status === 'missing'
           ? '这条对话已经不在了，未保存的回答无法再写回。'
@@ -1011,7 +1028,7 @@ export async function retryPendingSave(threadId: string): Promise<void> {
       retryable: false
     })
   } catch (error) {
-    updatePendingSave(threadId, {
+    updatePendingSave(threadId, pending.streamId, {
       failure: failureText(error, '这条回答没能保存，重试保存。'),
       retryable: true
     })
@@ -1025,7 +1042,13 @@ export async function retryPendingSave(threadId: string): Promise<void> {
 /** 切到另一版回答；旧版里接下去的问与答留在库里，切回来还在。 */
 export function switchAnswerVersion(questionId: string, answerId: string): void {
   const view = state.current
-  if (view === null || generationPending() || state.busy || currentThreadBeingDeleted()) {
+  if (
+    view === null ||
+    generationPending() ||
+    state.busy ||
+    pendingOnCurrent() ||
+    currentThreadBeingDeleted()
+  ) {
     return
   }
   void switchThreadAnswer({
@@ -1049,7 +1072,13 @@ export function switchAnswerVersion(questionId: string, answerId: string): void 
 
 export function switchQuestionVersion(questionId: string): void {
   const view = state.current
-  if (view === null || generationPending() || state.busy || currentThreadBeingDeleted()) {
+  if (
+    view === null ||
+    generationPending() ||
+    state.busy ||
+    pendingOnCurrent() ||
+    currentThreadBeingDeleted()
+  ) {
     return
   }
   void switchThreadQuestion({ threadId: view.id, questionId }).then(
@@ -1093,6 +1122,7 @@ export function submitEdit(raw: string): boolean {
     text === '' ||
     generationPending() ||
     state.busy ||
+    pendingOnCurrent() ||
     currentThreadBeingDeleted()
   ) {
     return false

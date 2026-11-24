@@ -332,6 +332,34 @@ describe('就地/完整页打开的所有权与最新意图', () => {
   const mainA = { kind: 'entry', entryId: 'e-a' } as const
   const mainB = { kind: 'entry', entryId: 'e-b' } as const
 
+  it('取消的 A 之后重新显式打开 A：最新有效调用方 reclaim intent，B 不压住 A', async () => {
+    const pendingA = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest.mockReturnValueOnce(pendingA.promise)
+    const first = new AbortController()
+    const p1 = store.openThreadForMain(mainA, {
+      openInPlace: true,
+      signal: first.signal
+    })
+    first.abort()
+
+    api.loadThread.mockResolvedValueOnce(view('t-b', []))
+    store.openChatThread('t-b')
+    await vi.waitFor(() => expect(store.getChatStore().current?.id).toBe('t-b'))
+
+    const second = new AbortController()
+    const p2 = store.openThreadForMain(mainA, {
+      openInPlace: true,
+      signal: second.signal
+    })
+    pendingA.resolve({ status: 'created', thread: view('t-a', []) })
+
+    await expect(p1).resolves.toBeNull()
+    await expect(p2).resolves.toBe('t-a')
+    expect(store.getChatStore().currentId).toBe('t-a')
+    expect(api.openThreadForMainRequest).toHaveBeenCalledTimes(1)
+    expect(navigation.navigate).not.toHaveBeenCalled()
+  })
+
   it('取消的 A 晚到不会把已经打开的 B 换回去，也不产生导航或错误', async () => {
     const pendingA = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
     const pendingB = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
@@ -545,8 +573,8 @@ describe('跨入口的对话意图：任何真实打开方式都让旧请求过�
     api.askThread.mockReturnValueOnce(ask.promise)
 
     expect(store.sendChatMessage('路由竞态也要显示')).toBe(true)
-    // ChatPage 的 mount effect 可能先于 createThread 回复执行；这是同一个空白意图。
-    store.openChatThread(null)
+    // ChatPage 的 mount effect 可能先于 createThread 回复执行；同 route 同步不是新意图。
+    store.syncChatThread(null)
     pendingCreate.resolve({ status: 'created', thread: view('t-race', []) })
     await vi.waitFor(() => expect(api.askThread).toHaveBeenCalledTimes(1))
 
@@ -598,6 +626,72 @@ describe('跨入口的对话意图：任何真实打开方式都让旧请求过�
 })
 
 describe('后台错误只属于发起它的线程', () => {
+  it('A 有未保存回答时公开发送/重新生成/继续/改口都被拒绝，B 仍可发送', async () => {
+    const save = deferred<Awaited<ReturnType<typeof api.saveThreadContinuation>>>()
+    api.loadThread.mockResolvedValueOnce(answeredThread('t-a'))
+    api.saveThreadContinuation.mockReturnValueOnce(save.promise)
+    store.openChatThread('t-a')
+    await vi.waitFor(() => expect(store.getChatStore().current?.id).toBe('t-a'))
+    store.ensureChatEvents()
+    store.continueLastAnswer()
+    const firstStream = streamIdOfLastStart()
+    streamText(firstStream, 'A 续写')
+    await vi.waitFor(() => expect(api.saveThreadContinuation).toHaveBeenCalledTimes(1))
+    save.reject(new Error('save down'))
+    await vi.waitFor(() => expect(store.getChatStore().pendingSaves['t-a']).toBeDefined())
+    store.beginEditLastQuestion()
+    expect(store.getChatStore().editing).not.toBeNull()
+
+    const startsBefore = windowApi.invoke.mock.calls.filter(
+      ([channel]) => channel === 'chat:start'
+    ).length
+    expect(store.sendChatMessage('A 第二问')).toBe(false)
+    store.regenerateLastAnswer()
+    store.continueLastAnswer()
+    expect(store.submitEdit('A 改口')).toBe(false)
+    expect(api.askThread).not.toHaveBeenCalled()
+    expect(
+      windowApi.invoke.mock.calls.filter(([channel]) => channel === 'chat:start')
+    ).toHaveLength(startsBefore)
+    expect(store.getChatStore().pendingSaves['t-a']).toBeDefined()
+
+    // B 没有 pending，仍然可以正常发送。
+    api.loadThread.mockResolvedValueOnce(questionThread('t-b'))
+    api.askThread.mockResolvedValueOnce({
+      status: 'asked',
+      questionId: 'q-b',
+      thread: questionThread('t-b')
+    })
+    store.openChatThread('t-b')
+    await vi.waitFor(() => expect(store.getChatStore().current?.id).toBe('t-b'))
+    expect(store.sendChatMessage('B 问题')).toBe(true)
+    await vi.waitFor(() => expect(api.askThread).toHaveBeenCalledTimes(1))
+  })
+
+  it('显式新的学习后，旧空白创建成功只后台归 A，不覆盖新 blank', async () => {
+    const pendingCreate = deferred<Awaited<ReturnType<typeof api.createThread>>>()
+    const pendingAsk = deferred<Awaited<ReturnType<typeof api.askThread>>>()
+    api.createThread.mockReturnValueOnce(pendingCreate.promise)
+    api.askThread.mockReturnValueOnce(pendingAsk.promise)
+
+    expect(store.sendChatMessage('旧 A 问题')).toBe(true)
+    store.openChatThread(null)
+    pendingCreate.resolve({ status: 'created', thread: questionThread('t-a') })
+    await vi.waitFor(() => expect(api.askThread).toHaveBeenCalledTimes(1))
+    pendingAsk.resolve({
+      status: 'asked',
+      questionId: 'q-a',
+      thread: questionThread('t-a')
+    })
+    await vi.waitFor(() =>
+      expect(store.getChatStore().session.generation?.threadId).toBe('t-a')
+    )
+
+    expect(store.getChatStore().currentId).toBeNull()
+    expect(store.getChatStore().current).toBeNull()
+    expect(store.getChatStore().error).toBeNull()
+  })
+
   it('空白创建 reject 时已打开 B：不写 B 的错误/重试，也不把 A 文本发到 B', async () => {
     const pendingCreate = deferred<Awaited<ReturnType<typeof api.createThread>>>()
     const pendingB = deferred<Awaited<ReturnType<typeof api.loadThread>>>()
@@ -720,18 +814,17 @@ describe('后台错误只属于发起它的线程', () => {
     })
     expect(store.getChatStore().session.generation).toBeNull()
 
-    // 重试只保存 A，不重新请求模型，也不动 B。
-    api.loadThread.mockResolvedValueOnce(questionThread('t-a'))
+    // 重试只保存 A，不重新请求模型，也不动 B；attempt 身份随快照走。
     const retrySave = deferred<Awaited<ReturnType<typeof api.saveThreadAnswer>>>()
     api.saveThreadAnswer.mockReturnValueOnce(retrySave.promise)
     const retry = store.retryPendingSave('t-a')
-    await vi.waitFor(() => expect(api.loadThread).toHaveBeenCalledTimes(2))
-    expect(api.saveThreadAnswer).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(api.saveThreadAnswer).toHaveBeenCalledTimes(2))
     expect(api.saveThreadAnswer.mock.calls[1]?.[0]).toMatchObject({
       threadId: 't-a',
       questionId: 'q-a',
       text: 'A 未保存正文',
-      model: 'model-original'
+      model: 'model-original',
+      attemptId: pending?.streamId
     })
 
     retrySave.resolve({ status: 'saved', thread: questionThread('t-a') })
@@ -763,7 +856,6 @@ describe('后台错误只属于发起它的线程', () => {
     expect(store.getChatStore().currentId).toBe('t-a')
     expect(store.getChatStore().error).toBeNull()
 
-    api.loadThread.mockResolvedValueOnce(questionThread('t-a'))
     api.saveThreadAnswer.mockResolvedValueOnce({
       status: 'saved',
       thread: questionThread('t-a')
@@ -774,7 +866,7 @@ describe('后台错误只属于发起它的线程', () => {
     expect(store.getChatStore().error).toBeNull()
   })
 
-  it('A 的旧未保存回答不会被之后成功的新回答清掉', async () => {
+  it('A 已有 pending 时第二问不能启动，旧快照不会被覆盖或清掉', async () => {
     const firstSave = deferred<Awaited<ReturnType<typeof api.saveThreadAnswer>>>()
     api.createThread.mockResolvedValueOnce({ status: 'created', thread: questionThread('t-a') })
     api.askThread.mockResolvedValueOnce({
@@ -791,24 +883,13 @@ describe('后台错误只属于发起它的线程', () => {
     firstSave.reject(new Error('first save down'))
     await vi.waitFor(() => expect(store.getChatStore().pendingSaves['t-a']).toBeDefined())
 
-    // 用户没有先保存，就在 A 里继续问了第二问；第二问保存成功不能把第一问的未保存内容抹掉。
-    const secondThread = questionThread('t-a', 'q-b')
-    api.askThread.mockResolvedValueOnce({
-      status: 'asked',
-      questionId: 'q-b',
-      thread: secondThread
-    })
-    api.saveThreadAnswer.mockResolvedValueOnce({ status: 'saved', thread: secondThread })
-    expect(store.sendChatMessage('A 第二问')).toBe(true)
-    await vi.waitFor(() => expect(api.askThread).toHaveBeenCalledTimes(2))
-    streamText(streamIdOfLastStart(), '第二问已保存正文')
-    await vi.waitFor(() => expect(api.saveThreadAnswer).toHaveBeenCalledTimes(2))
-
+    expect(store.sendChatMessage('A 第二问')).toBe(false)
+    expect(api.askThread).toHaveBeenCalledTimes(1)
+    expect(api.saveThreadAnswer).toHaveBeenCalledTimes(1)
     expect(store.getChatStore().pendingSaves['t-a']).toMatchObject({
       text: '第一问未保存正文',
       questionId: 'q-a'
     })
-    expect(store.getChatStore().current?.id).toBe('t-a')
   })
 
   it('保存返回 missing 时保留内容但不再给重试，B 不受影响', async () => {
@@ -839,7 +920,7 @@ describe('后台错误只属于发起它的线程', () => {
     expect(store.getChatStore().canRetry).toBe(false)
   })
 
-  it('重试前读回发现 A 其实已保存：清掉快照，不重复 append', async () => {
+  it('重试使用同一 attemptId；后端幂等返回 saved 后清掉快照且不重复 append', async () => {
     const save = deferred<Awaited<ReturnType<typeof api.saveThreadAnswer>>>()
     api.createThread.mockResolvedValueOnce({ status: 'created', thread: questionThread('t-a') })
     api.askThread.mockResolvedValueOnce({
@@ -855,12 +936,17 @@ describe('后台错误只属于发起它的线程', () => {
     await vi.waitFor(() => expect(api.saveThreadAnswer).toHaveBeenCalledTimes(1))
     save.reject(new Error('reply lost'))
     await vi.waitFor(() => expect(store.getChatStore().pendingSaves['t-a']).toBeDefined())
+    const attemptId = api.saveThreadAnswer.mock.calls[0]?.[0].attemptId
+    expect(typeof attemptId).toBe('string')
 
-    // IPC 回复丢了，但库里已经有这一版回答。
-    api.loadThread.mockResolvedValueOnce(answeredThread('t-a'))
+    api.saveThreadAnswer.mockResolvedValueOnce({
+      status: 'saved',
+      thread: answeredThread('t-a')
+    })
     await store.retryPendingSave('t-a')
+    expect(api.saveThreadAnswer).toHaveBeenCalledTimes(2)
+    expect(api.saveThreadAnswer.mock.calls[1]?.[0]).toMatchObject({ attemptId })
     expect(store.getChatStore().pendingSaves['t-a']).toBeUndefined()
-    expect(api.saveThreadAnswer).toHaveBeenCalledTimes(1)
   })
 
   it('继续生成保存失败也保留 A 的完整展示文本，并可用原模型重试', async () => {
@@ -889,7 +975,8 @@ describe('后台错误只属于发起它的线程', () => {
       model: 'continuation-model',
       retryable: true
     })
-    api.loadThread.mockResolvedValueOnce(answeredThread('t-a'))
+    const attemptId = api.saveThreadContinuation.mock.calls[0]?.[0].attemptId
+    expect(typeof attemptId).toBe('string')
     api.saveThreadContinuation.mockResolvedValueOnce({
       status: 'saved',
       thread: answeredThread('t-a')
@@ -899,7 +986,8 @@ describe('后台错误只属于发起它的线程', () => {
       threadId: 't-a',
       answerId: 'a-root',
       text: '续写正文',
-      model: 'continuation-model'
+      model: 'continuation-model',
+      attemptId
     })
     expect(store.getChatStore().currentId).toBe('t-b')
     expect(store.getChatStore().error).toBeNull()

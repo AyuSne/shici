@@ -69,6 +69,13 @@ type ThreadEntryRow = {
   created_at: string
 }
 
+type AttemptEntryRow = {
+  thread_id: string
+  parent_id: string | null
+  kind: string
+  payload: string
+}
+
 type QuestionPayload = {
   text: string
   context: ThreadContextItem[]
@@ -1273,6 +1280,65 @@ function readEntryRow(
     .get(entryId, threadId) as ThreadEntryRow | undefined
 }
 
+function readAttemptEntry(
+  database: AppDatabase,
+  attemptId: string
+): AttemptEntryRow | undefined {
+  return database
+    .prepare(
+      `SELECT thread_id, parent_id, kind, payload
+         FROM thread_entry WHERE id = ?`
+    )
+    .get(attemptEntryId(attemptId)) as AttemptEntryRow | undefined
+}
+
+function attemptEntryId(attemptId: string): string {
+  return `attempt:${attemptId}`
+}
+
+function attemptIdOf(request: { attemptId?: string }): string | null {
+  const value = request.attemptId?.trim()
+  return value ? value : null
+}
+
+function sameAttemptPayload(
+  existing: AttemptEntryRow,
+  request: SaveAnswerRequest | SaveContinuationRequest
+): boolean {
+  return (
+    existing.payload ===
+    JSON.stringify(
+      answerPayloadOfRequest(
+        request.text,
+        request.thinking,
+        request.thinkingMs,
+        request.phase,
+        request.error,
+        request.model
+      )
+    )
+  )
+}
+
+/** 这条已存在的续写是否确实挂在这次请求的 answer 根下面。 */
+function continuationUnderAnswer(
+  database: AppDatabase,
+  threadId: string,
+  parentId: string | null,
+  answerId: string
+): boolean {
+  let cursor = parentId
+  const seen = new Set<string>()
+  while (cursor !== null && !seen.has(cursor)) {
+    if (cursor === answerId) return true
+    seen.add(cursor)
+    const row = readEntryRow(database, threadId, cursor)
+    if (!row || row.kind === 'question') return false
+    cursor = row.parent_id
+  }
+  return false
+}
+
 function answerPayloadOfRequest(
   text: string,
   thinking: string,
@@ -1305,8 +1371,28 @@ export function saveAnswer(
     return { status: 'rejected', reason: 'question' }
   }
 
+  const attemptId = attemptIdOf(request)
+  if (attemptId !== null) {
+    const existing = readAttemptEntry(database, attemptId)
+    if (existing) {
+      // 同一个 attempt 只能对应同一 thread / 同一问 / 同一份 payload；
+      // 冲突绝不覆盖已有不可变条目。
+      if (
+        existing.thread_id !== request.threadId ||
+        existing.kind !== 'answer' ||
+        existing.parent_id !== question.id ||
+        !sameAttemptPayload(existing, request)
+      ) {
+        return { status: 'rejected', reason: 'conflict' }
+      }
+      const view = readThreadView(database, request.threadId)
+      return view ? { status: 'saved', thread: view } : { status: 'missing' }
+    }
+  }
+
   const now = nowOf(options)
   const id = insertEntry(database, {
+    ...(attemptId === null ? {} : { id: attemptEntryId(attemptId) }),
     threadId: request.threadId,
     parentId: question.id,
     kind: 'answer',
@@ -1377,9 +1463,27 @@ export function saveContinuation(
     return { status: 'rejected', reason: 'answer' }
   }
 
+  const attemptId = attemptIdOf(request)
+  if (attemptId !== null) {
+    const existing = readAttemptEntry(database, attemptId)
+    if (existing) {
+      if (
+        existing.thread_id !== request.threadId ||
+        existing.kind !== 'continuation' ||
+        !continuationUnderAnswer(database, request.threadId, existing.parent_id, answer.id) ||
+        !sameAttemptPayload(existing, request)
+      ) {
+        return { status: 'rejected', reason: 'conflict' }
+      }
+      const view = readThreadView(database, request.threadId)
+      return view ? { status: 'saved', thread: view } : { status: 'missing' }
+    }
+  }
+
   const now = nowOf(options)
   const parentId = descendToLatestChild(database, request.threadId, answer.id, 'continuation')
   const id = insertEntry(database, {
+    ...(attemptId === null ? {} : { id: attemptEntryId(attemptId) }),
     threadId: request.threadId,
     parentId,
     kind: 'continuation',

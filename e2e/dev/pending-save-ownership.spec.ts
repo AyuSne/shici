@@ -31,14 +31,16 @@ async function holdFailingSave(app: ElectronApplication): Promise<{
     const original = handlers.get('chat:answer')
     if (!original) throw new Error('没有注册 chat:answer')
     ipcMain.removeHandler('chat:answer')
-    ipcMain.handle('chat:answer', async () => {
+    ipcMain.handle('chat:answer', async (...args) => {
       ipcMain.removeHandler('chat:answer')
       ipcMain.handle('chat:answer', original)
       const globals = globalThis as Record<string, unknown>
       await new Promise<void>((resolve) => {
         globals[key] = resolve
       })
-      throw new Error('e2e 保存失败')
+      // 模拟回复丢失：服务端已经写入，renderer 只收到 throw。
+      await original(...args)
+      throw new Error('e2e 保存回复丢失')
     })
   }, gate)
   return {
@@ -67,7 +69,7 @@ function seedB(userDataDirectory: string): string {
   }
 }
 
-test('A 后台保存失败后切到 B 再回 A：B 干净，A 的未保存正文仍在且只重试保存', async ({
+test('A 后台保存回复丢失后切到 B 再回 A：B 干净，A 的未保存正文仍在且只重试保存', async ({
   launch,
   userDataDirectory
 }) => {
@@ -113,10 +115,29 @@ test('A 后台保存失败后切到 B 再回 A：B 干净，A 的未保存正文
   const pending = page.getByRole('region', { name: '尚未保存的回答' })
   await expect(pending).toBeVisible()
   await expect(pending).toContainText('A 未保存正文。')
+  const composer = page.getByRole('textbox', { name: '输入问题' })
+  await expect(composer).toBeEditable()
+  await composer.fill('保存后再发')
+  await expect(page.getByRole('button', { name: '发送' })).toBeDisabled()
   const requestsBeforeRetry = stub.requests.length
 
   await pending.getByRole('button', { name: '保存这条回答' }).click()
   await expect(pending).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '发送' })).toBeEnabled()
   await expect(page.locator('.assistant-text[data-answer-id]')).toContainText('A 未保存正文。')
   expect(stub.requests.length).toBe(requestsBeforeRetry)
+
+  // 服务端第一次其实已提交；retry 同 attempt 只能有一条不可变回答。
+  const database = openDatabase(databasePath(userDataDirectory))
+  try {
+    const row = database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM thread_entry
+          WHERE thread_id = ? AND kind = 'answer'`
+      )
+      .get(threadA) as { count: number }
+    expect(row.count).toBe(1)
+  } finally {
+    database.close()
+  }
 })

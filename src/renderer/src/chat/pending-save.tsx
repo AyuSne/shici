@@ -7,17 +7,24 @@ import type { PendingSave } from './store'
 export function PendingSaveNotice({
   pending,
   saving,
+  savingThis,
   onRetry
 }: {
   pending: PendingSave
+  /** 全局保存串行时，任何可见的 pending 按钮都要反映忙态。 */
   saving: boolean
+  savingThis: boolean
   onRetry: () => void
 }) {
   return (
     <section className="pending-save" role="region" aria-label="尚未保存的回答">
       <div className="pending-save-head">
         <span className="pending-save-title">这条回答还没保存</span>
-        <span className="pending-save-meta">内容留在本机内存，切回这条对话仍可保存</span>
+        <span className="pending-save-meta">
+          {pending.retryable
+            ? '内容留在本机内存；保存后才能继续这条对话。'
+            : '内容只留在本窗口内存，可复制文本到新对话；无法再写回原位置。'}
+        </span>
       </div>
       {pending.failure === null ? null : (
         <p className="pending-save-failure" role="status">
@@ -40,7 +47,7 @@ export function PendingSaveNotice({
           disabled={saving}
           onClick={onRetry}
         >
-          {saving ? '正在保存…' : '保存这条回答'}
+          {savingThis ? '正在保存…' : saving ? '正在保存另一条回答…' : '保存这条回答'}
         </button>
       ) : null}
     </section>

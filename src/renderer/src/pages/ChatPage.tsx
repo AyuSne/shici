@@ -74,6 +74,7 @@ import {
   sendChatMessage,
   stopChat,
   submitEdit,
+  syncChatThread,
   switchAnswerVersion,
   switchQuestionVersion,
   useChatStore
@@ -252,7 +253,7 @@ export function ChatPage({
   }, [viewThreadId])
 
   useEffect(() => {
-    openChatThread(threadId)
+    syncChatThread(threadId)
     setPickerOpen(false)
     setRailOpen(false)
     setRailCollapsed(false)
@@ -923,10 +924,12 @@ export function ChatPage({
   /** 对话已经不在了：重试只会再失败，改成回到一条空白学习。 */
   const threadGone = store.error === '这条对话已经不在了。'
   const canSend = draft.trim() !== '' && !store.busy && generation === null &&
+    pendingSave === null &&
     (store.deletingThreadId === null || store.deletingThreadId !== store.currentId)
   /** 生成、提交或改口时，回答上的动作一律收起，避免存到半截或旧版本。 */
   const actionsDisabled =
-    generatingHere || generatingElsewhere || store.busy || editing !== null
+    generatingHere || generatingElsewhere || store.busy || editing !== null ||
+    pendingSave !== null
   const threadEntryId =
     current === null
       ? null
@@ -950,6 +953,8 @@ export function ChatPage({
             className="button button-primary chat-new"
             onClick={() => {
               setRailOpen(false)
+              // 即使地址已经是空白对话，新的学习也必须是一次显式新意图。
+              openChatThread(null)
               navigate('chat')
             }}
           >
@@ -1213,7 +1218,8 @@ export function ChatPage({
             <div className="composer-inner">
               <PendingSaveNotice
                 pending={pendingSave}
-                saving={store.savingPendingThread === pendingSave.threadId}
+                saving={store.savingPendingThread !== null}
+                savingThis={store.savingPendingThread === pendingSave.threadId}
                 onRetry={() => void retryPendingSave(pendingSave.threadId)}
               />
             </div>

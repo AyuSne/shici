@@ -268,6 +268,11 @@ export type SaveAnswerRequest = {
   error?: ChatError | null
   /** 生成这一版时用的模型名，钉住出处要用。 */
   model?: string
+  /**
+   * 一次生成尝试的稳定身份。同一 attempt 重试只应得到同一条不可变条目；
+   * 缺省时保持旧调用方“每次新版本”的语义。
+   */
+  attemptId?: string
 }
 
 export type SaveContinuationRequest = {
@@ -280,12 +285,14 @@ export type SaveContinuationRequest = {
   phase: 'done' | 'stopped' | 'error'
   error?: ChatError | null
   model?: string
+  /** 继续生成这一次尝试的稳定身份；语义同 SaveAnswerRequest.attemptId。 */
+  attemptId?: string
 }
 
 export type SaveAnswerResult =
   | { status: 'saved'; thread: ChatThreadView }
   | { status: 'missing' }
-  | { status: 'rejected'; reason: 'question' | 'answer' }
+  | { status: 'rejected'; reason: 'question' | 'answer' | 'conflict' }
 
 export type UpdateThreadContextRequest = {
   threadId: string
