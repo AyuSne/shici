@@ -892,6 +892,58 @@ describe('后台错误只属于发起它的线程', () => {
     })
   })
 
+  it('初次保存返回 conflict：说明记录冲突且原记录未改，不谎称原记录不存在', async () => {
+    api.createThread.mockResolvedValueOnce({ status: 'created', thread: questionThread('t-a') })
+    api.askThread.mockResolvedValueOnce({
+      status: 'asked',
+      questionId: 'q-a',
+      thread: questionThread('t-a')
+    })
+    api.saveThreadAnswer.mockResolvedValueOnce({
+      status: 'rejected',
+      reason: 'conflict'
+    })
+    store.ensureChatEvents()
+    expect(store.sendChatMessage('A 问题')).toBe(true)
+    await vi.waitFor(() => expect(windowApi.invoke).toHaveBeenCalled())
+    streamText(streamIdOfLastStart(), 'A 正文')
+    await vi.waitFor(() => expect(store.getChatStore().pendingSaves['t-a']).toBeDefined())
+
+    const failure = store.getChatStore().pendingSaves['t-a']?.failure ?? ''
+    expect(failure).toContain('冲突')
+    expect(failure).toContain('原记录')
+    expect(failure).not.toContain('不存在')
+    expect(store.getChatStore().pendingSaves['t-a']?.retryable).toBe(false)
+  })
+
+  it('retry 返回 conflict：同样给记录冲突说明，不退回“原记录不存在”', async () => {
+    const save = deferred<Awaited<ReturnType<typeof api.saveThreadAnswer>>>()
+    api.createThread.mockResolvedValueOnce({ status: 'created', thread: questionThread('t-a') })
+    api.askThread.mockResolvedValueOnce({
+      status: 'asked',
+      questionId: 'q-a',
+      thread: questionThread('t-a')
+    })
+    api.saveThreadAnswer.mockReturnValueOnce(save.promise).mockResolvedValueOnce({
+      status: 'rejected',
+      reason: 'conflict'
+    })
+    store.ensureChatEvents()
+    expect(store.sendChatMessage('A 问题')).toBe(true)
+    await vi.waitFor(() => expect(windowApi.invoke).toHaveBeenCalled())
+    streamText(streamIdOfLastStart(), 'A 正文')
+    await vi.waitFor(() => expect(api.saveThreadAnswer).toHaveBeenCalledTimes(1))
+    save.reject(new Error('reply lost'))
+    await vi.waitFor(() => expect(store.getChatStore().pendingSaves['t-a']).toBeDefined())
+
+    await store.retryPendingSave('t-a')
+    const failure = store.getChatStore().pendingSaves['t-a']?.failure ?? ''
+    expect(failure).toContain('冲突')
+    expect(failure).toContain('原记录')
+    expect(failure).not.toContain('不存在')
+    expect(store.getChatStore().pendingSaves['t-a']?.retryable).toBe(false)
+  })
+
   it('保存返回 missing 时保留内容但不再给重试，B 不受影响', async () => {
     const save = deferred<Awaited<ReturnType<typeof api.saveThreadAnswer>>>()
     api.createThread.mockResolvedValueOnce({ status: 'created', thread: questionThread('t-a') })

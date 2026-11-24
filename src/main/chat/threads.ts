@@ -1357,6 +1357,39 @@ function answerPayloadOfRequest(
   }
 }
 
+/** 已存在 attempt 的归属校验：answer 要挂同一问，continuation 要在同一 answer 链下。 */
+type AttemptParent =
+  | { kind: 'answer'; questionId: string }
+  | { kind: 'continuation'; answerId: string }
+
+/**
+ * 同一 attempt 已经落库时的只读结果；没有 attempt 返回 null。
+ * 冲突只报告，绝不改写已有条目。
+ */
+function existingAttemptOutcome(
+  database: AppDatabase,
+  request: SaveAnswerRequest | SaveContinuationRequest,
+  attemptId: string,
+  parent: AttemptParent
+): SaveAnswerResult | null {
+  const existing = readAttemptEntry(database, attemptId)
+  if (!existing) return null
+  const parentMatches =
+    parent.kind === 'answer'
+      ? existing.kind === 'answer' && existing.parent_id === parent.questionId
+      : existing.kind === 'continuation' &&
+        continuationUnderAnswer(database, request.threadId, existing.parent_id, parent.answerId)
+  if (
+    existing.thread_id !== request.threadId ||
+    !parentMatches ||
+    !sameAttemptPayload(existing, request)
+  ) {
+    return { status: 'rejected', reason: 'conflict' }
+  }
+  const view = readThreadView(database, request.threadId)
+  return view ? { status: 'saved', thread: view } : { status: 'missing' }
+}
+
 export function saveAnswer(
   database: AppDatabase,
   request: SaveAnswerRequest,
@@ -1373,21 +1406,11 @@ export function saveAnswer(
 
   const attemptId = attemptIdOf(request)
   if (attemptId !== null) {
-    const existing = readAttemptEntry(database, attemptId)
-    if (existing) {
-      // 同一个 attempt 只能对应同一 thread / 同一问 / 同一份 payload；
-      // 冲突绝不覆盖已有不可变条目。
-      if (
-        existing.thread_id !== request.threadId ||
-        existing.kind !== 'answer' ||
-        existing.parent_id !== question.id ||
-        !sameAttemptPayload(existing, request)
-      ) {
-        return { status: 'rejected', reason: 'conflict' }
-      }
-      const view = readThreadView(database, request.threadId)
-      return view ? { status: 'saved', thread: view } : { status: 'missing' }
-    }
+    const existing = existingAttemptOutcome(database, request, attemptId, {
+      kind: 'answer',
+      questionId: question.id
+    })
+    if (existing) return existing
   }
 
   const now = nowOf(options)
@@ -1465,19 +1488,11 @@ export function saveContinuation(
 
   const attemptId = attemptIdOf(request)
   if (attemptId !== null) {
-    const existing = readAttemptEntry(database, attemptId)
-    if (existing) {
-      if (
-        existing.thread_id !== request.threadId ||
-        existing.kind !== 'continuation' ||
-        !continuationUnderAnswer(database, request.threadId, existing.parent_id, answer.id) ||
-        !sameAttemptPayload(existing, request)
-      ) {
-        return { status: 'rejected', reason: 'conflict' }
-      }
-      const view = readThreadView(database, request.threadId)
-      return view ? { status: 'saved', thread: view } : { status: 'missing' }
-    }
+    const existing = existingAttemptOutcome(database, request, attemptId, {
+      kind: 'continuation',
+      answerId: answer.id
+    })
+    if (existing) return existing
   }
 
   const now = nowOf(options)

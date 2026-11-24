@@ -6,6 +6,7 @@ import {
   type ChatThreadView,
   type CreateThreadRequest,
   type PackArticleWordsResult,
+  type SaveAnswerResult,
   type ThreadContextItem,
   type ThreadListItem
 } from '../../../shared/threads'
@@ -935,10 +936,7 @@ async function persistGeneration(generation: LiveGeneration): Promise<void> {
       // 不把错误塞给当前 B；A 的未保存内容留在 per-thread 快照里，回到 A 可看可重试。
       rememberPendingSave({
         ...pending,
-        failure:
-          result.status === 'missing'
-            ? '这条对话已经不在了，未保存的回答无法再写回。'
-            : '原提问或原回答已经不在了，未保存的回答无法再写回。',
+        failure: pendingSaveFailure(result),
         retryable: false
       })
     }
@@ -978,6 +976,18 @@ function clearPendingSave(threadId: string, streamId?: string): void {
   const next = { ...state.pendingSaves }
   delete next[threadId]
   set({ pendingSaves: next })
+}
+
+function pendingSaveFailure(
+  result: Extract<SaveAnswerResult, { status: 'missing' | 'rejected' }>
+): string {
+  if (result.status === 'missing') {
+    return '这条对话已经不在了，未保存的回答无法再写回。'
+  }
+  if (result.reason === 'conflict') {
+    return '这次保存与已有记录冲突，原记录没有被改写；未保存内容仍留在本窗口，可复制到新对话。'
+  }
+  return '原提问或原回答已经不在了，未保存的回答无法再写回。'
 }
 
 /**
@@ -1021,10 +1031,7 @@ export async function retryPendingSave(threadId: string): Promise<void> {
       return
     }
     updatePendingSave(threadId, pending.streamId, {
-      failure:
-        result.status === 'missing'
-          ? '这条对话已经不在了，未保存的回答无法再写回。'
-          : '原提问或原回答已经不在了，未保存的回答无法再写回。',
+      failure: pendingSaveFailure(result),
       retryable: false
     })
   } catch (error) {
