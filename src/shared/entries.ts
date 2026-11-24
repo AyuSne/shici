@@ -7,6 +7,26 @@ import type { SearchSnippet } from './search'
  */
 
 /**
+ * 跨篇「故人重逢」：同一个词条在别的文章里收过的一条原句。
+ * 阅读视图排除当前篇，词条卡与选词结果同样只给非本篇的一条。
+ */
+export type ReadingEncounter = {
+  entrySentenceId: string
+  articleId: string
+  articleTitle: string
+  /** 段序，1 起，和原句出处同一种写法。 */
+  paragraphOrdinal: number
+  sentenceText: string
+  surface: string
+}
+
+/** 阅读里随手可看的两样：置顶学习内容摘要与一条跨篇故人重逢原句。 */
+export type EntryLearningGlance = {
+  pinnedNote: { id: string; excerpt: string } | null
+  encounter: ReadingEncounter | null
+}
+
+/**
  * 正文里的一处已收集标记。`start` / `end` 是段内字符区间，和句子的区间同一套坐标，
  * 渲染层据此把琥珀色标回正文。
  */
@@ -23,6 +43,8 @@ export type ReadingCollectionMark = {
   sentenceOrdinal: number
   start: number
   end: number
+  /** 置顶学习内容摘要与跨篇故人重逢；阅读页与悬停一瞥直接用。 */
+  glance: EntryLearningGlance
 }
 
 /** 词条的规模与词形，词条卡顶部与删除提示用。 */
@@ -74,6 +96,8 @@ export type WordEntryCard = {
   entry: EntrySummary
   /** 按最近收集在前。 */
   sentences: EntrySentence[]
+  /** 阅读卡首屏要先摆出来的置顶学习内容与故人重逢。 */
+  glance: EntryLearningGlance
 }
 
 export type CollectSelectionRequest = {
@@ -95,6 +119,8 @@ export type CollectSelectionResult =
       sentence: EntrySentence
       /** 这一篇最新的已收集标记，渲染层直接换上。 */
       marks: ReadingCollectionMark[]
+      /** 词条的置顶学习内容与跨篇故人重逢，选词卡首屏直接用。 */
+      glance: EntryLearningGlance
     }
   | {
       /** 同篇同句同一个词条已经收过，不新增关联。 */
@@ -102,6 +128,7 @@ export type CollectSelectionResult =
       entry: EntrySummary
       sentence: EntrySentence
       marks: ReadingCollectionMark[]
+      glance: EntryLearningGlance
     }
   | {
       status: 'rejected'

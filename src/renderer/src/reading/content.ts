@@ -10,19 +10,31 @@ import type { ReadingParagraph } from '../../../shared/reading'
 export type ReadingHighlight = {
   /** 已收集的词条 id；本次选中还没落库时为 null。 */
   entryId: string | null
+  /** 已收集关联 id；悬停一瞥靠它找到对应标记。 */
+  markId?: string
   /** 词条主词形，点击时用作无障碍标签。 */
   label: string
   start: number
   end: number
   /** 本次选中用麦色底；缺省是已收集的弱高亮。 */
   selected?: boolean
+  /** 刚收下时在正文落墨扫过；只影响这一处，不常驻。 */
+  ink?: boolean
+  /** 轻遮重读：已收集词只露首字母。 */
+  masked?: boolean
+  /** 这一处已经被轻点揭开。 */
+  maskRevealed?: boolean
 }
 
 /** 渲染到片段上的标记；同一片段只保留优先级最高的一个。 */
 export type ReadingMark = {
   entryId: string | null
+  markId: string | null
   label: string
   selected: boolean
+  ink: boolean
+  masked: boolean
+  maskRevealed: boolean
 }
 
 export type ReadingTextPart = {
@@ -66,7 +78,13 @@ function sameMark(left: ReadingMark | undefined, right: ReadingMark | undefined)
     return left === right
   }
   return (
-    left.entryId === right.entryId && left.selected === right.selected && left.label === right.label
+    left.entryId === right.entryId &&
+    left.markId === right.markId &&
+    left.selected === right.selected &&
+    left.ink === right.ink &&
+    left.masked === right.masked &&
+    left.maskRevealed === right.maskRevealed &&
+    left.label === right.label
   )
 }
 
@@ -161,9 +179,25 @@ export function buildReadingBlocks(
       )
       const mark =
         selected !== undefined
-          ? { entryId: selected.entryId, label: selected.label, selected: true }
+          ? {
+              entryId: selected.entryId,
+              markId: selected.markId ?? null,
+              label: selected.label,
+              selected: true,
+              ink: selected.ink === true,
+              masked: false,
+              maskRevealed: false
+            }
           : collected !== undefined
-            ? { entryId: collected.entryId, label: collected.label, selected: false }
+            ? {
+                entryId: collected.entryId,
+                markId: collected.markId ?? null,
+                label: collected.label,
+                selected: false,
+                ink: collected.ink === true,
+                masked: collected.masked === true,
+                maskRevealed: collected.maskRevealed === true
+              }
             : undefined
 
       if (annotation) {

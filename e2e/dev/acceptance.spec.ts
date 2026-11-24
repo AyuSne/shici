@@ -91,8 +91,8 @@ test.describe('收官验收 · 整条学习链路', () => {
     const collectedPanel = page.getByRole('complementary', { name: '选词结果' })
     await expect(collectedPanel).toBeVisible()
     await expect(collectedPanel.getByText('已收下')).toBeVisible()
-    const entryText = (await collectedPanel.locator('.reading-panel-entry').textContent()) ?? ''
-    const entryName = entryText.replace(/^词条\s*/, '').trim()
+    // 词头只印一次词形；主词形与新收词形相同时就是它自己。
+    const entryName = ((await collectedPanel.locator('.reading-panel-word').textContent()) ?? '').trim()
     expect(entryName).not.toBe('')
 
     await clickAway(page)

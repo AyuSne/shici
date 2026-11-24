@@ -30,6 +30,38 @@ export type ReadingSettings = ReadingPreferences & {
   source: 'global' | 'article'
 }
 
+/** 页边眉批三态：原卷注释与我的拾词都显示 / 只显示我的拾词 / 隐藏。 */
+export const MARGIN_NOTE_MODES = ['all', 'mine', 'hidden'] as const
+export type MarginNoteMode = (typeof MARGIN_NOTE_MODES)[number]
+
+/**
+ * 不分篇的阅读偏好：静默圈词、页边眉批与轻遮重读对每一篇都生效。
+ * 只存 setting 表，不写 article_reading_setting，因此不产生按篇覆盖。
+ */
+export type ReadingGlobalPreferences = {
+  /** 收词不弹右侧选词卡，只落墨并给顶部可撤销轻提示。 */
+  silentCollection: boolean
+  marginNoteMode: MarginNoteMode
+  /** 重读时把已收集的词遮成暖纸轻雾，悬停或轻点才浮现词形。 */
+  lightMask: boolean
+}
+
+export const DEFAULT_READING_GLOBAL_PREFERENCES: ReadingGlobalPreferences = {
+  silentCollection: false,
+  marginNoteMode: 'all',
+  lightMask: false
+}
+
+export function isMarginNoteMode(value: unknown): value is MarginNoteMode {
+  return (MARGIN_NOTE_MODES as readonly unknown[]).includes(value)
+}
+
+/** 保存全局阅读偏好的结果；值不合法时不写入，带回当前生效值。 */
+export type ReadingGlobalPreferencesResult = {
+  saved: boolean
+  preferences: ReadingGlobalPreferences
+}
+
 /** 产品说明里定下的全局默认：20px、1.8、注释显示、弱高亮开。 */
 export const DEFAULT_READING_PREFERENCES: ReadingPreferences = {
   fontSize: 20,
@@ -86,6 +118,13 @@ export type ReadingView = {
   article: ArticleDetail
   paragraphs: ReadingParagraph[]
   settings: ReadingSettings
+  /** 不分篇的静默 / 眉批 / 轻遮偏好，打开时一并带回。 */
+  globalPreferences: ReadingGlobalPreferences
+  /**
+   * 本篇正文里出现、学习者在任何一篇收过的词数（按词条去重）。
+   * 不只看本篇收了多少条原句：在别篇收过、这篇又遇见的词也算。
+   */
+  knownWordCount: number
   /** 上次读到的位置；没读过时为 null。 */
   readingPoint: ReadingPoint | null
   /** 这一篇里已收集的表达，重读时做弱高亮，点开是词条卡。 */
