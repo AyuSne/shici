@@ -119,8 +119,7 @@ test.describe('密钥来源三态与凭据编辑', () => {
       secret_ciphertext: null
     })
 
-    // 指向本地 stub 后，真的用环境变量里的合成密钥发一次。
-    await card.getByRole('button', { name: '设为当前' }).click()
+    // 首套保存已自动使用中；指向本地 stub 后，真的用环境变量里的合成密钥发一次。
     await expect(card).toContainText('使用中')
     pointProviderAtStub(userDataDirectory, 'deepseek', stub.baseUrl)
     await openChat(page)
@@ -233,7 +232,8 @@ test.describe('密钥来源三态与凭据编辑', () => {
     await expect(page.getByRole('status')).toContainText('已保存')
     const card = page.locator('[data-provider-key="deepseek"]')
     await expect(card).toContainText('本机 · sk-·············1234')
-    await card.getByRole('button', { name: '设为当前' }).click()
+    // 首套保存自动使用中。
+    await expect(card).toContainText('使用中')
     pointProviderAtStub(userDataDirectory, 'deepseek', stub.baseUrl)
     expect(readProviderRow(userDataDirectory, 'deepseek')).toMatchObject({
       auth_mode: 'stored',
@@ -342,7 +342,8 @@ test.describe('密钥来源三态与凭据编辑', () => {
     await expect(page.getByRole('status')).toContainText('已保存')
     const card = page.locator('[data-provider-key="deepseek"]')
     await expect(card).toContainText('本机 · sk-·············7777')
-    await card.getByRole('button', { name: '设为当前' }).click()
+    // 首套保存自动使用中。
+    await expect(card).toContainText('使用中')
     pointProviderAtStub(userDataDirectory, 'deepseek', stub.baseUrl)
     expect(readProviderRow(userDataDirectory, 'deepseek').secret_ciphertext).toMatch(
       /^dpapi:v1:/
@@ -432,8 +433,8 @@ test.describe('密钥来源三态与凭据编辑', () => {
       secret_ciphertext: null
     })
 
-    // 自定义 provider 直接用环境变量发请求。
-    await card.getByRole('button', { name: '设为当前' }).click()
+    // 自定义 provider 保存后已自动成为使用中，直接用环境变量发请求。
+    await expect(card).toContainText('使用中')
     await openChat(page)
     await sendMessage(page, '自定义环境变量')
     await expect(page.getByText('自定义环境变量回答。')).toBeVisible()

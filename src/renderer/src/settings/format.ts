@@ -1,9 +1,9 @@
 import { isAggregateModelProvider } from '../../../shared/model-directory'
 import { MODEL_PROTOCOL_LABELS } from '../../../shared/model-protocols'
-import type { ChatCredentialProblem } from '../../../shared/chat'
 import type {
   ModelProviderModelSummary,
   ModelProviderSummary,
+  ProviderAuthMode,
   ProviderCheckError,
   ProviderProtocol,
   ProviderRetryPolicy
@@ -21,25 +21,24 @@ export function verificationText(
   return provider.verification === 'verified' ? '已验证' : '未验证'
 }
 
-/** 卡片上那句「上次校验 …」。 */
+/**
+ * 卡片上那句「上次校验 …」。request id 这类诊断字符不混进主文案，
+ * 由卡片里的折叠诊断区单独展示与复制。
+ */
 export function checkText(provider: ModelProviderSummary): string {
   if (provider.lastCheckedAt === null && provider.lastVerifiedAt === null) {
     return '还没校验过'
   }
-  const requestId =
-    provider.lastErrorRequestId === undefined || provider.lastErrorRequestId === null
-      ? ''
-      : ` · 请求 ID ${provider.lastErrorRequestId}`
   if (provider.verification === 'verified') {
     // 成功调用也会自动转已验证，这时用真正证实密钥可用的那个时刻。
     const moment = formatMoment(provider.lastVerifiedAt ?? provider.lastCheckedAt ?? '')
     const passed = moment === '' ? '已验证' : `上次校验 ${moment} 通过`
     return provider.lastError === null
       ? passed
-      : `${passed}；最近一次失败 · ${providerCheckReasonText(provider.lastError)}${requestId}`
+      : `${passed}；最近一次失败 · ${providerCheckReasonText(provider.lastError)}`
   }
   const moment = formatMoment(provider.lastCheckedAt ?? '')
-  return `上次校验 ${moment} 未通过 · ${providerCheckReasonText(provider.lastError)}${requestId}`
+  return `上次校验 ${moment} 未通过 · ${providerCheckReasonText(provider.lastError)}`
 }
 
 /**
@@ -77,69 +76,82 @@ export function providerCheckReasonText(reason: ProviderCheckError | null): stri
 }
 
 /**
- * 测试失败后的下一步动作。只读结构化原因（reason / kind / status）与主进程
- * 已经解析好的本地凭据问题，不把服务端 `detail` 带进界面——那里可能有
- * 任意上游文本甚至密钥片段。
+ * 一次失败测试的自然原因。只读结构化原因（reason / kind）与主进程已经解析好的
+ * 本地凭据问题，不把服务端 `detail` 带进界面——那里可能有任意上游文本甚至密钥片段。
+ * 环境变量缺失时点名变量，用户不必再猜是哪一个。
  */
-export function providerTestActionText(result: ProviderTestFailure): string | null {
+export function providerTestReasonText(result: ProviderTestFailure): string {
+  if (result.reason === 'missing-credential') {
+    switch (result.error.credential?.kind) {
+      case 'env-missing':
+        return `系统里还没有设置环境变量 ${result.error.credential.envVar}`
+      case 'env-var-unset':
+        return '环境变量名还没有填'
+      case 'stored-decrypt-failed':
+        return '本机保存的密钥解不开'
+      case 'stored-missing':
+        return '这套还没有可用的密钥'
+      default:
+        return '没有可用的密钥'
+    }
+  }
+  return providerCheckReasonText(result.reason)
+}
+
+/** 一次失败测试的主文案：只说原因与是否写回，不夹路径指引或 request id。 */
+export function providerTestFailureText(result: ProviderTestFailure): string {
+  const reason = `测试没通过：${providerTestReasonText(result)}`
+  return result.persisted
+    ? reason
+    : `${reason}；测试期间配置已改动，结果没有保存，请重新测试`
+}
+
+/** request id 只进折叠诊断区；没有就返回 null，不编一个空标签。 */
+export function providerTestRequestId(result: ProviderTestFailure): string | null {
+  const requestId = result.requestId?.trim() ?? ''
+  return requestId === '' ? null : requestId
+}
+
+/** 失败后就地可做的修复动作；按钮文字由界面映射，文案层不写路径。 */
+export type ProviderRepairKind =
+  | 'replace-key'
+  | 'use-stored-key'
+  | 'edit-connection'
+  | 'manage-models'
+  | 'retry-test'
+
+/**
+ * 测试失败后的直接修复动作。只读结构化原因与凭据问题：
+ * - 密钥问题：本机来源给「更换密钥」，环境变量来源给「改用本机密钥」；
+ * - 地址/模型目录问题：直接打开对应编辑区；
+ * - 网络/服务端/限流：再测一次；
+ * - 协议不认识：本版改不了，界面不给假动作。
+ */
+export function providerTestRepairs(
+  result: ProviderTestFailure,
+  authMode: ProviderAuthMode
+): ProviderRepairKind[] {
   switch (result.reason) {
     case 'invalid-key':
-      return '到设置 → 模型服务 → 编辑凭据里换一个有效的密钥。'
     case 'quota':
-      return '这套密钥没有可用余额了；充值或换一个有余额的密钥。'
+      return [authMode === 'env' ? 'use-stored-key' : 'replace-key']
+    case 'missing-credential': {
+      const kind = result.error.credential?.kind
+      return [
+        kind === 'env-missing' || kind === 'env-var-unset'
+          ? 'use-stored-key'
+          : 'replace-key'
+      ]
+    }
     case 'invalid-config':
-      return result.error.kind === 'CONTEXT_WINDOW' || result.error.status === 413
-        ? '这次请求的内容太长；删减上下文后再试。'
-        : '检查接口地址与模型名后再试。'
-    case 'rate-limit':
-      return '稍等几秒再试。'
-    case 'server':
-      return '模型服务暂时不可用，稍后重试。'
-    case 'timeout':
-    case 'network':
-      return '检查网络或接口地址后再试。'
-    case 'empty-response':
-      return '稍后重试；如果一直是空回答，检查接口地址与模型名。'
-    case 'missing-credential':
-      return credentialActionText(result.error.credential)
-    case 'unsupported-protocol':
-      return '到设置 → 模型服务里新建一套使用本版支持协议的提供商，再切换使用。'
+      return ['edit-connection']
     case 'no-model':
-      return '先在这套提供商的模型目录里加一条模型。'
-    case 'unknown':
-      return null
-  }
-}
-
-function credentialActionText(problem: ChatCredentialProblem | undefined): string {
-  switch (problem?.kind) {
-    case 'env-missing':
-      return `在系统环境里补上 ${problem.envVar}，或到设置 → 模型服务 → 编辑凭据里改用本机保存的密钥。`
-    case 'env-var-unset':
-      return '到设置 → 模型服务 → 编辑凭据里填上环境变量名。'
-    case 'stored-decrypt-failed':
-      return '到设置 → 模型服务 → 编辑凭据里重新填一个密钥。'
-    case 'stored-missing':
-      return '到设置 → 模型服务 → 编辑凭据里填一个密钥。'
+      return ['manage-models']
+    case 'unsupported-protocol':
+      return []
     default:
-      return '到设置 → 模型服务 → 编辑凭据里补上密钥。'
+      return ['retry-test']
   }
-}
-
-/** 一次失败测试的卡片文案：原因 + 下一步动作 + request id；没写回时说明为什么。 */
-export function providerTestFailureText(result: ProviderTestFailure): string {
-  const parts = [`测试没通过：${providerCheckReasonText(result.reason)}`]
-  const action = providerTestActionText(result)
-  if (action !== null) {
-    parts.push(action)
-  }
-  if (result.requestId !== undefined && result.requestId.trim() !== '') {
-    parts.push(`请求 ID ${result.requestId}`)
-  }
-  if (!result.persisted) {
-    parts.push('测试期间配置已改动，结果未保存；请重新测试')
-  }
-  return parts.join(' · ')
 }
 
 /** 一次通过测试的结果文案；请求成功但配置在测试期间变了，不能谎称已验证。 */
@@ -217,16 +229,41 @@ export function keyStateText(provider: ModelProviderSummary): string {
 }
 
 /**
- * 本机密文解不开时的动作提示。只针对这一种情况：环境变量缺失时界面已经
- * 在密钥一栏写了变量名，不需要再叠一段。
+ * 凭据状态异常时卡片上的自然说明。就地展示原因，旁边由界面渲染
+ * 「更换密钥 / 改用本机密钥」等真实按钮；这里不写「到设置 → …」的路径。
  */
 export function credentialIssueText(
-  provider: Pick<ModelProviderSummary, 'credentialError'>
+  provider: Pick<
+    ModelProviderSummary,
+    'credentialError' | 'keyState' | 'authMode' | 'envVar'
+  >
 ): string | null {
-  if (provider.credentialError !== 'stored-decrypt-failed') {
+  if (provider.credentialError === 'stored-decrypt-failed') {
+    return '本机保存的密钥解不开（可能换了电脑或系统账户）；发送不会自动改用环境变量。'
+  }
+  if (provider.keyState !== 'missing') {
     return null
   }
-  return '本机保存的密钥解不开（可能换了电脑或系统账户）。点「编辑凭据」重填，或改用环境变量；发送不会自动改用环境变量。'
+  if (provider.authMode === 'env') {
+    const variable = provider.envVar?.trim() ?? ''
+    return variable === ''
+      ? '这套要读环境变量，但变量名是空的。发送前需要补上，或改用本机保存的密钥。'
+      : `系统里还没有设置环境变量 ${variable}。发送前需要补上，或改用本机保存的密钥。`
+  }
+  return '这套还没有可用的密钥。发送前先填一个，或改用环境变量。'
+}
+
+/** 凭据异常时的直接修复动作：本机问题重填，环境变量问题改用本机密钥。 */
+export function credentialRepairs(
+  provider: Pick<ModelProviderSummary, 'credentialError' | 'keyState' | 'authMode'>
+): ProviderRepairKind[] {
+  if (provider.credentialError === 'stored-decrypt-failed') {
+    return ['replace-key']
+  }
+  if (provider.keyState === 'missing') {
+    return [provider.authMode === 'env' ? 'use-stored-key' : 'replace-key']
+  }
+  return []
 }
 
 /**

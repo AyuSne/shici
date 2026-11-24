@@ -9,6 +9,7 @@ import {
   backupSummaryText,
   checkText,
   credentialIssueText,
+  credentialRepairs,
   fileNameOf,
   formatBytes,
   formatMoment,
@@ -23,6 +24,8 @@ import {
   providerProtocolText,
   providerSourceText,
   providerTestFailureText,
+  providerTestRepairs,
+  providerTestRequestId,
   providerTestVerifiedText,
   readingDefaultsText,
   restoreRejectionText,
@@ -122,7 +125,7 @@ describe('checkText', () => {
     )
   })
 
-  it('失败原因后面带 request id，能和服务端日志对上', () => {
+  it('失败原因不把 request id 混进主文案：诊断字符另有折叠区', () => {
     expect(
       checkText(
         provider({
@@ -131,7 +134,7 @@ describe('checkText', () => {
           lastCheckedAt: checkedAt
         })
       )
-    ).toBe(`上次校验 ${formatMoment(checkedAt)} 未通过 · 密钥无效 · 请求 ID req-401`)
+    ).toBe(`上次校验 ${formatMoment(checkedAt)} 未通过 · 密钥无效`)
   })
 
   it('已验证但最近一次真实调用失败时，同时说清两件事', () => {
@@ -145,9 +148,7 @@ describe('checkText', () => {
           lastVerifiedAt: checkedAt
         })
       )
-    ).toBe(
-      `上次校验 ${formatMoment(checkedAt)} 通过；最近一次失败 · 服务繁忙 · 请求 ID req-500`
-    )
+    ).toBe(`上次校验 ${formatMoment(checkedAt)} 通过；最近一次失败 · 服务繁忙`)
   })
 })
 
@@ -171,7 +172,7 @@ describe('providerCheckReasonText', () => {
   })
 })
 
-describe('测试连接的结果文案', () => {
+describe('测试连接的结果文案与就地修复动作', () => {
   const failed = {
     status: 'failed' as const,
     checkedAt,
@@ -186,19 +187,6 @@ describe('测试连接的结果文案', () => {
     requestId: 'req-401'
   }
 
-  it('失败时显示原因、下一步动作与 request id', () => {
-    const text = providerTestFailureText(failed)
-    expect(text).toContain('测试没通过：密钥无效')
-    expect(text).toContain('换一个有效的密钥')
-    expect(text).toContain('请求 ID req-401')
-  })
-
-  it('测试期间配置变了：如实说这次结果没有写回', () => {
-    const text = providerTestFailureText({ ...failed, persisted: false })
-    expect(text).toContain('请求 ID req-401')
-    expect(text).toContain('测试期间配置已改动，结果未保存；请重新测试')
-  })
-
   function failure(
     reason: ProviderCheckError,
     error: Partial<ProviderTestFailure['error']> = {}
@@ -212,48 +200,59 @@ describe('测试连接的结果文案', () => {
     }
   }
 
+  it('主文案只说自然原因；诊断字符与路径指引都不混进来', () => {
+    const text = providerTestFailureText(failed)
+    expect(text).toBe('测试没通过：密钥无效')
+    expect(text).not.toContain('请求 ID')
+    expect(text).not.toContain('到设置')
+    expect(text).not.toContain('编辑凭据')
+  })
+
+  it('测试期间配置变了：如实说这次结果没有保存', () => {
+    const text = providerTestFailureText({ ...failed, persisted: false })
+    expect(text).toContain('测试期间配置已改动，结果没有保存，请重新测试')
+    expect(text).not.toContain('请求 ID')
+  })
+
+  it('request id 单独取出，给折叠诊断区', () => {
+    expect(providerTestRequestId(failed)).toBe('req-401')
+    expect(providerTestRequestId(failure('timeout'))).toBeNull()
+    expect(providerTestRequestId({ ...failed, requestId: '   ' })).toBeNull()
+  })
+
   it.each([
-    ['invalid-key', {}, '换一个有效的密钥'],
-    ['quota', { status: 402, kind: 'QUOTA', code: 'insufficient-balance' }, '余额'],
-    [
-      'invalid-config',
-      { status: 413, kind: 'CONTEXT_WINDOW', code: 'context-too-long' },
-      '内容太长'
-    ],
-    ['invalid-config', { status: 404, kind: 'INVALID_REQUEST' }, '接口地址与模型名'],
-    ['rate-limit', { status: 429, kind: 'RATE_LIMIT' }, '稍等'],
-    ['server', { status: 500, kind: 'SERVER' }, '稍后重试'],
-    ['timeout', { kind: 'TIMEOUT' }, '检查网络'],
-    ['network', { kind: 'TRANSPORT' }, '检查网络'],
-    ['empty-response', { kind: 'EMPTY_RESPONSE' }, '空回答'],
-    ['unsupported-protocol', {}, '新建一套使用本版支持协议的提供商'],
-    ['no-model', {}, '模型目录']
-  ] as const)('%s 给出下一步动作', (reason, error, action) => {
-    expect(providerTestFailureText(failure(reason, error))).toContain(action)
+    ['invalid-key', 'stored', ['replace-key']],
+    ['invalid-key', 'env', ['use-stored-key']],
+    ['quota', 'env', ['use-stored-key']],
+    ['invalid-config', 'stored', ['edit-connection']],
+    ['no-model', 'stored', ['manage-models']],
+    ['network', 'stored', ['retry-test']],
+    ['server', 'env', ['retry-test']],
+    ['unsupported-protocol', 'stored', []]
+  ] as const)('%s（%s）给出对应的就地修复动作', (reason, authMode, expected) => {
+    expect(providerTestRepairs(failure(reason), authMode)).toEqual(expected)
   })
 
-  it('缺环境变量时点名变量，不追加服务端 detail', () => {
-    const text = providerTestFailureText(
-      failure('missing-credential', {
-        code: 'not-configured',
-        credential: { kind: 'env-missing', envVar: 'DEEPSEEK_API_KEY' },
-        detail: 'server secret text'
-      })
+  it('缺凭据按来源给「改用本机密钥」或「更换密钥」，并点名环境变量', () => {
+    const envMissing = failure('missing-credential', {
+      code: 'not-configured',
+      credential: { kind: 'env-missing', envVar: 'DEEPSEEK_API_KEY' },
+      detail: 'server secret text'
+    })
+    expect(providerTestRepairs(envMissing, 'env')).toEqual(['use-stored-key'])
+    expect(providerTestFailureText(envMissing)).toBe(
+      '测试没通过：系统里还没有设置环境变量 DEEPSEEK_API_KEY'
     )
+    expect(providerTestFailureText(envMissing)).not.toContain('server secret text')
 
-    expect(text).toContain('DEEPSEEK_API_KEY')
-    expect(text).not.toContain('server secret text')
-  })
-
-  it('本机密文解不开时给重填动作', () => {
-    const text = providerTestFailureText(
-      failure('missing-credential', {
-        code: 'not-configured',
-        credential: { kind: 'stored-decrypt-failed' }
-      })
+    const decryptFailed = failure('missing-credential', {
+      code: 'not-configured',
+      credential: { kind: 'stored-decrypt-failed' }
+    })
+    expect(providerTestRepairs(decryptFailed, 'stored')).toEqual(['replace-key'])
+    expect(providerTestFailureText(decryptFailed)).toBe(
+      '测试没通过：本机保存的密钥解不开'
     )
-
-    expect(text).toContain('重新填一个密钥')
   })
 
   it('通过时说明已验证；没有写回时也要说清', () => {
@@ -342,28 +341,57 @@ describe('keyStateText', () => {
   })
 })
 
-describe('credentialIssueText', () => {
-  it('解不开时给动作提示，并明说不会自动改用环境变量', () => {
-    const text = credentialIssueText(
-      provider({
-        keyState: 'stored',
-        apiKeyMask: null,
-        credentialError: 'stored-decrypt-failed'
-      })
-    )
+describe('credentialIssueText 与 credentialRepairs', () => {
+  it('本机密文解不开：自然说明原因与不换源，动作是更换密钥', () => {
+    const broken = provider({
+      keyState: 'stored',
+      apiKeyMask: null,
+      credentialError: 'stored-decrypt-failed'
+    })
+    const text = credentialIssueText(broken)
 
-    expect(text).toMatch(/编辑凭据/)
+    expect(text).toMatch(/本机保存的密钥解不开/)
     expect(text).toMatch(/不会自动改用环境变量/)
+    expect(text).not.toContain('到设置')
+    expect(text).not.toContain('编辑凭据里')
+    expect(credentialRepairs(broken)).toEqual(['replace-key'])
   })
 
-  it('正常、缺失与环境模式都不额外报警', () => {
+  it('环境变量缺失：点名变量，动作是改用本机密钥', () => {
+    const missingEnv = provider({
+      authMode: 'env',
+      envVar: 'DEEPSEEK_API_KEY',
+      keyState: 'missing',
+      apiKeyMask: null
+    })
+    const text = credentialIssueText(missingEnv)
+
+    expect(text).toContain('DEEPSEEK_API_KEY')
+    expect(text).toMatch(/改用本机保存的密钥/)
+    expect(text).not.toContain('到设置')
+    expect(credentialRepairs(missingEnv)).toEqual(['use-stored-key'])
+  })
+
+  it('本机模式没有密钥：说明还差一把密钥，动作是更换密钥', () => {
+    const missingStored = provider({ keyState: 'missing', apiKeyMask: null })
+
+    expect(credentialIssueText(missingStored)).toMatch(/还没有可用的密钥/)
+    expect(credentialRepairs(missingStored)).toEqual(['replace-key'])
+  })
+
+  it('正常与环境模式可用时不额外报警', () => {
     expect(credentialIssueText(provider())).toBeNull()
-    expect(credentialIssueText(provider({ keyState: 'missing', apiKeyMask: null }))).toBeNull()
+    expect(credentialRepairs(provider())).toEqual([])
     expect(
       credentialIssueText(
         provider({ authMode: 'env', keyState: 'env', envVar: 'KEY', apiKeyMask: null })
       )
     ).toBeNull()
+    expect(
+      credentialRepairs(
+        provider({ authMode: 'env', keyState: 'env', envVar: 'KEY', apiKeyMask: null })
+      )
+    ).toEqual([])
   })
 })
 

@@ -15,6 +15,7 @@ import type { Dictionary } from '../dictionary/dictionary'
 import { reassignPinsFromEntry } from '../pins/pins'
 import { paragraphLetter } from '../corpus/letter'
 import { refreshLastCollected } from './entry-state'
+import { readEntryGlance, readEntryGlances } from './glance'
 import { resolveEntryKey } from './key'
 import { readEntrySelection } from './selection'
 
@@ -201,22 +202,34 @@ export function readArticleCollections(
     char_end: number
   }[]
 
-  return rows.map((row) => ({
-    id: row.id,
-    entryId: row.entry_id,
-    entryMainForm: row.main_form,
-    surface: row.surface,
-    paragraphId: row.paragraph_id,
-    sentenceOrdinal: row.sentence_ordinal,
-    start: row.char_start,
-    end: row.char_end
+  const marks = rows.map(
+    (row): Omit<ReadingCollectionMark, 'glance'> => ({
+      id: row.id,
+      entryId: row.entry_id,
+      entryMainForm: row.main_form,
+      surface: row.surface,
+      paragraphId: row.paragraph_id,
+      sentenceOrdinal: row.sentence_ordinal,
+      start: row.char_start,
+      end: row.char_end
+    })
+  )
+  const glances = readEntryGlances(
+    database,
+    marks.map((mark) => mark.entryId),
+    { excludeArticleId: articleId }
+  )
+  return marks.map((mark) => ({
+    ...mark,
+    glance: glances.get(mark.entryId) ?? { pinnedNote: null, encounter: null }
   }))
 }
 
 /** 点开一个已收集词时的词条卡；词条不存在时为 null。 */
 export function readWordEntryCard(
   database: AppDatabase,
-  entryId: string
+  entryId: string,
+  options: { articleId?: string } = {}
 ): WordEntryCard | null {
   const entry = readEntrySummary(database, entryId)
   if (!entry) {
@@ -233,7 +246,14 @@ export function readWordEntryCard(
     )
     .all(entryId) as EntrySentenceRow[]
 
-  return { entry, sentences: rows.map(toEntrySentence) }
+  return {
+    entry,
+    sentences: rows.map(toEntrySentence),
+    glance: readEntryGlance(database, entryId, { excludeArticleId: options.articleId }) ?? {
+      pinnedNote: null,
+      encounter: null
+    }
+  }
 }
 
 /**
@@ -356,7 +376,10 @@ export function collectSelection(
     status: stored.created ? 'collected' : 'duplicate',
     entry,
     sentence: entrySentence,
-    marks: readArticleCollections(database, request.articleId)
+    marks: readArticleCollections(database, request.articleId),
+    glance: readEntryGlance(database, stored.entryId, {
+      excludeArticleId: request.articleId
+    }) ?? { pinnedNote: null, encounter: null }
   }
 }
 

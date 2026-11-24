@@ -105,7 +105,7 @@ test.describe('选词与原句', () => {
     await expect(panel).toBeVisible()
     await expect(panel.getByText('已收下')).toBeVisible()
     await expect(panel.locator('.reading-panel-word')).toHaveText('hiring')
-    await expect(panel.getByText('词条 hiring')).toBeVisible()
+    await expect(panel.locator('.reading-panel-entry')).toHaveText('已收进词条')
     await expect(panel.locator('.reading-panel-sentence')).toHaveText(
       'Employers approach hiring differently.'
     )

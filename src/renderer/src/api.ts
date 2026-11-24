@@ -65,6 +65,8 @@ import type {
   RestorePinsResult
 } from '../../shared/pins'
 import type {
+  ReadingGlobalPreferences,
+  ReadingGlobalPreferencesResult,
   ReadingPreferences,
   ReadingProgressRequest,
   ReadingProgressResult,
@@ -276,6 +278,18 @@ export function saveReadingSettings(
   return invoke('reading:settings', request)
 }
 
+/** 读不分篇的静默圈词 / 页边眉批 / 轻遮重读偏好。 */
+export function loadReadingGlobalPreferences(): Promise<ReadingGlobalPreferences> {
+  return invoke('reading:global-preferences')
+}
+
+/** 保存整份全局阅读偏好；只写 setting 表，不影响旧的本篇字号行距。 */
+export function saveReadingGlobalPreferences(
+  preferences: ReadingGlobalPreferences
+): Promise<ReadingGlobalPreferencesResult> {
+  return invoke('reading:global-preferences-save', { preferences })
+}
+
 /** 收下一次选词：当场建原句、归词条，并拿回这一篇最新的标记。 */
 export function collectSelection(
   request: CollectSelectionRequest
@@ -288,9 +302,12 @@ export function lookupDictionary(word: string): Promise<DictionaryLookup> {
   return invoke('dictionary:lookup', { word })
 }
 
-/** 点开一个已收集的词，读它的词条卡与原句。 */
-export function loadWordEntryCard(entryId: string): Promise<WordEntryCard | null> {
-  return invoke('entries:card', { entryId })
+/** 点开一个已收集的词，读它的词条卡与原句；带当前篇时故人重逢只取别篇。 */
+export function loadWordEntryCard(
+  entryId: string,
+  articleId?: string
+): Promise<WordEntryCard | null> {
+  return invoke('entries:card', articleId === undefined ? { entryId } : { entryId, articleId })
 }
 
 /** 删掉一条原句；词条只剩这一条时连词条一起删。 */

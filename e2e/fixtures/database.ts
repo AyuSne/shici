@@ -161,6 +161,11 @@ export function seedBuiltinProvider(
         )
         .run(added.providerId)
       database.prepare("DELETE FROM setting WHERE key = 'chat.providerSelectionCleared'").run()
+    } else {
+      // 保存新提供商时会自动接上「使用中」；夹具要能明确构造「存在但未启用」。
+      database
+        .prepare("DELETE FROM setting WHERE key = 'chat.activeProviderId' AND value = ?")
+        .run(added.providerId)
     }
     database.pragma('journal_mode = DELETE')
     return added.providerId

@@ -112,9 +112,11 @@ test.describe('内置词典', () => {
     await openArticle(page, articleTitle)
 
     const panel = await selectInReading(page, 0, 'approach')
+    // 卡头已把词形与音标并排展示，词典块不再重复印一遍词头。
+    await expect(panel.locator('.reading-panel-word')).toHaveText('approach')
+    await expect(panel.locator('.reading-panel-phonetic')).toHaveText('/əˈprəutʃ/')
+    await expect(panel.locator('.dictionary-word')).toHaveCount(0)
     const block = panel.locator('.dictionary')
-    await expect(block.locator('.dictionary-word')).toHaveText('approach')
-    await expect(block.locator('.dictionary-phonetic')).toHaveText('/əˈprəutʃ/')
     await expect(block.locator('.dictionary-sense')).toHaveCount(3)
     await expect(block.locator('.dictionary-pos')).toHaveText(['n.', 'vt.', 'vi.'])
     await expect(block.getByRole('button', { name: '展开其余 2 条' })).toBeVisible()
@@ -126,8 +128,9 @@ test.describe('内置词典', () => {
     // 词形变化回退到原形，音标与释义来自原形。
     await clickAway(page)
     const second = await selectInReading(page, 0, 'hiring')
+    await expect(second.locator('.reading-panel-word')).toHaveText('hiring')
+    await expect(second.locator('.reading-panel-phonetic')).toHaveText('/ˈhaiə/')
     const hire = second.locator('.dictionary')
-    await expect(hire.locator('.dictionary-word')).toHaveText('hire')
     await expect(hire.locator('.dictionary-lemma')).toHaveText('由 hiring 归到原形')
     await expect(hire.locator('.dictionary-sense-text').first()).toContainText('雇请')
 

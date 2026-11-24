@@ -11,12 +11,13 @@ import type { EntrySentence, ReadingCollectionMark } from '../../../shared/entri
 import type { DictionaryLookup } from '../../../shared/dictionary'
 import type { CreateThreadRequest } from '../../../shared/threads'
 import type {
+  ReadingGlobalPreferences,
   ReadingPreferences,
   ReadingSettings,
   ReadingSettingsResult,
   ReadingView
 } from '../../../shared/reading'
-import { DEFAULT_READING_PREFERENCES } from '../../../shared/reading'
+import { DEFAULT_READING_GLOBAL_PREFERENCES, DEFAULT_READING_PREFERENCES } from '../../../shared/reading'
 import {
   collectSelection,
   deleteEntrySentence,
@@ -24,13 +25,15 @@ import {
   loadWordEntryCard,
   openReadingView,
   reselectEntrySentence,
+  saveReadingGlobalPreferences,
   saveReadingSettings
 } from '../api'
-import { lookupDictionaryOrUnavailable } from '../dictionary/lookup'
+import { lookupDictionaryOrUnavailable, type DictionaryLookupState } from '../dictionary/lookup'
+import { phoneticText, posLabel, statusText } from '../dictionary/presentation'
 import { getChatStore, openThreadForMain } from '../chat/store'
 import { ErrorBlock } from '../components/error-block'
 import { failureText } from '../errors'
-import { showToast } from '../components/toast-store'
+import { showToast, toastStore } from '../components/toast-store'
 import { Icon } from '../components/icons'
 import { useLaterMark } from '../later/use-later-mark'
 import { readingPointText } from '../library/format'
@@ -51,9 +54,9 @@ import {
   type EntryPanel,
   type PanelState
 } from '../reading/entry-panel'
-import { ReadingParagraphView } from '../reading/paragraph'
+import { ReadingParagraphView, type ReadingMarginNote } from '../reading/paragraph'
 import { scrollTargetIntoReading } from '../reading/scroll'
-import { readParagraphSelection, readReadingExcerpt, type ReadingSelection, type ReadingExcerpt } from '../reading/selection'
+import { readParagraphSelection, readReadingExcerpt, selectionOffsets, locateWordAt, selectParagraphRange, type ReadingSelection, type ReadingExcerpt } from '../reading/selection'
 import { ReadingSettingsPanel } from '../reading/settings-panel'
 import { useReadingPosition } from '../reading/use-reading-position'
 import type { ReadingSource } from '../routes'
@@ -80,6 +83,8 @@ type ReadingPageProps = {
 type ActiveSelection = ReadingSelection & {
   entryId: string | null
   entryMainForm: string
+  /** 刚收下的这一处做一次落墨；不是收集反馈，重复收词不触发。 */
+  ink?: boolean
 }
 
 /** 从词条页跳过来时的目标：把这一句滚到眼前、底色高亮，或就地换范围。 */
@@ -88,6 +93,13 @@ type FocusTarget = {
   entryMainForm: string
   sentence: EntrySentence
   mode: 'highlight' | 'reselect'
+}
+
+/** 悬停一瞥：独立浮层的位置与词典结果，不参与正文布局。 */
+type GlanceState = {
+  mark: ReadingCollectionMark
+  rect: DOMRect
+  dictionary: DictionaryLookupState
 }
 
 /** 从点击目标找到已收集标记的词条 id；普通正文返回 null。 */
@@ -116,6 +128,11 @@ export function ReadingPage({
 }: ReadingPageProps) {
   const [view, setView] = useState<ReadingView | null>(null)
   const [settings, setSettings] = useState<ReadingSettings | null>(null)
+  const [globals, setGlobals] = useState<ReadingGlobalPreferences>(
+    DEFAULT_READING_GLOBAL_PREFERENCES
+  )
+  /** 全局偏好的最新一份；连点两个开关时以后一次的结果为准，不从旧渲染快照叠加。 */
+  const globalsRef = useRef<ReadingGlobalPreferences>(DEFAULT_READING_GLOBAL_PREFERENCES)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -127,10 +144,13 @@ export function ReadingPage({
   const [collectError, setCollectError] = useState<string | null>(null)
   const [openingThread, setOpeningThread] = useState(false)
   const [excerpt, setExcerpt] = useState<(ReadingExcerpt & { rect: DOMRect }) | null>(null)
+  const [glance, setGlance] = useState<GlanceState | null>(null)
+  const [revealedMaskIds, setRevealedMaskIds] = useState<ReadonlySet<string>>(new Set())
   const later = useLaterMark()
 
   const { scrollRef, position, writeError, retryWrite } = useReadingPosition(view)
   const settingsRequest = useRef(0)
+  const globalsRequest = useRef(0)
   /** 保存失败时留住「本来想存的那一份」，重试存的还是它，不是回退后的旧值。 */
   const failedPreferences = useRef<ReadingPreferences | null>(null)
   const settingsPanelRef = useRef<HTMLElement>(null)
@@ -138,6 +158,66 @@ export function ReadingPage({
   const panelRef = useRef<HTMLElement>(null)
   const collectRequest = useRef(0)
   const collecting = useRef(false)
+  /** 换文章就递增；所有异步返回先对一次，旧文章的结果不能写到新文章界面上。 */
+  const articleToken = useRef(0)
+  /** 当前可撤销的那次收词；Toast 被替换或过期后 Ctrl+Z 不再动它。 */
+  const undoRef = useRef<{
+    toastId: number
+    articleToken: number
+    entryId: string
+    entrySentenceId: string
+  } | null>(null)
+  /** 悬停 250ms 的计时器与词典请求代次；离开、开卡、换文章、卸载都要清。 */
+  const glanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const glanceRequest = useRef(0)
+
+  /** 收起悬停一瞥，并让在途的词典结果作废。 */
+  function clearGlance(): void {
+    if (glanceTimer.current !== null) {
+      clearTimeout(glanceTimer.current)
+      glanceTimer.current = null
+    }
+    glanceRequest.current += 1
+    setGlance(null)
+  }
+
+  /**
+   * 悬停到已收集词上先等 250ms：期间移开就什么都不发生。
+   * 浮层位置当场从元素量一次，之后不再读写正文布局。
+   */
+  function glanceAfterHover(mark: ReadingCollectionMark, element: HTMLElement): void {
+    if (glanceTimer.current !== null) {
+      clearTimeout(glanceTimer.current)
+    }
+    const token = articleToken.current
+    glanceTimer.current = setTimeout(() => {
+      glanceTimer.current = null
+      const request = glanceRequest.current + 1
+      glanceRequest.current = request
+      setGlance({
+        mark,
+        rect: element.getBoundingClientRect(),
+        dictionary: { lookup: null, loading: true }
+      })
+      lookupDictionaryOrUnavailable(mark.surface).then((lookup) => {
+        if (request !== glanceRequest.current || token !== articleToken.current) return
+        setGlance((current) =>
+          current !== null && current.mark.id === mark.id
+            ? { ...current, dictionary: { lookup, loading: false } }
+            : current
+        )
+      })
+    }, 250)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (glanceTimer.current !== null) {
+        clearTimeout(glanceTimer.current)
+        glanceTimer.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (articleId === null) {
@@ -148,6 +228,13 @@ export function ReadingPage({
     }
 
     let active = true
+    articleToken.current += 1
+    settingsRequest.current += 1
+    globalsRequest.current += 1
+    undoRef.current = null
+    collecting.current = false
+    clearGlance()
+    setRevealedMaskIds(new Set())
     setView(null)
     setLoadError(null)
     setSettingsError(null)
@@ -169,6 +256,8 @@ export function ReadingPage({
         }
         setView(value)
         setSettings(value.settings)
+        globalsRef.current = value.globalPreferences
+        setGlobals(value.globalPreferences)
         setCollected(value.collected)
       },
       (error: unknown) => {
@@ -284,6 +373,27 @@ export function ReadingPage({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [excerpt, focus, panel, settingsOpen, readingFrom, entrySentenceId, onOpenSearch])
 
+  /**
+   * Ctrl/Cmd+Z 只撤销当前那条还活着的收词提示。输入框里不抢浏览器自身的撤销，
+   * Toast 已被替换或过期时也是 no-op。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.isComposing || event.altKey || event.shiftKey) return
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z') return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, [contenteditable="true"]') !== null) return
+      const undo = undoRef.current
+      const snapshot = toastStore.getSnapshot()
+      if (undo === null || snapshot === null || snapshot.id !== undo.toastId) return
+      if (snapshot.action === null) return
+      event.preventDefault()
+      void toastStore.runAction(undo.toastId)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   useEffect(() => {
     if (!settingsOpen) return
     const onPointerDown = (event: PointerEvent): void => {
@@ -307,6 +417,7 @@ export function ReadingPage({
       if (target === null) return
       if (searchUiOwns(target)) return
       if (target.closest('.reading-excerpt-toolbar')) return
+      clearGlance()
       setExcerpt(null)
       if (panelRef.current?.contains(target)) return
       if (target.closest('.reading-settings') !== null) return
@@ -348,9 +459,12 @@ export function ReadingPage({
               .filter((mark) => mark.paragraphId === paragraph.id)
               .map((mark) => ({
                 entryId: mark.entryId,
+                markId: mark.id,
                 label: mark.entryMainForm,
                 start: mark.start,
-                end: mark.end
+                end: mark.end,
+                masked: globals.lightMask,
+                maskRevealed: revealedMaskIds.has(mark.id)
               }))),
         ...(activeSelection === null || activeSelection.paragraphId !== paragraph.id
           ? []
@@ -360,7 +474,8 @@ export function ReadingPage({
                 label: activeSelection.entryMainForm,
                 start: activeSelection.start,
                 end: activeSelection.end,
-                selected: true
+                selected: true,
+                ...(activeSelection.ink === true ? { ink: true } : {})
               }
             ])
       ]
@@ -369,7 +484,32 @@ export function ReadingPage({
         blocks: buildReadingBlocks(paragraph, highlights)
       }
     })
-  }, [view, collected, activeSelection, settings?.weakHighlight])
+  }, [view, collected, activeSelection, settings?.weakHighlight, globals.lightMask, revealedMaskIds])
+
+  /**
+   * 本段已拾词里带置顶学习内容的那几条。同一个词条在一段里出现多次只留一行；
+   * 页边眉批顺序跟正文里的首次出现走。
+   */
+  const marginPinnedByParagraph = useMemo(() => {
+    const notes = new Map<string, ReadingMarginNote[]>()
+    const seen = new Map<string, Set<string>>()
+    for (const mark of collected) {
+      const pinned = mark.glance.pinnedNote
+      if (pinned === null) continue
+      const paragraphSeen = seen.get(mark.paragraphId) ?? new Set<string>()
+      if (paragraphSeen.has(mark.entryId)) continue
+      paragraphSeen.add(mark.entryId)
+      seen.set(mark.paragraphId, paragraphSeen)
+      const rows = notes.get(mark.paragraphId) ?? []
+      rows.push({
+        entryId: mark.entryId,
+        mainForm: mark.entryMainForm,
+        excerpt: pinned.excerpt
+      })
+      notes.set(mark.paragraphId, rows)
+    }
+    return notes
+  }, [collected])
 
   function updatePreferences(patch: Partial<ReadingPreferences>): void {
     if (!view || !settings) return
@@ -401,9 +541,10 @@ export function ReadingPage({
   ): void {
     const request = settingsRequest.current + 1
     settingsRequest.current = request
+    const token = articleToken.current
     saveReadingSettings({ articleId, preferences }).then(
       (result: ReadingSettingsResult | null) => {
-        if (request !== settingsRequest.current) return
+        if (request !== settingsRequest.current || token !== articleToken.current) return
         if (result === null) {
           setSettings(previous)
           failedPreferences.current = preferences
@@ -419,11 +560,40 @@ export function ReadingPage({
         }
       },
       (error: unknown) => {
-        if (request === settingsRequest.current) {
+        if (request === settingsRequest.current && token === articleToken.current) {
           setSettings(previous)
           failedPreferences.current = preferences
           setSettingsError(failureText(error, '这次阅读设置没有写入本机资料库。'))
         }
+      }
+    )
+  }
+
+  function updateGlobals(patch: Partial<ReadingGlobalPreferences>): void {
+    const token = articleToken.current
+    const previous = globalsRef.current
+    const preferences = { ...globalsRef.current, ...patch }
+    globalsRef.current = preferences
+    setGlobals(preferences)
+    const request = globalsRequest.current + 1
+    globalsRequest.current = request
+    saveReadingGlobalPreferences(preferences).then(
+      (result) => {
+        if (request !== globalsRequest.current || token !== articleToken.current) return
+        if (!result.saved) {
+          globalsRef.current = previous
+          setGlobals(previous)
+          setCollectError('这次阅读偏好没有写入本机资料库。')
+          return
+        }
+        globalsRef.current = result.preferences
+        setGlobals(result.preferences)
+      },
+      (error: unknown) => {
+        if (request !== globalsRequest.current || token !== articleToken.current) return
+        globalsRef.current = previous
+        setGlobals(previous)
+        setCollectError(failureText(error, '这次阅读偏好没有记住。'))
       }
     )
   }
@@ -457,6 +627,7 @@ export function ReadingPage({
   }
 
   function openEntryCard(entryId: string, entrySentenceId: string | null): void {
+    clearGlance()
     setActiveSelection(null)
     setHint(null)
     setPanel({
@@ -469,7 +640,7 @@ export function ReadingPage({
       deleting: false,
       laterNotice: null
     })
-    loadWordEntryCard(entryId).then(
+    loadWordEntryCard(entryId, view?.article.id).then(
       (card) => {
         updateEntryPanel((current) =>
           current.entryId === entryId
@@ -487,8 +658,38 @@ export function ReadingPage({
     )
   }
 
+  /**
+   * 撤销刚收下的一条原句。只删这次新加的关联：词条若因此空了会一并清掉，
+   * 之前就存在的同篇同句重复关联不在撤销范围内（duplicate 不弹撤销）。
+   * 换文章后迟到的删除仍会落库，但不再改新文章的界面。
+   */
+  async function undoCollected(target: {
+    articleToken: number
+    entryId: string
+    entrySentenceId: string
+  }): Promise<void> {
+    const result = await deleteEntrySentence(target.entrySentenceId)
+    if (result.status === 'missing') {
+      throw new Error('这条原句已经不在了。')
+    }
+    if (target.articleToken !== articleToken.current) {
+      return
+    }
+    if (result.articleId === view?.article.id) {
+      setCollected(result.marks)
+    }
+    setActiveSelection(null)
+    setFocus((current) =>
+      current !== null && current.sentence.id === target.entrySentenceId ? null : current
+    )
+    setPanel((current) =>
+      current !== null && current.entryId === target.entryId ? null : current
+    )
+  }
+
   function collectCurrentSelection(): void {
     if (!view || collecting.current) return
+    const token = articleToken.current
     const read = readParagraphSelection(view.paragraphs)
     setExcerpt(null)
     if (read === null) {
@@ -529,7 +730,7 @@ export function ReadingPage({
         end: selection.end
       }).then(
         (result) => {
-          if (request !== collectRequest.current) return
+          if (request !== collectRequest.current || token !== articleToken.current) return
           collecting.current = false
           if (result.status === 'resaved') {
             setCollected(result.marks)
@@ -553,7 +754,7 @@ export function ReadingPage({
           )
         },
         (error: unknown) => {
-          if (request !== collectRequest.current) return
+          if (request !== collectRequest.current || token !== articleToken.current) return
           collecting.current = false
           setCollectError(`${failureText(error, '这次没有收进来')} 再圈一次试试。`)
         }
@@ -582,7 +783,7 @@ export function ReadingPage({
       end: selection.end
     }).then(
       (result) => {
-        if (request !== collectRequest.current) return
+        if (request !== collectRequest.current || token !== articleToken.current) return
         collecting.current = false
         if (result.status === 'rejected') {
           setActiveSelection(null)
@@ -595,26 +796,63 @@ export function ReadingPage({
           current.paragraphId === selection.paragraphId &&
           current.start === selection.start &&
           current.end === selection.end
-            ? { ...current, entryId: result.entry.id, entryMainForm: result.entry.mainForm }
+            ? {
+                ...current,
+                entryId: result.entry.id,
+                entryMainForm: result.entry.mainForm,
+                ink: result.status === 'collected'
+              }
             : current
         )
-        setPanel({
-          kind: 'collected',
-          entryId: result.entry.id,
-          entryMainForm: result.entry.mainForm,
-          surface: result.sentence.surface,
-          sentenceText: result.sentence.sentenceText,
-          sentenceCount: result.entry.sentenceCount,
-          articleCount: result.entry.articleCount,
-          duplicate: result.status === 'duplicate',
-          dictionary: { lookup: null, loading: true }
-        })
-        lookupCollectedWord(result.entry.id, result.sentence.surface)
+        if (result.status === 'collected') {
+          const toast = showToast({
+            message: `已拾下「${result.sentence.surface}」`,
+            action: {
+              label: '撤销',
+              run: () =>
+                undoCollected({
+                  articleToken: token,
+                  entryId: result.entry.id,
+                  entrySentenceId: result.sentence.id
+                }),
+              failureMessage: '撤销没有完成，再试一次。'
+            }
+          })
+          undoRef.current =
+            toast === null
+              ? null
+              : {
+                  toastId: toast.id,
+                  articleToken: token,
+                  entryId: result.entry.id,
+                  entrySentenceId: result.sentence.id
+                }
+        } else {
+          // 重复收词没有可撤销的新关联；换掉上一条撤销提示，免得 Ctrl+Z 误删旧原句。
+          undoRef.current = null
+          showToast({ message: '这条原句已经收过' })
+        }
+        if (!globals.silentCollection) {
+          setPanel({
+            kind: 'collected',
+            entryId: result.entry.id,
+            entryMainForm: result.entry.mainForm,
+            surface: result.sentence.surface,
+            sentenceText: result.sentence.sentenceText,
+            sentenceCount: result.entry.sentenceCount,
+            articleCount: result.entry.articleCount,
+            duplicate: result.status === 'duplicate',
+            dictionary: { lookup: null, loading: true },
+            glance: result.glance
+          })
+          lookupCollectedWord(result.entry.id, result.sentence.surface)
+        }
       },
       (error: unknown) => {
-        if (request !== collectRequest.current) return
+        if (request !== collectRequest.current || token !== articleToken.current) return
         collecting.current = false
         setActiveSelection(null)
+        undoRef.current = null
         setCollectError(failureText(error, '这次没有收进来，再圈一次试试。'))
       }
     )
@@ -660,6 +898,7 @@ export function ReadingPage({
                 error: null,
                 confirmingDelete: false,
                 card: {
+                  ...current.card,
                   entry,
                   sentences: current.card.sentences.filter(
                     (sentence) => sentence.id !== entrySentenceId
@@ -781,8 +1020,70 @@ export function ReadingPage({
   }
 
   const handleBodyClick = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    // 轻遮重读：第一次轻点只揭开词形，再点才打开词条卡。
+    if (globals.lightMask) {
+      const maskElement = (event.target as Element | null)?.closest<HTMLElement>('[data-mark-id]')
+      const maskId = maskElement?.dataset.markId
+      if (maskElement !== null && maskElement !== undefined && maskId !== undefined) {
+        if (!revealedMaskIds.has(maskId)) {
+          setRevealedMaskIds((current) => new Set(current).add(maskId))
+          return
+        }
+      }
+    }
     const entryId = entryIdOf(event.target)
     if (entryId !== null) openEntryCard(entryId, sentenceIdOf(event.target, entryId))
+  }
+
+  const handleBodyMouseOver = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    const element = (event.target as Element | null)?.closest<HTMLElement>('[data-mark-id]')
+    const markId = element?.dataset.markId
+    if (element === null || element === undefined || markId === undefined) return
+    if (glance?.mark.id === markId) return
+    const mark = collected.find((candidate) => candidate.id === markId)
+    if (mark === undefined) return
+    glanceAfterHover(mark, element)
+  }
+
+  const handleBodyMouseOut = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    const from = (event.target as Element | null)?.closest<HTMLElement>('[data-mark-id]')
+    if (from === null || from === undefined) return
+    const to = event.relatedTarget as Element | null
+    if (to !== null && (from === to || from.contains(to))) return
+    clearGlance()
+  }
+
+  /**
+   * 双击英文词直接收词。落点先吸附成完整词形；已经是收集过的词就交给单击打开词条卡，
+   * 不再产生 duplicate 的选词结果。双击的第二下 mouseup 不重复走拖选流程。
+   */
+  const handleBodyDoubleClick = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    if (view === null || collecting.current) return
+    const paragraphElement = (event.target as Element | null)?.closest<HTMLElement>(
+      '.reading-paragraph'
+    )
+    if (!paragraphElement) return
+    const paragraph = view.paragraphs.find(
+      (candidate) => candidate.id === paragraphElement.dataset.paragraphId
+    )
+    if (!paragraph) return
+    const offsets = selectionOffsets(paragraphElement)
+    if (offsets === null) return
+    const word = locateWordAt(paragraph, offsets.start)
+    if (word === null) return
+    if (
+      focus?.mode !== 'reselect' &&
+      collected.some(
+        (mark) =>
+          mark.paragraphId === word.paragraphId &&
+          mark.start < word.end &&
+          mark.end > word.start
+      )
+    ) {
+      return
+    }
+    if (!selectParagraphRange(paragraphElement, word.start, word.end)) return
+    collectCurrentSelection()
   }
 
   const handleBodyKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
@@ -794,16 +1095,41 @@ export function ReadingPage({
   }
 
   const hasLetters = view?.article.kind === 'long_match'
-  const annotationCount = view
-    ? view.paragraphs.reduce((total, paragraph) => total + paragraph.annotations.length, 0)
-    : 0
+  const showAnnotationRows =
+    globals.marginNoteMode === 'all' && settings?.annotationsVisible !== false
+  const marginColumnVisible =
+    view !== null &&
+    globals.marginNoteMode !== 'hidden' &&
+    view.paragraphs.some(
+      (paragraph) =>
+        (showAnnotationRows && paragraph.annotations.length > 0) ||
+        (marginPinnedByParagraph.get(paragraph.id)?.length ?? 0) > 0
+    )
   const bodyClassName = [
     'reading-body',
     hasLetters ? 'reading-body-letters' : '',
-    annotationCount > 0 ? 'reading-body-with-notes' : ''
+    marginColumnVisible ? 'reading-body-with-notes' : ''
   ]
     .filter(Boolean)
     .join(' ')
+
+  const glanceLookup = glance?.dictionary.lookup ?? null
+  const glancePhonetic =
+    glanceLookup?.status === 'found' ? phoneticText(glanceLookup.entry.phonetic) : ''
+  const glanceBody =
+    glance === null
+      ? ''
+      : glance.mark.glance.pinnedNote !== null
+        ? glance.mark.glance.pinnedNote.excerpt
+        : glance.dictionary.loading || glanceLookup === null
+          ? '正在查词典…'
+          : glanceLookup.status !== 'found'
+            ? statusText(glanceLookup)
+            : glanceLookup.entry.senses.length === 0
+              ? '词典里没有释义。'
+              : `${posLabel(glanceLookup.entry.senses[0]!.pos)} ${
+                  glanceLookup.entry.senses[0]!.text
+                }`.trim()
 
   const backTarget = readingBackTarget(readingFrom, entrySentenceId)
   const backLabel = backTarget.label
@@ -813,11 +1139,14 @@ export function ReadingPage({
       className="reading"
       data-annotations={settings?.annotationsVisible === false ? 'hidden' : 'visible'}
       data-reading-page="true"
+      data-margin-notes={marginColumnVisible ? 'true' : 'false'}
+      data-panel={panel === null ? 'false' : 'true'}
       style={
         {
           '--reading-font-size': `${settings?.fontSize ?? DEFAULT_READING_PREFERENCES.fontSize}px`,
           '--reading-line-height':
-            settings?.lineHeight ?? DEFAULT_READING_PREFERENCES.lineHeight
+            settings?.lineHeight ?? DEFAULT_READING_PREFERENCES.lineHeight,
+          '--reading-grid-width': `${hasLetters ? 852 : 820}px`
         } as CSSProperties
       }
     >
@@ -832,6 +1161,9 @@ export function ReadingPage({
         </button>
         <div className="reading-bar-text">
           <h1 className="reading-bar-title">{view?.article.title ?? '阅读'}</h1>
+          {view === null ? null : (
+            <p className="reading-bar-meta">本篇已拾 {view.knownWordCount} 个词</p>
+          )}
         </div>
         <div className="reading-bar-actions">
           {/* 搜索入口与全局栏共用同一个覆盖层；阅读页收起全局栏后仍能搜。 */}
@@ -884,8 +1216,10 @@ export function ReadingPage({
                 {settingsOpen ? (
                   <ReadingSettingsPanel
                     settings={settings}
+                    globals={globals}
                     error={settingsError}
                     onChange={updatePreferences}
+                    onGlobalsChange={updateGlobals}
                     onRetry={retryPreferences}
                     panelRef={settingsPanelRef}
                   />
@@ -969,7 +1303,7 @@ export function ReadingPage({
           <p className="reading-empty-line">正在打开文章…</p>
         </div>
       ) : (
-        <div className="reading-scroll" ref={scrollRef}>
+        <div className="reading-scroll" ref={scrollRef} onScroll={clearGlance}>
           <div className="reading-sheet">
             {writeError === null ? null : (
               <ErrorBlock
@@ -981,7 +1315,13 @@ export function ReadingPage({
             )}
             <div
               className={bodyClassName}
-              onMouseUp={collectCurrentSelection}
+              onMouseUp={(event) => {
+                // 双击的第二下由 onDoubleClick 统一处理，避免 duplicate 选词卡盖住词条卡。
+                if (event.detail < 2) collectCurrentSelection()
+              }}
+              onDoubleClick={handleBodyDoubleClick}
+              onMouseOver={handleBodyMouseOver}
+              onMouseOut={handleBodyMouseOut}
               onKeyUp={(event) => {
                 if (event.shiftKey || event.key === 'Shift') collectCurrentSelection()
               }}
@@ -1002,6 +1342,12 @@ export function ReadingPage({
                   }
                   focusedParagraph={
                     searchParagraphId === paragraph.id && searchSentenceOrdinal === null
+                  }
+                  showAnnotationRows={showAnnotationRows}
+                  marginNotes={
+                    globals.marginNoteMode === 'hidden'
+                      ? []
+                      : (marginPinnedByParagraph.get(paragraph.id) ?? [])
                   }
                 />
               ))}
@@ -1031,6 +1377,28 @@ export function ReadingPage({
           <button type="button" onClick={() => { void navigator.clipboard.writeText(excerpt.text).then(() => { setHint('已复制'); setExcerpt(null); window.getSelection()?.removeAllRanges() }, () => setCollectError('复制失败，请再试一次。')) }}>复制</button>
         </div>
       ) : null}
+
+      {glance === null ? null : (
+        <div
+          className="reading-glance"
+          role="tooltip"
+          style={{
+            left: Math.max(
+              12,
+              Math.min(glance.rect.left, Math.max(12, window.innerWidth - 300))
+            ),
+            top: Math.min(glance.rect.bottom + 8, window.innerHeight - 120)
+          }}
+        >
+          <p className="reading-glance-head">
+            <span className="reading-glance-word">{glance.mark.entryMainForm}</span>
+            {glancePhonetic === '' ? null : (
+              <span className="reading-glance-phonetic">{glancePhonetic}</span>
+            )}
+          </p>
+          <p className="reading-glance-body">{glanceBody}</p>
+        </div>
+      )}
 
       {panel === null ? null : panel.kind === 'collected' ? (
         <CollectedPanelView

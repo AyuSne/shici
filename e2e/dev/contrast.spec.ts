@@ -202,13 +202,12 @@ test.describe('收官验收 · 深色对比度', () => {
     // 刚收下时的划词卡带只读词典，先等词典结果到齐再取样。
     const collectedPanel = page.getByRole('complementary', { name: '选词结果' })
     await expect(collectedPanel).toBeVisible()
-    await expect(collectedPanel.locator('.dictionary-word')).toBeVisible()
+    await expect(collectedPanel.locator('.reading-panel-phonetic')).toBeVisible()
     await expectReadableText(page, [
       { label: '选词卡词形', selector: '.reading-panel-word' },
+      { label: '选词卡音标', selector: '.reading-panel-phonetic' },
       { label: '选词卡计数', selector: '.reading-panel-meta' },
       { label: '选词卡原句', selector: '.reading-panel-sentence' },
-      { label: '词典词头', selector: '.dictionary-word' },
-      { label: '词典音标', selector: '.dictionary-phonetic' },
       { label: '词典释义', selector: '.dictionary-sense-text' }
     ])
 

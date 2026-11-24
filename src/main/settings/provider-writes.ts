@@ -17,6 +17,7 @@ import { writeSetting } from '../db/settings'
 import { prepareProviderCredential } from './credentials'
 import {
   ACTIVE_PROVIDER_KEY,
+  activateProviderIfNoneActive,
   clearProviderSelection,
   markProviderSelectionCleared,
   readActiveProviderId,
@@ -163,6 +164,8 @@ export function addBuiltinProvider(
         now
       )
     }
+    // 库里原本没有任何使用中的提供商：刚保存的一套直接接上，少一步手动切换。
+    activateProviderIfNoneActive(database, providerId)
   })
   insert()
 

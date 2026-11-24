@@ -6,6 +6,11 @@ import { startSseStub, type SseStub, type StubScript } from '../../src/testing/s
 import { expect, test } from '../fixtures/app'
 import { seedAnsweredThread } from '../fixtures/chat'
 import { seedBuiltinProvider } from '../fixtures/database'
+import {
+  openManageModels,
+  openMoreMenu,
+  setProviderActive
+} from '../fixtures/settings-panel'
 
 const stubs: SseStub[] = []
 
@@ -102,7 +107,8 @@ test.describe('内置提供商的聊天链路', () => {
     await openSettings(page)
     await expect(deepseek).toContainText('已验证')
 
-    // 换默认模型：下一次才用 deepseek-v4-pro。
+    // 换默认模型：下一次才用 deepseek-v4-pro（完整目录按需展开）。
+    await openManageModels(deepseek)
     await deepseek.getByRole('radio', { name: /deepseek-v4-pro/ }).check()
     await expect(
       deepseek.getByRole('radio', { name: /deepseek-v4-pro/ })
@@ -115,7 +121,7 @@ test.describe('内置提供商的聊天链路', () => {
     // 切到 Kimi：之后的消息走 Kimi，前面两轮回答原样留着。
     await openSettings(page)
     const kimi = page.locator('[data-provider-key="kimi"]')
-    await kimi.getByRole('button', { name: '设为当前' }).click()
+    await setProviderActive(kimi)
     await expect(kimi).toContainText('使用中')
     await expect(deepseek).not.toContainText('使用中')
 
@@ -220,9 +226,11 @@ test.describe('删除使用中的提供商', () => {
     await openSettings(page)
     const deepseek = page.locator('[data-provider-key="deepseek"]')
     await expect(deepseek).toContainText('使用中')
-    await deepseek.getByRole('button', { name: '删除' }).click()
+    await openMoreMenu(deepseek)
+    await deepseek.getByRole('button', { name: /^删除提供商/ }).click()
     await expect(deepseek).toContainText('删除当前提供商后，需要另选一套才能继续对话')
     await deepseek.getByRole('button', { name: '确认删除' }).click()
+    await expect(deepseek).toHaveCount(0)
 
     await expect(page.getByRole('status')).toContainText('已删除使用中的提供商')
     // 还有另一套 Kimi，但没有被自动选中：必须明确提示「现在没有使用中的提供商」。

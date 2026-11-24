@@ -5,6 +5,12 @@ import {
 } from '../../src/testing/gemini-sse-stub'
 import { expect, test } from '../fixtures/app'
 import { ask, openChat, openSettings } from '../fixtures/chat'
+import {
+  openAddConnectionDetails,
+  openManageModels,
+  openProviderDetails,
+  openProviderEditor
+} from '../fixtures/settings-panel'
 
 const stubs: GeminiSseStub[] = []
 
@@ -38,11 +44,11 @@ test.describe('Google Gemini 内置入口与聊天', () => {
     const { page } = await launch({ env: noEnvironmentConfig })
     await openSettings(page)
 
-    // 内置目录已经出现 Google Gemini，并带出官方端点、环境变量与 Gemini 协议模型。
+    // 内置目录已经出现 Google Gemini，并在折叠详情里带出官方端点与 Gemini 协议模型。
     await page.getByLabel('内置提供商').selectOption('gemini')
+    await openAddConnectionDetails(page)
     const preview = page.locator('.builtin-preview')
     await expect(preview).toContainText('https://generativelanguage.googleapis.com/v1beta')
-    await expect(preview).toContainText('GEMINI_API_KEY')
     await expect(preview).toContainText('gemini-2.5-flash')
 
     await page.getByLabel('API 密钥').fill(syntheticKey)
@@ -51,21 +57,23 @@ test.describe('Google Gemini 内置入口与聊天', () => {
 
     const card = page.locator('[data-provider-key="gemini"]')
     await expect(card).toContainText('Google Gemini')
-    await expect(card).toContainText('Gemini API')
     await expect(card).toContainText('未验证')
+    await openProviderDetails(card)
+    await expect(card).toContainText('Gemini API')
     await expect(card).toContainText('sk-·············1111')
 
     // 把地址指到本地 stub（保存地址不联网），并选 gemini-2.5-flash 为默认模型。
-    await card.getByRole('button', { name: '编辑提供商 Google Gemini' }).click()
+    await openProviderEditor(card)
     await card.getByLabel('编辑接口地址').fill(`${stub.baseUrl}/v1beta`)
     await card.getByRole('button', { name: '保存修改' }).click()
     await expect(page.getByRole('status')).toContainText('新地址')
 
+    await openManageModels(card)
     const flash = card.locator('[data-model-row="gemini-2.5-flash"] input[type="radio"]')
     await flash.click()
     await expect(flash).toBeChecked()
 
-    await card.getByRole('button', { name: '设为当前' }).click()
+    // 首套保存已自动使用中。
     await expect(card).toContainText('使用中')
 
     // 真实 Electron 里的真流式：思维链先到、正文后到，结束后折成「已思考 N 秒」。
@@ -92,6 +100,7 @@ test.describe('Google Gemini 内置入口与聊天', () => {
     // 一次真实成功之后 provider 自动转已验证，界面仍只显示掩码。
     await openSettings(page)
     await expect(card).toContainText('已验证')
+    await openProviderDetails(card)
     await expect(card).toContainText('sk-·············1111')
     await expect(page.locator('body')).not.toContainText(syntheticKey)
 

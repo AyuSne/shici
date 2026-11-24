@@ -139,6 +139,9 @@ describe('readSettingsOverview', () => {
       { catalogProviderId: 'deepseek', apiKey: 'sk-provider-0001' },
       { now }
     )
+    // 旧资料库/恢复的备份可能只有 provider 行而没有使用中的选择：
+    // 保存时自动接上的行为由 provider-writes 测试覆盖，这里构造纯读取状态。
+    database.prepare(`DELETE FROM setting WHERE key = 'chat.activeProviderId'`).run()
 
     const overview = readSettingsOverview(database, {
       ...overviewOptions(),

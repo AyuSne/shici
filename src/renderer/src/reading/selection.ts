@@ -20,6 +20,59 @@ function isWhitespace(character: string | undefined): boolean {
   return character !== undefined && /\s/u.test(character)
 }
 
+/**
+ * 英文词的字符：字母、数字，以及词内部的连字符与撇号。
+ * 拖选落在词内部时，正是靠它把两端向外吸到完整词边界。
+ */
+function isWordCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{N}'’-]/u.test(character)
+}
+
+/** 真正的文字字符（字母或数字）；首尾标点都按它判断。 */
+function isContentCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{N}]/u.test(character)
+}
+
+/**
+ * 把一段与词的起止位置向外吸到完整英文词的边界，再剥掉首尾标点与空白。
+ * 只在句子区间内吸附与剥离；两端越界时由调用方先收紧选区。
+ */
+export function snapWordBounds(
+  text: string,
+  start: number,
+  end: number,
+  limits: { start: number; end: number }
+): { start: number; end: number } | null {
+  let from = Math.max(start, limits.start)
+  let to = Math.min(end, limits.end)
+  if (to <= from) {
+    return null
+  }
+
+  while (from < to && isWhitespace(text[from])) from += 1
+  while (to > from && isWhitespace(text[to - 1])) to -= 1
+  if (to <= from) {
+    return null
+  }
+
+  // 起止落在单词内部：只要相邻字符仍是词字符就继续向外，连字符与撇号一起带上。
+  while (from > limits.start && isWordCharacter(text[from - 1]) && isWordCharacter(text[from])) {
+    from -= 1
+  }
+  while (to < limits.end && isWordCharacter(text[to - 1]) && isWordCharacter(text[to])) {
+    to += 1
+  }
+
+  // 首尾的括号、引号、逗号、句号等标点不属于词形。
+  while (from < to && !isContentCharacter(text[from])) from += 1
+  while (to > from && !isContentCharacter(text[to - 1])) to -= 1
+  if (to <= from) {
+    return null
+  }
+
+  return { start: from, end: to }
+}
+
 export function locateSelection(
   paragraph: ReadingParagraph,
   start: number,
@@ -39,29 +92,89 @@ export function locateSelection(
     return null
   }
   // 跨句的选区可能只是想把整句抄走，不该留下一条原句记录。
-  if (end > sentence.end) {
+  // 句尾标点之后多拖了一两个字符（常是空白）仍算这一句，吸附后再定。
+  if (end > sentence.end && /[\p{L}\p{N}]/u.test(paragraph.text.slice(sentence.end, end))) {
     return null
   }
 
-  let trimmedStart = Math.max(start, sentence.start)
-  let trimmedEnd = Math.min(end, sentence.end)
-  while (trimmedStart < trimmedEnd && isWhitespace(paragraph.text[trimmedStart])) {
-    trimmedStart += 1
-  }
-  while (trimmedEnd > trimmedStart && isWhitespace(paragraph.text[trimmedEnd - 1])) {
-    trimmedEnd -= 1
-  }
-  if (trimmedEnd <= trimmedStart) {
+  const snapped = snapWordBounds(paragraph.text, start, end, {
+    start: sentence.start,
+    end: sentence.end
+  })
+  if (snapped === null) {
     return null
   }
 
   return {
     paragraphId: paragraph.id,
     sentenceOrdinal: sentence.ordinal,
-    start: trimmedStart,
-    end: trimmedEnd,
-    surface: paragraph.text.slice(trimmedStart, trimmedEnd)
+    start: snapped.start,
+    end: snapped.end,
+    surface: paragraph.text.slice(snapped.start, snapped.end)
   }
+}
+
+/**
+ * 双击落点的英文词：从光标所在字符向两端吸附，得到完整词形。
+ * 落在空白、标点或句外时为 null，交给界面保持原样。
+ */
+export function locateWordAt(
+  paragraph: ReadingParagraph,
+  offset: number
+): ReadingSelection | null {
+  if (!Number.isInteger(offset) || offset < 0 || offset >= paragraph.text.length) {
+    return null
+  }
+  if (!isWordCharacter(paragraph.text[offset])) {
+    return null
+  }
+  return locateSelection(paragraph, offset, offset + 1)
+}
+
+/**
+ * 把浏览器选区落到段落里的某一段字符上。双击时用它把浏览器可能只选中半个
+ * 连字符词的范围换成完整词形，再走同一套收词流程。
+ */
+export function selectParagraphRange(
+  paragraph: HTMLElement,
+  start: number,
+  end: number
+): boolean {
+  const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT)
+  const nodes: { node: Text; start: number }[] = []
+  let length = 0
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text
+    nodes.push({ node, start: length })
+    length += node.textContent?.length ?? 0
+  }
+  if (start < 0 || end > length || end <= start) {
+    return false
+  }
+  const locate = (offset: number): [Text, number] | null => {
+    for (const entry of nodes) {
+      const nodeLength = entry.node.textContent?.length ?? 0
+      if (offset >= entry.start && offset <= entry.start + nodeLength) {
+        return [entry.node, offset - entry.start]
+      }
+    }
+    return null
+  }
+  const from = locate(start)
+  const to = locate(end)
+  if (from === null || to === null) {
+    return false
+  }
+  const range = document.createRange()
+  range.setStart(from[0], from[1])
+  range.setEnd(to[0], to[1])
+  const selection = window.getSelection()
+  if (selection === null) {
+    return false
+  }
+  selection.removeAllRanges()
+  selection.addRange(range)
+  return true
 }
 
 /**

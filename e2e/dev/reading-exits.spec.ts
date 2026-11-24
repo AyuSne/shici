@@ -350,7 +350,8 @@ test('阅读顶栏在窄窗口仍可见且不横向溢出', async ({ launch }) =
     await electronApp.evaluate(({ BrowserWindow }, width) => {
       const window = BrowserWindow.getAllWindows()[0]
       if (!window) throw new Error('没有主窗口')
-      window.setContentSize(width, 820)
+      // 融合标题栏在部分 DPI 下留 1px 非客户区：多要 1px 才是目标内容宽。
+      window.setContentSize(width + 1, 820)
     }, requested)
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeGreaterThanOrEqual(requested)
     const measurements = await page.evaluate(() => {

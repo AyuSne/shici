@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
-import type { WordEntryCard } from '../../../shared/entries'
+import type { EntryLearningGlance, WordEntryCard } from '../../../shared/entries'
 import { DictionaryView } from '../dictionary/dictionary-view'
+import { phoneticText } from '../dictionary/presentation'
 import type { DictionaryLookupState } from '../dictionary/lookup'
 import { laterToggleLabel } from '../later/format'
 
@@ -21,6 +22,8 @@ export type CollectedPanel = {
   duplicate: boolean
   /** 内置词典对圈下这个词形的查询状态。 */
   dictionary: DictionaryLookupState
+  /** 词条的置顶学习内容与跨篇故人重逢。 */
+  glance: EntryLearningGlance
 }
 
 export type EntryPanel = {
@@ -60,11 +63,25 @@ export function CollectedPanelView({
           ×
         </button>
       </header>
-      <p className="reading-panel-word">{panel.surface}</p>
-      <p className="reading-panel-entry">词条 {panel.entryMainForm}</p>
+      <div className="reading-panel-headline">
+        <p className="reading-panel-word">{panel.surface}</p>
+        {panel.dictionary.lookup?.status === 'found' &&
+        panel.dictionary.lookup.entry.phonetic !== '' ? (
+          <span className="reading-panel-phonetic">
+            {phoneticText(panel.dictionary.lookup.entry.phonetic)}
+          </span>
+        ) : null}
+      </div>
+      <p className="reading-panel-entry">
+        {panel.surface === panel.entryMainForm
+          ? '已收进词条'
+          : `归入词条 ${panel.entryMainForm}`}
+      </p>
+      <PanelGlance glance={panel.glance} />
       <DictionaryView
         lookup={panel.dictionary.lookup}
         loading={panel.dictionary.loading}
+        showHead={false}
       />
       <blockquote className="reading-panel-sentence">{panel.sentenceText}</blockquote>
       <p className="reading-panel-meta">
@@ -76,6 +93,35 @@ export function CollectedPanelView({
         </button>
       </div>
     </aside>
+  )
+}
+
+/**
+ * 阅读卡首屏要先看到的置顶学习内容与故人重逢。两样都只读；
+ * 没有置顶内容或只在当前篇收过时，对应块整块不出现。
+ */
+function PanelGlance({ glance }: { glance: EntryLearningGlance }) {
+  return (
+    <>
+      {glance.pinnedNote === null ? null : (
+        <section className="reading-panel-pinned" aria-label="置顶学习内容">
+          <p className="reading-panel-glance-label">置顶学习内容</p>
+          <p className="reading-panel-pinned-body">{glance.pinnedNote.excerpt}</p>
+        </section>
+      )}
+      {glance.encounter === null ? null : (
+        <section className="reading-panel-encounter" aria-label="故人重逢">
+          <p className="reading-panel-glance-label">故人重逢</p>
+          <blockquote className="reading-panel-encounter-sentence">
+            {glance.encounter.sentenceText}
+          </blockquote>
+          <p className="reading-panel-source">
+            {glance.encounter.articleTitle} · 第 {glance.encounter.paragraphOrdinal} 段 ·{' '}
+            {glance.encounter.surface}
+          </p>
+        </section>
+      )}
+    </>
   )
 }
 
@@ -135,6 +181,8 @@ export function EntryPanelView({
               变体：{panel.card.entry.variants.join('、')}
             </p>
           )}
+
+          <PanelGlance glance={panel.card.glance} />
 
           <div className="reading-panel-actions">
             <button type="button" className="button" onClick={onOpenEntry}>

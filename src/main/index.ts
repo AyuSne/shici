@@ -87,6 +87,10 @@ import {
   saveReadingSettings
 } from './reading/queries'
 import {
+  readReadingGlobalPreferences,
+  saveReadingGlobalPreferences
+} from './reading/global-preferences'
+import {
   createPin,
   deletePin,
   fileAllUnfiled,
@@ -273,10 +277,15 @@ function start(): void {
     'reading:complete': (payload) => markArticleCompleted(opened, payload.articleId),
     'reading:progress': (payload) => saveReadingPoint(opened, payload),
     'reading:settings': (payload) => saveReadingSettings(opened, payload),
+    // 静默圈词 / 页边眉批 / 轻遮重读都是不分篇的偏好，只落 setting 表。
+    'reading:global-preferences': () => readReadingGlobalPreferences(opened),
+    'reading:global-preferences-save': (payload) =>
+      saveReadingGlobalPreferences(opened, payload.preferences),
     'reading:collect': (payload) =>
       collectSelection(opened, payload, { dictionary: entryDictionary }),
     'dictionary:lookup': (payload) => lookupDictionary.lookup(payload.word),
-    'entries:card': (payload) => readWordEntryCard(opened, payload.entryId),
+    'entries:card': (payload) =>
+      readWordEntryCard(opened, payload.entryId, { articleId: payload.articleId }),
     'entries:delete-sentence': (payload) => deleteEntrySentence(opened, payload.entrySentenceId),
     'entries:restore-sentence': (payload) => restoreEntrySentence(opened, payload.snapshot),
     'entries:list': (payload) => readEntryList(opened, payload),

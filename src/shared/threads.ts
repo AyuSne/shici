@@ -172,7 +172,7 @@ export type ThreadListItem = {
   id: string
   title: string
   mainKind: ThreadMainKind
-  /** 「词条 lament」「文章 …」「未挂对象」一类的副标题。 */
+  /** 「词条 lament」「文章 …」「空白学习」一类的副标题。 */
   mainLabel: string
   turnCount: number
   createdAt: string
