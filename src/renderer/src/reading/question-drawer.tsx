@@ -1,24 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { EntryListItem } from '../../../shared/entries'
-import type { Pin, PinTargetView } from '../../../shared/pins'
-import { wordContextEntryId } from '../../../shared/threads'
+import type { Pin } from '../../../shared/pins'
+import type { PinTargetView } from '../../../shared/pins'
 import {
   createPin,
   deletePin,
-  loadEntryList,
   loadPinBoard
 } from '../api'
 import { readAnswerSelection } from '../chat/answer-selection'
 import { AnswerText, type PinMarks } from '../chat/answer-text'
+import { answerStatusLabel } from '../chat/answer-status'
 import { describeChatError } from '../chat/errors'
-import {
-  defaultPinTarget,
-  samePinTarget,
-  targetFromView
-} from '../chat/pin-text'
+import { FOLLOW_UP_SENT_TEXT, followUpContextItem } from '../chat/follow-up'
+import { pinnedLabel, targetFromView } from '../chat/pin-text'
 import { PinTargetDialog } from '../chat/pin-target-dialog'
 import { SelectionCapsule } from '../chat/selection-capsule'
-import { matchSelectedEntry } from '../chat/selection-match'
+import { usePinTargetPolicy } from '../chat/use-pin-target-policy'
 import {
   liveAnswerText,
   liveAnswerThinking,
@@ -56,20 +52,6 @@ type PinDialogState = {
 
 const EMPTY_MARKS: PinMarks = { pins: [], freshPinIds: [], sourceHitPinId: null }
 
-/** 「已钉到词条 lament」/「已放进未归档」；与对话页同一句回执。 */
-function pinnedLabel(pin: Pick<Pin, 'target'>): string {
-  if (pin.target.kind === 'unfiled') {
-    return '已放进未归档'
-  }
-  return `已钉到${pin.target.kind === 'entry' ? '词条' : '文章'} ${pin.target.label}`
-}
-
-function statusLabel(answer: { phase: 'done' | 'stopped' | 'error'; text: string }): string | null {
-  if (answer.phase === 'stopped') return '已停止 · 未完成'
-  if (answer.phase === 'error' && answer.text.trim() !== '') return '未完成'
-  return null
-}
-
 /**
  * 阅读页右侧的迷你轻问抽屉：就地打开一条对话，边对照左侧原文边提问、停止与钉住。
  *
@@ -94,12 +76,14 @@ export function QuestionDrawer({
   const [pinDialog, setPinDialog] = useState<PinDialogState | null>(null)
   const [busyPin, setBusyPin] = useState(false)
   const [pins, setPins] = useState<readonly Pin[]>([])
-  const [contextEntries, setContextEntries] = useState<readonly EntryListItem[]>([])
   const bodyRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const boardRequest = useRef(0)
-  /** 用户手动改过的落点，记到这条对话结束；智能预选与主对象默认都不覆盖它。 */
-  const targetOverrides = useRef(new Map<string, PinTargetView>())
+  const pinTargets = usePinTargetPolicy({
+    threadId,
+    main: view?.main ?? null,
+    context: view?.context ?? []
+  })
 
   function setDraft(value: string): void {
     updateThreadViewState(threadId, { draft: value })
@@ -134,34 +118,6 @@ export function QuestionDrawer({
       }
     )
   }, [threadId])
-
-  // 智能预选只在对话上下文里有词时才有意义：取一次词条列表，按主词形与变体匹配。
-  const contextWordKey =
-    view === null
-      ? ''
-      : view.context
-          .map((item) => wordContextEntryId(item))
-          .filter((entryId): entryId is string => entryId !== null)
-          .sort()
-          .join('|')
-  useEffect(() => {
-    if (contextWordKey === '') {
-      setContextEntries([])
-      return
-    }
-    let active = true
-    loadEntryList({}).then(
-      (listing) => {
-        if (active) setContextEntries(listing.entries)
-      },
-      () => {
-        if (active) setContextEntries([])
-      }
-    )
-    return () => {
-      active = false
-    }
-  }, [contextWordKey])
 
   useEffect(() => {
     // 抽屉和对话页共用同一条全局事件订阅：没去过对话页也要能收到流式事件。
@@ -241,27 +197,6 @@ export function QuestionDrawer({
     }, 0)
   }
 
-  function defaultTargetForThread(text: string): PinTargetView {
-    if (view === null) return { kind: 'unfiled' }
-    const override = targetOverrides.current.get(view.id)
-    if (override !== undefined) return override
-    const wordIds = new Set(
-      view.context
-        .map((item) => wordContextEntryId(item))
-        .filter((entryId): entryId is string => entryId !== null)
-    )
-    if (wordIds.size > 0) {
-      const candidates = contextEntries
-        .filter((entry) => wordIds.has(entry.id))
-        .map((entry) => ({ entryId: entry.id, mainForm: entry.mainForm, variants: entry.variants }))
-      const matched = matchSelectedEntry(text, candidates)
-      if (matched !== null) {
-        return { kind: 'entry', entryId: matched.entryId, label: matched.mainForm }
-      }
-    }
-    return defaultPinTarget(view.main)
-  }
-
   function refreshPins(): void {
     if (threadId === null) return
     const sequence = ++boardRequest.current
@@ -294,12 +229,7 @@ export function QuestionDrawer({
         showToast({ message: '这条没能钉住，再试一次。', tone: 'error' })
         return
       }
-      const fallback = defaultPinTarget(current.main)
-      if (samePinTarget(targetFromView(target), targetFromView(fallback))) {
-        targetOverrides.current.delete(current.id)
-      } else {
-        targetOverrides.current.set(current.id, target)
-      }
+      pinTargets.rememberChoice(dialog.initial, target)
       setPinDialog(null)
       setSelection(null)
       window.getSelection()?.removeAllRanges()
@@ -324,17 +254,11 @@ export function QuestionDrawer({
 
   function followUpSelection(): void {
     if (selection === null) return
-    addContextItem({
-      id: `excerpt:${crypto.randomUUID()}`,
-      kind: 'excerpt',
-      label: '追问',
-      text: selection.text,
-      source: '来自当前回答'
-    })
+    addContextItem(followUpContextItem(selection.text))
     setSelection(null)
     window.getSelection()?.removeAllRanges()
     inputRef.current?.focus()
-    showToast({ message: '已把这段放进追问，写下你的问题。' })
+    showToast({ message: FOLLOW_UP_SENT_TEXT })
   }
 
   function copySelection(): void {
@@ -473,7 +397,7 @@ export function QuestionDrawer({
                           aria-expanded={savedThinkingExpanded}
                           onClick={() => setThinkingOpen(!savedThinkingExpanded)}
                         >
-                          思考过程 · {Math.floor(answer.thinkingMs / 1000)} 秒
+                          已思考 {Math.floor(answer.thinkingMs / 1000)} 秒
                         </button>
                         {savedThinkingExpanded ? (
                           <div className="reading-drawer-thinking-body">{answer.thinking}</div>
@@ -483,8 +407,8 @@ export function QuestionDrawer({
                     {answer.text === '' ? null : (
                       <AnswerText text={answer.text} saved={{ id: answer.id, marks }} />
                     )}
-                    {statusLabel(answer) === null ? null : (
-                      <span className="status-chip">{statusLabel(answer)}</span>
+                    {answerStatusLabel(answer) === null ? null : (
+                      <span className="status-chip">{answerStatusLabel(answer)}</span>
                     )}
                     {answer.error === null ? null : (
                       <div className="reading-drawer-answer-error" role="alert">
@@ -557,12 +481,17 @@ export function QuestionDrawer({
 
       {selection === null ? null : (
         <SelectionCapsule
-          anchor={{ top: selection.rect.top, left: selection.rect.left, width: selection.rect.width }}
+          anchor={{
+            top: selection.rect.top,
+            left: selection.rect.left,
+            width: selection.rect.width,
+            height: selection.rect.height
+          }}
           busy={busyPin}
           onPin={() =>
             setPinDialog({
               selection,
-              initial: defaultTargetForThread(selection.text)
+              initial: pinTargets.initialTargetForSelection(selection.text)
             })
           }
           onFollowUp={followUpSelection}

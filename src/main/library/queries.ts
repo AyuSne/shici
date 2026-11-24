@@ -2,6 +2,7 @@ import type {
   ArticleDetail,
   ArticleKind,
   ArticleSourceWord,
+  HomeSentenceHighlight,
   HomeSummary,
   LibraryArticle,
   LibraryListing,
@@ -489,6 +490,66 @@ export function readRecentlyOpenedArticles(
 }
 
 /**
+ * 保存句里真实收下的表达。只认这一句的 entry_sentence：主词形与已收变体都不拿去
+ * 全文猜，所以同一句里没被收的重复词不会被点亮；原句文字本身一个字都不改。
+ */
+function readHomeSentenceHighlights(
+  database: AppDatabase,
+  articleId: string,
+  point: ReadingPoint | null
+): HomeSentenceHighlight[] {
+  if (point === null) return []
+  const rows = database
+    .prepare(
+      `SELECT es.entry_id, we.main_form, es.surface, es.char_start, es.char_end,
+              s.char_start AS sentence_start, s.text AS sentence_text
+         FROM entry_sentence es
+         JOIN word_entry we ON we.id = es.entry_id
+         JOIN sentence s
+           ON s.article_id = es.article_id
+          AND s.paragraph_id = es.paragraph_id
+          AND s.ordinal = es.sentence_ordinal
+        WHERE es.article_id = ? AND es.paragraph_id = ? AND es.sentence_ordinal = ?
+        ORDER BY es.char_start, es.char_end, es.id`
+    )
+    .all(articleId, point.paragraphId, point.sentenceOrdinal - 1) as {
+    entry_id: string
+    main_form: string
+    surface: string
+    char_start: number
+    char_end: number
+    sentence_start: number
+    sentence_text: string
+  }[]
+
+  const highlights: HomeSentenceHighlight[] = []
+  for (const row of rows) {
+    if (row.sentence_text !== point.sentenceText) continue
+    const start = row.char_start - row.sentence_start
+    const end = row.char_end - row.sentence_start
+    if (
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 0 ||
+      end > row.sentence_text.length ||
+      end <= start
+    ) {
+      continue
+    }
+    // 语料改过、区间与词形对不上时不猜，只跳过这一条脏数据。
+    if (row.sentence_text.slice(start, end) !== row.surface) continue
+    highlights.push({
+      entryId: row.entry_id,
+      mainForm: row.main_form,
+      surface: row.surface,
+      start,
+      end
+    })
+  }
+  return highlights
+}
+
+/**
  * 首页：文章库规模，最近打开、还没读完的那一篇，已读完篇数，以及真实的最近收集。
  * 「继续阅读」只挑没读完的：读完后它让位给更早打开的那一篇，全部读完才是 null。
  */
@@ -511,12 +572,15 @@ export function readHomeSummary(database: AppDatabase): HomeSummary {
     )
     .get() as ArticleRow | undefined
 
+  const lastReadPoint = recent === undefined ? null : readReadingPoint(database, recent.id)
   return {
     library: { articleCount: totals.articles, sessionCount: totals.sessions },
     continueReading: recent
       ? {
           article: toArticle(database, recent),
-          lastReadPoint: readReadingPoint(database, recent.id),
+          lastReadPoint,
+          lastReadPointHighlights:
+            readHomeSentenceHighlights(database, recent.id, lastReadPoint),
           articleEntries: readArticleEntryChips(database, recent.id)
         }
       : null,

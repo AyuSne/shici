@@ -1,11 +1,11 @@
 import { useId, type RefObject } from 'react'
 import type {
-  MarginNoteMode,
   ReadingGlobalPreferences,
   ReadingPreferences,
   ReadingSettings
 } from '../../../shared/reading'
 import {
+  MARGIN_NOTE_LABELS,
   MARGIN_NOTE_MODES,
   READING_FONT_SIZES,
   READING_LINE_HEIGHTS
@@ -30,11 +30,6 @@ export function ReadingSettingsPanel({
   onRetry: () => void
   panelRef: RefObject<HTMLElement | null>
 }) {
-  const marginLabels: Record<MarginNoteMode, string> = {
-    all: '全部',
-    mine: '仅我的拾词',
-    hidden: '隐藏'
-  }
   return (
     <section className="reading-settings" aria-label="阅读设置" ref={panelRef}>
       <p className="reading-settings-eyebrow">本篇阅读</p>
@@ -99,7 +94,7 @@ export function ReadingSettingsPanel({
               aria-pressed={globals.marginNoteMode === mode}
               onClick={() => onGlobalsChange({ marginNoteMode: mode })}
             >
-              {marginLabels[mode]}
+              {MARGIN_NOTE_LABELS[mode]}
             </button>
           ))}
         </div>

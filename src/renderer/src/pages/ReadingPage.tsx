@@ -26,6 +26,7 @@ import {
   loadWordEntryCard,
   openReadingView,
   reselectEntrySentence,
+  restoreEntrySentence,
   saveReadingGlobalPreferences,
   saveReadingSettings
 } from '../api'
@@ -129,6 +130,7 @@ export function ReadingPage({
   onOpenSearch
 }: ReadingPageProps) {
   const [view, setView] = useState<ReadingView | null>(null)
+  const [knownWordCount, setKnownWordCount] = useState(0)
   const [settings, setSettings] = useState<ReadingSettings | null>(null)
   const [globals, setGlobals] = useState<ReadingGlobalPreferences>(
     DEFAULT_READING_GLOBAL_PREFERENCES
@@ -168,6 +170,8 @@ export function ReadingPage({
   const collecting = useRef(false)
   /** 换文章就递增；所有异步返回先对一次，旧文章的结果不能写到新文章界面上。 */
   const articleToken = useRef(0)
+  /** 卸载后迟到的完成 / 删除结果连导航与提示都不做，数据库那笔写仍已完成。 */
+  const mounted = useRef(true)
   /** 当前可撤销的那次收词；Toast 被替换或过期后 Ctrl+Z 不再动它。 */
   const undoRef = useRef<{
     toastId: number
@@ -220,6 +224,7 @@ export function ReadingPage({
 
   useEffect(() => {
     return () => {
+      mounted.current = false
       if (glanceTimer.current !== null) {
         clearTimeout(glanceTimer.current)
         glanceTimer.current = null
@@ -244,6 +249,7 @@ export function ReadingPage({
     clearGlance()
     setRevealedMaskIds(new Set())
     setView(null)
+    setKnownWordCount(0)
     setLoadError(null)
     setSettingsError(null)
     setCollected([])
@@ -270,6 +276,7 @@ export function ReadingPage({
           return
         }
         setView(value)
+        setKnownWordCount(value.knownWordCount)
         setSettings(value.settings)
         globalsRef.current = value.globalPreferences
         setGlobals(value.globalPreferences)
@@ -438,6 +445,8 @@ export function ReadingPage({
       if (target === null) return
       if (searchUiOwns(target)) return
       if (target.closest('.reading-excerpt-toolbar')) return
+      // 顶部 Toast 是全局操作条：点「撤销」不该顺手收掉正文选中、词条卡或摘录工具。
+      if (target.closest('.toast') !== null) return
       clearGlance()
       setExcerpt(null)
       if (panelRef.current?.contains(target)) return
@@ -472,11 +481,13 @@ export function ReadingPage({
 
   const blocks = useMemo(() => {
     if (!view) return []
+    // 弱高亮只决定「已收集」的样式；轻遮重读是独立开关，关掉弱高亮也不能
+    // 连遮罩与首字母线索一起过滤掉。两个开关都关时才不渲染已收集标记。
+    const showCollected = settings?.weakHighlight !== false || globals.lightMask
     return view.paragraphs.map((paragraph) => {
       const highlights = [
-        ...(settings?.weakHighlight === false
-          ? []
-          : collected
+        ...(showCollected
+          ? collected
               .filter((mark) => mark.paragraphId === paragraph.id)
               .map((mark) => ({
                 entryId: mark.entryId,
@@ -486,7 +497,8 @@ export function ReadingPage({
                 end: mark.end,
                 masked: globals.lightMask,
                 maskRevealed: revealedMaskIds.has(mark.id)
-              }))),
+              }))
+          : []),
         ...(activeSelection === null || activeSelection.paragraphId !== paragraph.id
           ? []
           : [
@@ -663,8 +675,10 @@ export function ReadingPage({
       deleting: false,
       laterNotice: null
     })
+    const token = articleToken.current
     loadWordEntryCard(entryId, view?.article.id).then(
       (card) => {
+        if (!mounted.current || token !== articleToken.current) return
         updateEntryPanel((current) =>
           current.entryId === entryId
             ? { ...current, card, error: card === null ? '这个词条已经不在了。' : null }
@@ -672,8 +686,31 @@ export function ReadingPage({
         )
       },
       (error: unknown) => {
+        if (!mounted.current || token !== articleToken.current) return
         updateEntryPanel((current) =>
           current.entryId === entryId
+            ? { ...current, error: failureText(error, '这个词条没有读出来。') }
+            : current
+        )
+      }
+    )
+  }
+
+  /** 撤销删除后按库里的真实状态重读这张卡；只属于当前文章与当前挂载。 */
+  function reloadEntryCard(entryId: string, articleId: string, token: number): void {
+    loadWordEntryCard(entryId, articleId).then(
+      (card) => {
+        if (!mounted.current || token !== articleToken.current) return
+        updateEntryPanel((current) =>
+          current.kind === 'entry' && current.entryId === entryId
+            ? { ...current, card, error: card === null ? '这个词条已经不在了。' : null }
+            : current
+        )
+      },
+      (error: unknown) => {
+        if (!mounted.current || token !== articleToken.current) return
+        updateEntryPanel((current) =>
+          current.kind === 'entry' && current.entryId === entryId
             ? { ...current, error: failureText(error, '这个词条没有读出来。') }
             : current
         )
@@ -700,6 +737,7 @@ export function ReadingPage({
     }
     if (result.articleId === view?.article.id) {
       setCollected(result.marks)
+      setKnownWordCount(result.knownWordCount)
     }
     setActiveSelection(null)
     setFocus((current) =>
@@ -814,6 +852,7 @@ export function ReadingPage({
           return
         }
         setCollected(result.marks)
+        setKnownWordCount(result.knownWordCount)
         setActiveSelection((current) =>
           current !== null &&
           current.paragraphId === selection.paragraphId &&
@@ -882,6 +921,9 @@ export function ReadingPage({
   }
 
   function removeSentence(entrySentenceId: string): void {
+    const token = articleToken.current
+    const articleAtDelete = view?.article.id ?? null
+    if (articleAtDelete === null) return
     updateEntryPanel((current) => ({
       ...current,
       deleting: true,
@@ -890,6 +932,8 @@ export function ReadingPage({
     }))
     deleteEntrySentence(entrySentenceId).then(
       (result) => {
+        // 换文章 / 离开阅读页后，数据库那笔删除已经完成，但不再改新文章的界面或提示。
+        if (!mounted.current || token !== articleToken.current) return
         if (result.status === 'missing') {
           updateEntryPanel((current) => ({
             ...current,
@@ -898,9 +942,11 @@ export function ReadingPage({
           }))
           return
         }
+        const panelEntryId = panel?.kind === 'entry' ? panel.entryId : null
 
         if (result.articleId === view?.article.id) {
           setCollected(result.marks)
+          setKnownWordCount(result.knownWordCount)
         }
         const entry = result.entry
         if (result.entryDeleted || entry === null) {
@@ -911,7 +957,15 @@ export function ReadingPage({
         }
         updateEntryPanel((current) =>
           current.card === null
-            ? current
+            ? {
+                ...current,
+                entryId: entry.id,
+                entrySentenceId:
+                  current.entrySentenceId === entrySentenceId ? null : current.entrySentenceId,
+                deleting: false,
+                error: null,
+                confirmingDelete: false
+              }
             : {
                 ...current,
                 entryId: entry.id,
@@ -929,8 +983,34 @@ export function ReadingPage({
                 }
               }
         )
+
+        const snapshot = result.snapshot
+        if (snapshot === undefined) return
+        showToast({
+          message: '原句已删除。',
+          action: {
+            label: '撤销',
+            run: async () => {
+              const restored = await restoreEntrySentence(snapshot)
+              if (restored.status !== 'restored') {
+                throw new Error('restore rejected')
+              }
+              // 撤销可以晚于离开/换文章：数据库照原样恢复，但界面只在自己的生命周期里更新。
+              if (!mounted.current || token !== articleToken.current) return
+              if (restored.articleId === articleAtDelete) {
+                setCollected(restored.marks)
+                setKnownWordCount(restored.knownWordCount)
+              }
+              if (panelEntryId !== null) {
+                reloadEntryCard(panelEntryId, articleAtDelete, token)
+              }
+            },
+            failureMessage: '撤销没有完成，原句可能已被改动，再试一次。'
+          }
+        })
       },
       (error: unknown) => {
+        if (!mounted.current || token !== articleToken.current) return
         updateEntryPanel((current) => ({
           ...current,
           deleting: false,
@@ -1004,11 +1084,11 @@ export function ReadingPage({
    * 都能回到这里；`wordsFrom=reader` 让子视图的返回目标明确指向阅读页，同时把
    * 阅读页自己的来源原样带回去。
    */
-  function openArticleWords(): void {
-    if (!view) return
+  function openArticleWords(forArticleId: string | null = view?.article.id ?? null): void {
+    if (forArticleId === null) return
     setCompleteError(null)
     navigate('reading', {
-      articleId: view.article.id,
+      articleId: forArticleId,
       words: true,
       readingFrom,
       wordsFrom: 'reader'
@@ -1018,22 +1098,26 @@ export function ReadingPage({
   /**
    * 底部「读完并整理本篇选词」：先发显式完成命令，成功后才进子视图。
    * 失败就留在阅读页、把原因摆出来并可再试，不拿乐观的 100% 冒充已读完。
+   * 回调只属于发起它的那一篇与那一次挂载；离开、换文章后迟到的结果不导航。
    */
   function finishAndOpenArticleWords(): void {
     if (!view || completing) return
     const articleId = view.article.id
+    const token = articleToken.current
     setCompleting(true)
     setCompleteError(null)
     completeArticleReading(articleId).then(
       (result) => {
+        if (!mounted.current || token !== articleToken.current) return
         setCompleting(false)
         if (result.status === 'missing') {
           setCompleteError('这篇文章已经不在库里了。')
           return
         }
-        openArticleWords()
+        openArticleWords(articleId)
       },
       (failure: unknown) => {
+        if (!mounted.current || token !== articleToken.current) return
         setCompleting(false)
         setCompleteError(failureText(failure, '没有把这篇标记成已读完，再试一次。'))
       }
@@ -1068,6 +1152,9 @@ export function ReadingPage({
       setCollectError(getChatStore().error ?? '没能就着原文打开轻问，再试一次。')
       return
     }
+    // 旧请求可能被更新的打开意图接管：它拿到的线程已经不是当前线程时，
+    // 不打开抽屉去呈现别人的对话。
+    if (getChatStore().currentId !== threadId) return
     // 抽屉和词条卡是同一块右侧空间：打开抽屉就收起卡、选中与摘录工具条。
     clearGlance()
     setPanel(null)
@@ -1242,7 +1329,7 @@ export function ReadingPage({
         <div className="reading-bar-text">
           <h1 className="reading-bar-title">{view?.article.title ?? '阅读'}</h1>
           {view === null ? null : (
-            <p className="reading-bar-meta">本篇已拾 {view.knownWordCount} 个词</p>
+            <p className="reading-bar-meta">本篇含 {knownWordCount} 个曾收词</p>
           )}
         </div>
         <div className="reading-bar-actions">
@@ -1262,7 +1349,7 @@ export function ReadingPage({
               <button
                 type="button"
                 className="reading-tool reading-words-preview"
-                onClick={openArticleWords}
+                onClick={() => openArticleWords()}
               >
                 查看本篇已拾词
               </button>

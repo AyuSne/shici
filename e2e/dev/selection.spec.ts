@@ -204,17 +204,24 @@ test.describe('选词与原句', () => {
     const card = page.getByRole('complementary', { name: '词条' })
     await expect(card.getByText('已收集 2 条原句 · 来自 1 篇文章')).toBeVisible()
 
-    // 还剩一条时直接删，不弹确认。
-    await card.getByRole('button', { name: '删除这条原句' }).first().click()
+    // 删除收进每行的 ··· 菜单：先把菜单点开，再点删除。
+    const deleteFirst = async (): Promise<void> => {
+      await card.getByRole('button', { name: '原句操作' }).first().click()
+      await card.getByRole('menuitem', { name: '删除这条原句' }).click()
+    }
+
+    // 还剩一条时直接删，不弹确认；顶部给出 5 秒撤销。
+    await deleteFirst()
     await expect(card.getByText('已收集 1 条原句 · 来自 1 篇文章')).toBeVisible()
+    await expect(page.locator('.toast')).toContainText('原句已删除。')
 
     // 最后一条先给提示，取消后不动。
-    await card.getByRole('button', { name: '删除这条原句' }).click()
+    await deleteFirst()
     await expect(card.getByText('这是最后一条原句')).toBeVisible()
     await card.getByRole('button', { name: '取消' }).click()
     await expect(card.getByText('已收集 1 条原句 · 来自 1 篇文章')).toBeVisible()
 
-    await card.getByRole('button', { name: '删除这条原句' }).click()
+    await deleteFirst()
     await card.getByRole('button', { name: '删除词条与原句' }).click()
 
     await expect(page.getByRole('complementary', { name: '词条' })).toHaveCount(0)

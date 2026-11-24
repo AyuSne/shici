@@ -6,7 +6,6 @@ import type {
   PinTargetView,
   RestorePinInput
 } from '../../../shared/pins'
-import type { EntryListItem } from '../../../shared/entries'
 import type {
   ThreadAnswer,
   ThreadContextItem,
@@ -15,12 +14,11 @@ import type {
   ThreadTurn,
   ThreadVersion
 } from '../../../shared/threads'
-import { GROUP_WORD_LIMIT, wordContextEntryId } from '../../../shared/threads'
+import { GROUP_WORD_LIMIT } from '../../../shared/threads'
 import {
   createPin,
   deletePin,
   fileAllUnfiled,
-  loadEntryList,
   loadPinBoard,
   loadPinSource,
   loadThread,
@@ -37,11 +35,12 @@ import { ContextPanel } from '../chat/context-panel'
 import { DeleteThreadDialog } from '../chat/delete-thread-dialog'
 import { PinBoardPanel, type PinTab } from '../chat/pin-board'
 import { SelectionCapsule } from '../chat/selection-capsule'
-import { matchSelectedEntry } from '../chat/selection-match'
+import { answerStatusLabel } from '../chat/answer-status'
+import { FOLLOW_UP_SENT_TEXT, followUpContextItem } from '../chat/follow-up'
+import { clearPinTargetPreference, usePinTargetPolicy } from '../chat/use-pin-target-policy'
 import {
-  defaultPinTarget,
   pinSourceIssueText,
-  samePinTarget,
+  pinnedLabel,
   targetFromView,
   targetLabel
 } from '../chat/pin-text'
@@ -109,14 +108,7 @@ const EMPTY_BOARD: PinBoard = {
   unfiledCount: 0
 }
 
-/** 「已钉到词条 lament」/「已放进未归档」。 */
-function pinnedLabel(pin: Pick<Pin, 'target'>): string {
-  if (pin.target.kind === 'unfiled') {
-    return '已放进未归档'
-  }
-  return `已钉到${pin.target.kind === 'entry' ? '词条' : '文章'} ${pin.target.label}`
-}
-
+/** 「已钉到词条 lament」/「已放进未归档」；与轻问抽屉共用同一句回执。 */
 function movedLabel(target: PinTargetView): string {
   return target.kind === 'unfiled' ? '已移回未归档' : `已换到${targetLabel(target)}`
 }
@@ -163,7 +155,6 @@ export function ChatPage({
   const [railCollapsed, setRailCollapsed] = useState(false)
   const [deleteCandidate, setDeleteCandidate] = useState<ThreadListItem | null>(null)
   const [candidates, setCandidates] = useState<ThreadContextCandidates | null>(null)
-  const [contextEntries, setContextEntries] = useState<readonly EntryListItem[]>([])
   const [board, setBoard] = useState<PinBoard>(EMPTY_BOARD)
   const [boardOpen, setBoardOpen] = useState(false)
   const [boardTab, setBoardTab] = useState<PinTab>('thread')
@@ -185,8 +176,6 @@ export function ChatPage({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const boardRequest = useRef(0)
   const sourceDone = useRef<string | null>(null)
-  /** 用户手动改过的落点，记到本次会话里的这条对话结束。 */
-  const targetOverrides = useRef(new Map<string, PinTargetView>())
 
   function setDraft(value: string): void {
     updateThreadViewState(viewThreadId, { draft: value })
@@ -365,34 +354,11 @@ export function ChatPage({
     sourceAnswerId !== null &&
     current.turns.some((turn) => turn.answer !== null && turn.answer.id === sourceAnswerId)
   const pinMarks: PinMarks = { pins: textPins, freshPinIds, sourceHitPinId }
-
-  // 智能预选要按主词形 + 已收集变体匹配：本对话上下文里的词条才参与，取一次列表即可。
-  const contextWordKey =
-    current === null
-      ? ''
-      : current.context
-          .map((item) => wordContextEntryId(item))
-          .filter((entryId): entryId is string => entryId !== null)
-          .sort()
-          .join('|')
-  useEffect(() => {
-    if (contextWordKey === '') {
-      setContextEntries([])
-      return
-    }
-    let active = true
-    loadEntryList({}).then(
-      (listing) => {
-        if (active) setContextEntries(listing.entries)
-      },
-      () => {
-        if (active) setContextEntries([])
-      }
-    )
-    return () => {
-      active = false
-    }
-  }, [contextWordKey])
+  const pinTargets = usePinTargetPolicy({
+    threadId: viewThreadId ?? current?.id ?? null,
+    main: current?.main ?? null,
+    context: current?.context ?? []
+  })
 
   useEffect(() => {
     if (source === null || sourceAnswerId === null || !sourceOnBranch) {
@@ -569,26 +535,7 @@ export function ChatPage({
     })
   }
 
-  const defaultTargetForThread = (): PinTargetView => {
-    const view = store.current
-    if (view === null) {
-      return { kind: 'unfiled' }
-    }
-    return targetOverrides.current.get(view.id) ?? defaultPinTarget(view.main)
-  }
-
-  /** 手动改过的落点记到这条对话结束；改回默认值就不再记。 */
-  const rememberTarget = (target: PinTargetView): void => {
-    const view = store.current
-    if (view === null) {
-      return
-    }
-    if (samePinTarget(targetFromView(target), targetFromView(defaultPinTarget(view.main)))) {
-      targetOverrides.current.delete(view.id)
-    } else {
-      targetOverrides.current.set(view.id, target)
-    }
-  }
+  const defaultTargetForThread = (): PinTargetView => pinTargets.defaultTarget
 
   const captureAnswerSelection = (): void => {
     const node = scrollRef.current
@@ -619,52 +566,19 @@ export function ChatPage({
    * 这次钉住的默认落点：用户在本对话手动改过就以手动为准；否则在组词/多词上下文里
    * 按选中文字唯一命中的主词形或变体预选该词条；再否则沿用主对象推导的默认落点。
    */
-  const initialTargetForSelection = (text: string): PinTargetView => {
-    const view = store.current
-    if (view === null) {
-      return { kind: 'unfiled' }
-    }
-    const override = targetOverrides.current.get(view.id)
-    if (override !== undefined) {
-      return override
-    }
-    const wordIds = new Set(
-      view.context
-        .map((item) => wordContextEntryId(item))
-        .filter((entryId): entryId is string => entryId !== null)
-    )
-    if (wordIds.size > 0) {
-      const candidates = contextEntries
-        .filter((entry) => wordIds.has(entry.id))
-        .map((entry) => ({
-          entryId: entry.id,
-          mainForm: entry.mainForm,
-          variants: entry.variants
-        }))
-      const matched = matchSelectedEntry(text, candidates)
-      if (matched !== null) {
-        return { kind: 'entry', entryId: matched.entryId, label: matched.mainForm }
-      }
-    }
-    return defaultPinTarget(view.main)
-  }
+  const initialTargetForSelection = (text: string): PinTargetView =>
+    pinTargets.initialTargetForSelection(text)
 
   /** 划词浮卡里的「追问」：把选段作为摘录上下文带进当前对话，并把焦点交给输入框。 */
   const followUpSelection = (): void => {
     if (selection === null) {
       return
     }
-    addContextItem({
-      id: `excerpt:${crypto.randomUUID()}`,
-      kind: 'excerpt',
-      label: '追问',
-      text: selection.text,
-      source: '来自当前回答'
-    })
+    addContextItem(followUpContextItem(selection.text))
     setSelection(null)
     window.getSelection()?.removeAllRanges()
     inputRef.current?.focus()
-    showToast('已把这段放进追问，写下你的问题。')
+    showToast(FOLLOW_UP_SENT_TEXT)
   }
 
   const openCreateDialog = (value: {
@@ -779,7 +693,7 @@ export function ChatPage({
           showToast('这条没能钉住，再试一次。')
           return
         }
-        rememberTarget(target)
+        pinTargets.rememberChoice(dialog.initial, target)
         setPinDialog(null)
         setFreshPinIds((ids) => [...ids, result.pin.id])
         showToast(pinnedLabel(result.pin), async () => {
@@ -1090,7 +1004,7 @@ export function ChatPage({
             busy={store.deletingThreadId === deleteCandidate.id}
             onClose={() => setDeleteCandidate(null)}
             onDeleted={() => {
-              targetOverrides.current.delete(deleteCandidate.id)
+              clearPinTargetPreference(deleteCandidate.id)
               setDeleteCandidate(null)
               const route = parseView(window.location.hash)
               if (route.route === 'chat') refreshBoard(route.threadId)
@@ -1404,7 +1318,12 @@ export function ChatPage({
 
       {selection === null ? null : (
         <SelectionCapsule
-          anchor={{ top: selection.rect.top, left: selection.rect.left, width: selection.rect.width }}
+          anchor={{
+            top: selection.rect.top,
+            left: selection.rect.left,
+            width: selection.rect.width,
+            height: selection.rect.height
+          }}
           onPin={() =>
             openCreateDialog({
               answerId: selection.answerId,
@@ -1653,7 +1572,7 @@ function AnswerCard({
     active: false
   })
   const presentation = answer.error ? describeChatError(answer.error) : null
-  const badge = statusLabel(answer)
+  const badge = answerStatusLabel(answer)
   const seconds = Math.floor(answer.thinkingMs / 1000)
 
   return (
@@ -1841,14 +1760,4 @@ function ThinkingSection({
       ) : null}
     </div>
   )
-}
-
-function statusLabel(answer: ThreadAnswer): string | null {
-  if (answer.phase === 'stopped') {
-    return '已停止 · 未完成'
-  }
-  if (answer.phase === 'error' && answer.text.trim() !== '') {
-    return '未完成'
-  }
-  return null
 }

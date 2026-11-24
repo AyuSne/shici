@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import type {
-  MarginNoteMode,
   ReadingGlobalPreferences,
   ReadingPreferences
 } from '../../../shared/reading'
 import {
+  MARGIN_NOTE_LABELS,
   MARGIN_NOTE_MODES,
   READING_FONT_SIZES,
   READING_LINE_HEIGHTS
@@ -28,12 +28,6 @@ export function ReadingDefaultsSection({
   notify: (message: string) => void
 }) {
   const [busy, setBusy] = useState(false)
-
-  const marginNoteLabels: Record<MarginNoteMode, string> = {
-    all: '全部',
-    mine: '仅我的拾词',
-    hidden: '隐藏'
-  }
 
   async function save(patch: Partial<ReadingPreferences>): Promise<void> {
     if (busy) {
@@ -153,7 +147,7 @@ export function ReadingDefaultsSection({
               aria-pressed={overview.readingGlobal.marginNoteMode === mode}
               onClick={() => void saveGlobal({ marginNoteMode: mode })}
             >
-              {marginNoteLabels[mode]}
+              {MARGIN_NOTE_LABELS[mode]}
             </button>
           ))}
         </div>

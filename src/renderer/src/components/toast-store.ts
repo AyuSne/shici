@@ -121,6 +121,12 @@ export function createToastStore(options: { now?: () => number } = {}): ToastSto
     if (toastId !== undefined && toast.id !== toastId) {
       return 'noop'
     }
+    // 动作接口自己按当前时间判断期限：事件循环被挂起、计时器晚到时，
+    // 过期动作也绝不能在五秒窗口之外偷偷改数据。
+    if (now() >= toast.expiresAt) {
+      dismiss()
+      return 'noop'
+    }
     const action = toast.action
     // 先关闭再执行：同一按钮的第二下、以及到期后的迟到点击都只会是 no-op。
     dismiss()

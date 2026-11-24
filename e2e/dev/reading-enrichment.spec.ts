@@ -88,7 +88,7 @@ test.describe('阅读里的故人重逢与置顶学习内容', () => {
     const { page } = await launch({ env: environment() })
     await openArticle(page, currentTitle)
 
-    await expect(page.locator('.reading-bar-meta')).toHaveText('本篇已拾 1 个词')
+    await expect(page.locator('.reading-bar-meta')).toHaveText('本篇含 1 个曾收词')
   })
 
   test('选词卡词头不再重复，同行给音标，并带出置顶摘要与一条别篇原句', async ({

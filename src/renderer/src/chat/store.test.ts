@@ -231,6 +231,111 @@ describe('就地打开对话（迷你轻问抽屉）', () => {
   })
 })
 
+describe('就地/完整页打开的所有权与最新意图', () => {
+  const mainA = { kind: 'entry', entryId: 'e-a' } as const
+  const mainB = { kind: 'entry', entryId: 'e-b' } as const
+
+  it('取消的 A 晚到不会把已经打开的 B 换回去，也不产生导航或错误', async () => {
+    const pendingA = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    const pendingB = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest
+      .mockReturnValueOnce(pendingA.promise)
+      .mockReturnValueOnce(pendingB.promise)
+    const controller = new AbortController()
+
+    const a = store.openThreadForMain(mainA, {
+      openInPlace: true,
+      signal: controller.signal
+    })
+    controller.abort()
+    const b = store.openThreadForMain(mainB, { openInPlace: true })
+    pendingB.resolve({ status: 'created', thread: view('t-b', []) })
+    await expect(b).resolves.toBe('t-b')
+    expect(store.getChatStore().currentId).toBe('t-b')
+
+    // A 在主进程里跑完才回来：它的调用方已取消，不能激活自己。
+    pendingA.resolve({ status: 'created', thread: view('t-a', []) })
+    await expect(a).resolves.toBeNull()
+
+    expect(store.getChatStore().currentId).toBe('t-b')
+    expect(store.getChatStore().error).toBeNull()
+    expect(navigation.navigate).not.toHaveBeenCalled()
+  })
+
+  it('较旧的完整页 A 晚于较新的 B 返回时，不覆盖 B 的当前对话与导航', async () => {
+    const pendingA = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    const pendingB = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest
+      .mockReturnValueOnce(pendingA.promise)
+      .mockReturnValueOnce(pendingB.promise)
+
+    const a = store.openThreadForMain(mainA)
+    const b = store.openThreadForMain(mainB)
+    pendingB.resolve({ status: 'created', thread: view('t-newer', []) })
+    await expect(b).resolves.toBe('t-newer')
+    expect(store.getChatStore().currentId).toBe('t-newer')
+    expect(navigation.navigate).toHaveBeenCalledTimes(1)
+
+    pendingA.resolve({ status: 'created', thread: view('t-older', []) })
+    await expect(a).resolves.toBe('t-older')
+
+    expect(store.getChatStore().currentId).toBe('t-newer')
+    expect(navigation.navigate).toHaveBeenCalledTimes(1)
+    expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-newer' })
+  })
+
+  it('所有调用方都取消后，晚到的失败不污染当前对话的错误状态', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest.mockReturnValueOnce(pending.promise)
+    const controller = new AbortController()
+
+    const a = store.openThreadForMain(mainA, {
+      openInPlace: true,
+      signal: controller.signal
+    })
+    controller.abort()
+    pending.reject(new Error('主进程读失败'))
+    await expect(a).resolves.toBeNull()
+
+    expect(store.getChatStore().currentId).toBeNull()
+    expect(store.getChatStore().error).toBeNull()
+    expect(navigation.navigate).not.toHaveBeenCalled()
+  })
+
+  it('共享操作里一个调用方取消、另一个仍有效时照常激活并只激活一次', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest.mockReturnValueOnce(pending.promise)
+    const controller = new AbortController()
+
+    const cancelled = store.openThreadForMain(mainA, {
+      openInPlace: true,
+      signal: controller.signal
+    })
+    const valid = store.openThreadForMain(mainA, { openInPlace: true })
+    controller.abort()
+    pending.resolve({ status: 'created', thread: view('t-shared', []) })
+
+    await expect(cancelled).resolves.toBeNull()
+    await expect(valid).resolves.toBe('t-shared')
+    expect(store.getChatStore().currentId).toBe('t-shared')
+    expect(store.getChatStore().error).toBeNull()
+    expect(navigation.navigate).not.toHaveBeenCalled()
+  })
+
+  it('默认完整页打开仍然激活当前对话并导航一次', async () => {
+    api.openThreadForMainRequest.mockResolvedValueOnce({
+      status: 'created',
+      thread: view('t-page', [])
+    })
+
+    await expect(store.openThreadForMain(mainA)).resolves.toBe('t-page')
+
+    expect(store.getChatStore().currentId).toBe('t-page')
+    expect(navigation.navigate).toHaveBeenCalledTimes(1)
+    expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-page' })
+  })
+})
+
 describe('本篇未整理词打包问模型', () => {
   it('创建成功才激活线程并跳对话页；没有可打包的词时不动当前对话也不跳', async () => {
     api.packArticleWords.mockResolvedValueOnce({

@@ -9,8 +9,7 @@ import {
   isValidEnvVarName,
   type ProviderCredentialDraft
 } from '../../../shared/provider-credentials'
-import { createCustomProvider, testProviderConnection } from '../api'
-import { showToast } from '../components/toast-store'
+import { createCustomProvider } from '../api'
 import { failureText } from '../errors'
 import {
   CredentialEditor,
@@ -20,7 +19,7 @@ import {
   combineCustomProviderModels
 } from './model-discovery'
 import { ModelDiscoveryPanel } from './model-discovery-panel'
-import { providerTestFailureText, providerTestVerifiedText } from './format'
+import { showProviderSavedToast } from './provider-saved-toast'
 import { credentialRejectionText } from './messages'
 import {
   baseUrlError,
@@ -157,31 +156,10 @@ export function CustomProviderForm({
       setDiscoveryReset((current) => current + 1)
       setErrors(NO_ERRORS)
       await refresh()
-      showToast({
+      showProviderSavedToast({
         message: `已保存自定义提供商「${savedName}」`,
-        action: {
-          label: '立即测试连接',
-          run: async () => {
-            const tested = await testProviderConnection({
-              providerId: result.providerId
-            })
-            // 保存后立刻删除时，迟到结果不写回任何状态。
-            if (tested.status === 'missing') {
-              return
-            }
-            if (tested.status === 'verified') {
-              showToast({
-                message: `「${savedName}」${providerTestVerifiedText(tested)}`
-              })
-              return
-            }
-            showToast({
-              message: `「${savedName}」${providerTestFailureText(tested)}`,
-              tone: 'error'
-            })
-          },
-          failureMessage: '测试连接没有完成，再试一次。'
-        }
+        providerId: result.providerId,
+        displayName: savedName
       })
     } catch (error) {
       setFormError(failureText(error, '自定义提供商没有保存成功，再试一次。'))

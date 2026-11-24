@@ -34,6 +34,13 @@ export type ReadingSettings = ReadingPreferences & {
 export const MARGIN_NOTE_MODES = ['all', 'mine', 'hidden'] as const
 export type MarginNoteMode = (typeof MARGIN_NOTE_MODES)[number]
 
+/** 眉批三态在阅读设置面板与全局设置页共用一套说法。 */
+export const MARGIN_NOTE_LABELS: Record<MarginNoteMode, string> = {
+  all: '全部',
+  mine: '仅我的拾词',
+  hidden: '隐藏'
+}
+
 /**
  * 不分篇的阅读偏好：静默圈词、页边眉批与轻遮重读对每一篇都生效。
  * 只存 setting 表，不写 article_reading_setting，因此不产生按篇覆盖。

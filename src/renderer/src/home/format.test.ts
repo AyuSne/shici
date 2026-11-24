@@ -114,6 +114,7 @@ describe('homeReadingState', () => {
           continueReading: {
             article: article(),
             lastReadPoint: null,
+            lastReadPointHighlights: [],
             articleEntries: []
           }
         })

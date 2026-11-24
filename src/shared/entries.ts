@@ -121,6 +121,8 @@ export type CollectSelectionResult =
       marks: ReadingCollectionMark[]
       /** 词条的置顶学习内容与跨篇故人重逢，选词卡首屏直接用。 */
       glance: EntryLearningGlance
+      /** 这次写之后本篇含多少个「曾在任何一篇收过、正文里也出现」的词。 */
+      knownWordCount: number
     }
   | {
       /** 同篇同句同一个词条已经收过，不新增关联。 */
@@ -129,6 +131,7 @@ export type CollectSelectionResult =
       sentence: EntrySentence
       marks: ReadingCollectionMark[]
       glance: EntryLearningGlance
+      knownWordCount: number
     }
   | {
       status: 'rejected'
@@ -163,6 +166,8 @@ export type DeleteEntrySentenceResult =
       /** 被删原句所在的那一篇；`marks` 只属于这一篇。 */
       articleId: string
       marks: ReadingCollectionMark[]
+      /** 删除后这一篇含多少个曾收词；界面用它即时刷新顶栏。 */
+      knownWordCount: number
       /**
        * 非最后一条原句才给撤销快照；最后一条会连词条与学习内容一起删，
        * 走显式危险确认，不提供恢复。旧记录没有这个字段。
@@ -181,6 +186,7 @@ export type RestoreEntrySentenceResult =
       sentence: EntrySentence
       articleId: string
       marks: ReadingCollectionMark[]
+      knownWordCount: number
     }
   | { status: 'missing' }
   | { status: 'rejected'; reason: 'source' | 'entry' | 'conflict' }

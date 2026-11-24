@@ -65,6 +65,38 @@ export async function holdIpcReply(app: ElectronApplication, channel: IpcChannel
   }
 }
 
+/**
+ * Hold the next real IPC call before its handler runs. The test can then change
+ * server-side data (delete the article) so the held call observes the newer state.
+ */
+export async function holdIpcCall(app: ElectronApplication, channel: IpcChannel) {
+  const releaseKey = `__e2eCall:${channel}`
+  await app.evaluate(({ ipcMain }, { channel, releaseKey }) => {
+    type Handler = Parameters<typeof ipcMain.handle>[1]
+    const handlers = (ipcMain as typeof ipcMain & { _invokeHandlers: Map<string, Handler> })._invokeHandlers
+    const original = handlers.get(channel)
+    if (!original) throw new Error(`没有注册 ${channel}`)
+    ipcMain.removeHandler(channel)
+    ipcMain.handle(channel, async (...args) => {
+      ipcMain.removeHandler(channel)
+      ipcMain.handle(channel, original)
+      const globals = globalThis as Record<string, unknown>
+      await new Promise<void>((resolve) => { globals[releaseKey] = resolve })
+      return original(...args)
+    })
+  }, { channel, releaseKey })
+  return {
+    pending: () => app.evaluate((_electron, key) => key in globalThis, releaseKey),
+    release: () => app.evaluate((_electron, key) => {
+      const globals = globalThis as Record<string, unknown>
+      const release = globals[key]
+      if (typeof release !== 'function') throw new Error(`还没有待释放的 ${key}`)
+      delete globals[key]
+      release()
+    }, releaseKey)
+  }
+}
+
 export function callUnknownChannel(page: Page): Promise<string | null> {
   return page.evaluate(async () => {
     const candidate = window as unknown as {

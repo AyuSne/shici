@@ -28,7 +28,7 @@ function formPattern(form: string): RegExp {
 }
 
 /** 本篇正文里出现的学习者已收词数（按词条去重）。 */
-export function readArticleKnownWordCount(
+export function readArticlePreviouslyCollectedCount(
   database: AppDatabase,
   articleId: string
 ): number {

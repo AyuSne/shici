@@ -20,3 +20,12 @@ export const NAV_ITEMS: readonly {
   { route: 'library', label: '文章库', icon: 'library', count: 'articles' },
   { route: 'settings', label: '设置', icon: 'settings' }
 ]
+
+const NAV_LABELS: Record<Route, string> = Object.fromEntries(
+  NAV_ITEMS.map((item) => [item.route, item.label])
+) as Record<Route, string>
+
+/** 页面在标题栏里的短名；与左栏标签同源，改一处不会两处对不上。 */
+export function navLabel(route: Route): string {
+  return NAV_LABELS[route]
+}

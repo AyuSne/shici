@@ -49,6 +49,17 @@ const secondArticle = fixtureArticle({
   ]
 })
 
+const thirdArticle = fixtureArticle({
+  id: 'fixture-2026-06-s3-c2',
+  year: 2026,
+  month: 6,
+  set: 3,
+  sentences: [
+    ['Reading keeps reading alive and reading well.'],
+    ['Another paragraph has reading too.']
+  ]
+})
+
 type JsonParagraph = {
   id: string
   text: string
@@ -105,7 +116,7 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'english-learning-home-'))
   database = openDatabase(join(directory, 'test.db'))
   migrate(database)
-  writeCorpusDirectory(directory, [firstArticle, secondArticle])
+  writeCorpusDirectory(directory, [firstArticle, secondArticle, thirdArticle])
   importCorpus(database, { directory })
 })
 
@@ -239,6 +250,52 @@ describe('首页最近收集', () => {
     expect(after.recentEntries).toEqual(before)
     expect(after.laterEntries).toEqual([
       { entryId: recentId, mainForm: 'approach', markedAt: T3 }
+    ])
+  })
+})
+
+describe('首页继续阅读原句里的已拾区间', () => {
+  it('给出保存句里实际收下的词形与段内转句内区间，重复出现但未收的不混进来', () => {
+    openArticle(database, thirdArticle.id, { now: T0 })
+    const entryId = collect(thirdArticle, 0, 'Reading', T0)
+
+    const summary = readHomeSummary(database)
+    if (summary.continueReading === null) throw new Error('应该有续读篇目')
+    expect(summary.continueReading.lastReadPoint?.sentenceText).toBe(
+      'Reading keeps reading alive and reading well.'
+    )
+    // 只亮第一次出现的 Reading，后两处 reading 没被收，不能靠主词形猜亮。
+    expect(summary.continueReading.lastReadPointHighlights).toEqual([
+      {
+        entryId,
+        mainForm: 'Reading',
+        surface: 'Reading',
+        start: 0,
+        end: 7
+      }
+    ])
+  })
+
+  it('只取保存句里的区间：同篇别的句子与别的文章都不混进来', () => {
+    openArticle(database, firstArticle.id, { now: T0 })
+    const approachId = collect(firstArticle, 0, 'approach', T0)
+    collect(firstArticle, 0, 'Context', T1)
+    collect(firstArticle, 1, 'habit', T2)
+    collect(secondArticle, 0, 'Patience', T3)
+
+    const summary = readHomeSummary(database)
+    if (summary.continueReading === null) throw new Error('应该有续读篇目')
+    expect(summary.continueReading.lastReadPoint?.sentenceText).toBe(
+      'Employers approach hiring differently.'
+    )
+    expect(summary.continueReading.lastReadPointHighlights).toEqual([
+      {
+        entryId: approachId,
+        mainForm: 'approach',
+        surface: 'approach',
+        start: 10,
+        end: 18
+      }
     ])
   })
 })

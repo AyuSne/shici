@@ -225,7 +225,7 @@ button:focus-visible {
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 7px;
+  border-radius: 8px;
   color: var(--ink-2);
   transition:
     background var(--motion-hover) ease-out,
@@ -257,7 +257,7 @@ button:focus-visible {
   background: var(--paper);
   color: var(--ink-2);
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
 }
 
@@ -315,7 +315,7 @@ button:focus-visible {
   overflow: hidden;
   white-space: nowrap;
   transition:
-    opacity 140ms ease-out,
+    opacity var(--motion-hover) ease-out,
     max-width var(--motion-collapse) var(--ease-paper);
 }
 
@@ -327,7 +327,7 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
   text-align: right;
   transition:
-    opacity 140ms ease-out,
+    opacity var(--motion-hover) ease-out,
     max-width var(--motion-collapse) var(--ease-paper);
 }
 
@@ -381,7 +381,7 @@ button:focus-visible {
   z-index: 60;
   display: none;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--ink);
   color: var(--paper);
   font-size: 12px;
@@ -392,7 +392,7 @@ button:focus-visible {
   pointer-events: none;
   transform: translate(-3px, -50%);
   transition:
-    opacity 140ms ease-out,
+    opacity var(--motion-hover) ease-out,
     transform var(--motion-float) var(--ease-paper);
 }
 
@@ -734,7 +734,7 @@ button:focus-visible {
   background: var(--ink);
   color: var(--paper);
   box-shadow: var(--shadow-dialog);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 18px;
   transform: translateX(-50%);
   animation: toast-in var(--motion-float) var(--ease-paper);
@@ -762,7 +762,8 @@ button:focus-visible {
   border-color: color-mix(in srgb, var(--danger) 55%, transparent);
 }
 
-/* 5 秒倒计时细线：只做视觉提示，动作是否过期由 toast-store 的计时器决定。 */
+/* 5 秒倒计时细线：只做视觉提示，动作是否过期由 toast-store 的计时器决定。
+ * 用 clip-path 从左往右收起，不做缩放。 */
 .toast-progress {
   position: absolute;
   right: 14px;
@@ -771,7 +772,6 @@ button:focus-visible {
   height: 2px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--paper) 32%, transparent);
-  transform-origin: left;
   animation: toast-countdown var(--toast-duration, 5000ms) linear forwards;
 }
 
@@ -788,10 +788,10 @@ button:focus-visible {
 
 @keyframes toast-countdown {
   from {
-    transform: scaleX(1);
+    clip-path: inset(0 0 0 0);
   }
   to {
-    transform: scaleX(0);
+    clip-path: inset(0 100% 0 0);
   }
 }
 
@@ -836,7 +836,7 @@ button:focus-visible {
 .target-picker-input:focus-visible {
   border-color: var(--ink-2);
   outline: 2px solid var(--amber);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .target-picker-input::placeholder {
@@ -881,7 +881,7 @@ button:focus-visible {
   align-items: baseline;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--ink);
   font-size: 12px;
   line-height: 16px;

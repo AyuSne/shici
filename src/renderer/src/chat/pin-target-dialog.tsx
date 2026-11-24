@@ -137,6 +137,13 @@ export function PinTargetDialog({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    // 输入法组合态里的 Enter / Esc 交给候选词，不确认、也不关弹层。
+    if (event.nativeEvent.isComposing) {
+      return
+    }
+    if (event.defaultPrevented) {
+      return
+    }
     if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
@@ -149,8 +156,7 @@ export function PinTargetDialog({
       tag !== 'SELECT' &&
       tag !== 'BUTTON' &&
       tag !== 'TEXTAREA' &&
-      tag !== 'INPUT' &&
-      !event.defaultPrevented
+      tag !== 'INPUT'
     ) {
       event.preventDefault()
       confirm()
@@ -201,6 +207,7 @@ export function PinTargetDialog({
             placeholder="搜索词条或已收变体…"
             emptyText="没有匹配的词条"
             autoFocus
+            onSubmit={confirm}
           />
         )
       ) : null}
@@ -219,6 +226,7 @@ export function PinTargetDialog({
             placeholder="搜索文章篇名…"
             emptyText="没有匹配的文章"
             autoFocus
+            onSubmit={confirm}
           />
         )
       ) : null}

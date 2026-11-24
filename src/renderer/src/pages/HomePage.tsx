@@ -12,6 +12,7 @@ import {
 import { HOME_LATER_EMPTY, laterRemoveLabel } from '../later/format'
 import { useLaterMark } from '../later/use-later-mark'
 import { formatDay, readingPointText } from '../library/format'
+import { homeSentenceSegments } from '../home/highlight'
 import { navigate } from '../navigate'
 
 /**
@@ -139,7 +140,24 @@ export function HomePage() {
           ) : (
             <>
               <p className="home-position">上次停在 {readingPointText(current.lastReadPoint)}</p>
-              <p className="home-sentence">{current.lastReadPoint.sentenceText}</p>
+              <p className="home-sentence">
+                {homeSentenceSegments(
+                  current.lastReadPoint.sentenceText,
+                  current.lastReadPointHighlights
+                ).map((segment, index) =>
+                  segment.entryId === null ? (
+                    <span key={index}>{segment.text}</span>
+                  ) : (
+                    <mark
+                      key={index}
+                      className="home-sentence-collected"
+                      data-entry-id={segment.entryId}
+                    >
+                      {segment.text}
+                    </mark>
+                  )
+                )}
+              </p>
             </>
           )}
           {current.articleEntries.length === 0 ? null : (
