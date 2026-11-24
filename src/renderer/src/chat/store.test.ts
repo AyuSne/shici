@@ -617,6 +617,20 @@ describe('后台错误只属于发起它的线程', () => {
     expect(api.askThread).not.toHaveBeenCalled()
   })
 
+  it('空白创建 reject 后用户已切到新的空白对话：不把旧错误/重试挂到新空白页', async () => {
+    const pendingCreate = deferred<Awaited<ReturnType<typeof api.createThread>>>()
+    api.createThread.mockReturnValueOnce(pendingCreate.promise)
+
+    expect(store.sendChatMessage('旧空白问题')).toBe(true)
+    store.openChatThread(null)
+    pendingCreate.reject(new Error('ipc down'))
+    await vi.waitFor(() => expect(store.getChatStore().busy).toBe(false))
+
+    expect(store.getChatStore().currentId).toBeNull()
+    expect(store.getChatStore().error).toBeNull()
+    expect(store.getChatStore().canRetry).toBe(false)
+  })
+
   it('空白创建 reject 且仍归当前空白页：保留可重试错误，重试重新创建', async () => {
     const pendingCreate = deferred<Awaited<ReturnType<typeof api.createThread>>>()
     api.createThread.mockReturnValueOnce(pendingCreate.promise)

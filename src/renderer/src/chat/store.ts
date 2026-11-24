@@ -686,9 +686,7 @@ async function submitQuestion(text: string): Promise<void> {
     // 空白创建还没返回 id：用这次空白意图和当前线程判归属。已经切到 B 时
     // 连错误/重试都不该出现，更不能让重试把 A 的文本发进 B。
     const ownsError =
-      errorThreadId === null
-        ? presentationOwned() || state.currentId === null
-        : ownsThread(errorThreadId)
+      errorThreadId === null ? presentationOwned() : ownsThread(errorThreadId)
     if (ownsError) {
       fail(error, '这次提问没有发出去，再试一次。', () => {
         set({ busy: true })
