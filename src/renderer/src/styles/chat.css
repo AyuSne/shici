@@ -1117,3 +1117,61 @@
 .context-article { padding: 6px 0; border-bottom: 1px solid var(--rule); }
 .context-article > button { text-align: left; font-weight: 600; }
 .context-paragraph { display: flex; gap: 8px; padding: 5px 0; font-size: 12px; }
+
+.pending-save {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--rule));
+  border-radius: 10px;
+  background: var(--sunken);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.pending-save-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pending-save-title {
+  font-weight: 600;
+}
+
+.pending-save-meta {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.pending-save-failure {
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.pending-save-text {
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pending-save-thinking {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.pending-save-thinking > div {
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pending-save-retry {
+  margin-top: 10px;
+}

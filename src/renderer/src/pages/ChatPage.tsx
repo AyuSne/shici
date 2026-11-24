@@ -70,6 +70,7 @@ import {
   regenerateLastAnswer,
   removeContextItem,
   retryChat,
+  retryPendingSave,
   sendChatMessage,
   stopChat,
   submitEdit,
@@ -77,6 +78,7 @@ import {
   switchQuestionVersion,
   useChatStore
 } from '../chat/store'
+import { PendingSaveNotice } from '../chat/pending-save'
 import {
   BLANK_THREAD_SUBTITLE,
   canSaveAnswerAsArticle,
@@ -144,6 +146,7 @@ export function ChatPage({
   const store = useChatStore()
   // 空白学习的第一问会先生成对话，再以 replaceState 更新地址；此时路由 prop 仍为空。
   const viewThreadId = threadId ?? store.current?.id ?? null
+  const pendingSave = viewThreadId === null ? null : store.pendingSaves[viewThreadId] ?? null
   const [draft, setDraftState] = useState(() => threadViewState(viewThreadId).draft)
   const [thinkingOpen, setThinkingOpenState] = useState(
     () => threadViewState(viewThreadId).thinkingOpen
@@ -1206,6 +1209,15 @@ export function ChatPage({
         </div>
 
         <div className="chat-composer">
+          {pendingSave === null ? null : (
+            <div className="composer-inner">
+              <PendingSaveNotice
+                pending={pendingSave}
+                saving={store.savingPendingThread === pendingSave.threadId}
+                onRetry={() => void retryPendingSave(pendingSave.threadId)}
+              />
+            </div>
+          )}
           {store.error === null ? null : (
             <div className="composer-inner">
               <ErrorBlock

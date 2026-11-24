@@ -1280,3 +1280,10 @@
   transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line-pin);
   border-radius: 10px; box-shadow: 0 6px 20px rgba(60, 48, 30, 0.12);
 }
+
+.reading-drawer-pending {
+  flex: none;
+  max-height: 45%;
+  padding: 8px 12px 0;
+  overflow-y: auto;
+}

@@ -27,10 +27,12 @@ import {
   getChatStore,
   regenerateLastAnswer,
   retryChat,
+  retryPendingSave,
   sendChatMessage,
   stopChat,
   useChatStore
 } from '../chat/store'
+import { PendingSaveNotice } from '../chat/pending-save'
 import { contextSummaryText } from '../chat/turns'
 import { ErrorBlock } from '../components/error-block'
 import { showToast } from '../components/toast-store'
@@ -326,6 +328,16 @@ export function QuestionDrawer({
             message={store.error}
             actionLabel={store.canRetry ? '再试一次' : '知道了'}
             onAction={store.canRetry ? retryChat : null}
+          />
+        </div>
+      )}
+
+      {view === null || store.pendingSaves[view.id] === undefined ? null : (
+        <div className="reading-drawer-pending">
+          <PendingSaveNotice
+            pending={store.pendingSaves[view.id]}
+            saving={store.savingPendingThread === view.id}
+            onRetry={() => void retryPendingSave(view.id)}
           />
         </div>
       )}

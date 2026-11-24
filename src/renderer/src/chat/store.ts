@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { ChatStreamUpdate } from '../../../shared/chat'
+import type { ChatError, ChatStreamUpdate } from '../../../shared/chat'
 import {
   GROUP_WORD_LIMIT,
   deduplicateArticleContext,
@@ -56,6 +56,40 @@ export type ChatStoreState = {
   error: string | null
   /** 这条错误有下一步可执行的动作；没有时界面不显示「再试一次」。 */
   canRetry: boolean
+  /** 已生成完但还没写进库的回答；按线程保存，切走再回来仍可看/重试保存。 */
+  pendingSaves: Readonly<Record<string, PendingSave>>
+  /** 正在重试保存的线程；同一时刻只允许一个保存动作。 */
+  savingPendingThread: string | null
+}
+
+/**
+ * 一条已经生成完、但落库失败的回答快照。它不是流状态：没有 status/live 事件，
+ * 只保留把同一份内容重新交给保存接口所需的数据；重试绝不重新请求模型。
+ */
+export type PendingSave = {
+  threadId: string
+  /** 发起生成时的流身份；只有同一次生成的成功才能清掉这份快照。 */
+  streamId: string
+  mode: 'answer' | 'continue'
+  questionId: string | null
+  answerId: string | null
+  /** 这次需要写进库的新正文/思考（继续生成时不含底稿）。 */
+  text: string
+  thinking: string
+  thinkingMs: number
+  phase: 'done' | 'stopped' | 'error'
+  error: ChatError | null
+  /** 生成时的模型快照，不随后来的默认模型改变。 */
+  model: string
+  baseAnswerVersions: number
+  baseContinuationCount: number
+  /** 界面展示用：继续生成时把底稿接在前面。 */
+  displayText: string
+  displayThinking: string
+  /** 上一次保存失败的可读原因；null 表示还没试过保存。 */
+  failure: string | null
+  /** 是否还值得重试；线程/原提问已消失时不再复活。 */
+  retryable: boolean
 }
 
 const initialState: ChatStoreState = {
@@ -68,7 +102,9 @@ const initialState: ChatStoreState = {
   loading: false,
   deletingThreadId: null,
   error: null,
-  canRetry: false
+  canRetry: false,
+  pendingSaves: {},
+  savingPendingThread: null
 }
 
 let state: ChatStoreState = initialState
@@ -268,6 +304,7 @@ export function refreshThreads(): Promise<void> {
 
 function forgetDeletedThread(threadId: string): void {
   deletedThreads.add(threadId)
+  clearPendingSave(threadId)
   ++threadListSequence
   clearThreadViewState(threadId)
   const threads = state.threads.filter((thread) => thread.id !== threadId)
@@ -646,7 +683,13 @@ async function submitQuestion(text: string): Promise<void> {
     })
   } catch (error) {
     set({ busy: false })
-    if (errorThreadId === null || ownsThread(errorThreadId)) {
+    // 空白创建还没返回 id：用这次空白意图和当前线程判归属。已经切到 B 时
+    // 连错误/重试都不该出现，更不能让重试把 A 的文本发进 B。
+    const ownsError =
+      errorThreadId === null
+        ? presentationOwned() || state.currentId === null
+        : ownsThread(errorThreadId)
+    if (ownsError) {
       fail(error, '这次提问没有发出去，再试一次。', () => {
         set({ busy: true })
         void submitQuestion(text)
@@ -718,6 +761,12 @@ function startGeneration(
   }
 ): void {
   const streamId = newId()
+  const answer = target.questionId === null
+    ? null
+    : view.turns.find((turn) => turn.question.id === target.questionId)?.answer ?? null
+  const continued = target.answerId === null
+    ? null
+    : view.turns.find((turn) => turn.answer?.id === target.answerId)?.answer ?? null
   dispatchSession({
     type: 'begin',
     threadId: view.id,
@@ -728,7 +777,10 @@ function startGeneration(
     baseText: target.baseText,
     baseThinking: target.baseThinking,
     baseThinkingMs: target.baseThinkingMs,
-    now: Date.now()
+    now: Date.now(),
+    model: chatModel,
+    baseAnswerVersions: answer?.versions.length ?? 0,
+    baseContinuationCount: continued?.continuationIds.length ?? 0
   })
 
   const systemPrompt = threadSystemPrompt(view.context)
@@ -787,6 +839,28 @@ async function persistGeneration(generation: LiveGeneration): Promise<void> {
     generation.thinkingStartedAt !== null && generation.thinkingEndedAt !== null
       ? Math.max(0, generation.thinkingEndedAt - generation.thinkingStartedAt)
       : 0
+  const pending: PendingSave = {
+    threadId: generation.threadId,
+    streamId: generation.streamId,
+    mode: generation.mode,
+    questionId: generation.questionId,
+    answerId: generation.answerId,
+    text,
+    thinking,
+    thinkingMs,
+    phase,
+    error: generation.error,
+    model: generation.model,
+    baseAnswerVersions: generation.baseAnswerVersions,
+    baseContinuationCount: generation.baseContinuationCount,
+    displayText: generation.mode === 'continue' ? generation.baseText + text : text,
+    displayThinking:
+      generation.mode === 'continue'
+        ? [generation.baseThinking, thinking].filter((part) => part.trim() !== '').join('\n\n')
+        : thinking,
+    failure: null,
+    retryable: true
+  }
 
   try {
     const result =
@@ -799,7 +873,7 @@ async function persistGeneration(generation: LiveGeneration): Promise<void> {
             thinkingMs,
             phase,
             error: generation.error,
-            model: chatModel
+            model: generation.model
           })
         : await saveThreadAnswer({
             threadId: generation.threadId,
@@ -809,23 +883,142 @@ async function persistGeneration(generation: LiveGeneration): Promise<void> {
             thinkingMs,
             phase,
             error: generation.error,
-            model: chatModel
+            model: generation.model
           })
 
     if (result.status === 'saved') {
+      // 只有同一次生成的保存成功才清掉它的快照；A 里后来另一问的成功
+      // 不能把先前仍未保存的回答一起抹掉。
+      const existing = state.pendingSaves[generation.threadId]
+      if (existing?.streamId === generation.streamId) clearPendingSave(generation.threadId)
       if (state.currentId === generation.threadId) {
         set({ current: result.thread })
       }
       void refreshThreads()
     } else {
-      fail('这条回答没能保存。', '这条回答没能保存，重新生成一次。', () =>
-        regenerateLastAnswer()
-      )
+      // 不把错误塞给当前 B；A 的未保存内容留在 per-thread 快照里，回到 A 可看可重试。
+      rememberPendingSave({
+        ...pending,
+        failure:
+          result.status === 'missing'
+            ? '这条对话已经不在了，未保存的回答无法再写回。'
+            : '原提问或原回答已经不在了，未保存的回答无法再写回。',
+        retryable: false
+      })
     }
   } catch (error) {
-    fail(error, '这条回答没能保存，重新生成一次。', () => regenerateLastAnswer())
+    rememberPendingSave({
+      ...pending,
+      failure: failureText(error, '这条回答没能保存，重试保存。'),
+      retryable: true
+    })
   } finally {
     dispatchSession({ type: 'clear', streamId: generation.streamId })
+  }
+}
+
+function rememberPendingSave(snapshot: PendingSave): void {
+  set({ pendingSaves: { ...state.pendingSaves, [snapshot.threadId]: snapshot } })
+}
+
+function updatePendingSave(threadId: string, patch: Partial<PendingSave>): void {
+  const current = state.pendingSaves[threadId]
+  if (current === undefined) return
+  set({ pendingSaves: { ...state.pendingSaves, [threadId]: { ...current, ...patch } } })
+}
+
+function clearPendingSave(threadId: string): void {
+  if (state.pendingSaves[threadId] === undefined) return
+  const next = { ...state.pendingSaves }
+  delete next[threadId]
+  set({ pendingSaves: next })
+}
+
+/** 读回确认：回复丢了但库其实已经写成功时，不要重复 append 同一版回答/续写。 */
+function pendingAlreadySaved(view: ChatThreadView, pending: PendingSave): boolean {
+  if (pending.mode === 'answer') {
+    const turn = view.turns.find((candidate) => candidate.question.id === pending.questionId)
+    return (
+      turn !== undefined &&
+      turn.answer !== null &&
+      turn.answer.versions.length > pending.baseAnswerVersions
+    )
+  }
+  const turn = view.turns.find((candidate) => candidate.answer?.id === pending.answerId)
+  return (
+    turn !== undefined &&
+    turn.answer !== null &&
+    turn.answer.continuationIds.length > pending.baseContinuationCount
+  )
+}
+
+/**
+ * 重试保存捕获的 A 快照；绝不调用模型、绝不读写当前 B 的 turn/error。
+ * 先读回一次，处理「保存其实成功但 IPC 回复丢失」的模糊结果。
+ */
+export async function retryPendingSave(threadId: string): Promise<void> {
+  const pending = state.pendingSaves[threadId]
+  if (pending === undefined || state.savingPendingThread !== null) return
+  set({ savingPendingThread: threadId })
+  try {
+    const loaded = await loadThread(threadId)
+    if (loaded === null) {
+      updatePendingSave(threadId, {
+        failure: '这条对话已经不在了，未保存的回答无法再写回。',
+        retryable: false
+      })
+      return
+    }
+    if (pendingAlreadySaved(loaded, pending)) {
+      clearPendingSave(threadId)
+      if (state.currentId === threadId) set({ current: loaded })
+      void refreshThreads()
+      return
+    }
+
+    const result =
+      pending.mode === 'continue'
+        ? await saveThreadContinuation({
+            threadId,
+            answerId: pending.answerId ?? '',
+            text: pending.text,
+            thinking: pending.thinking,
+            thinkingMs: pending.thinkingMs,
+            phase: pending.phase,
+            error: pending.error,
+            model: pending.model
+          })
+        : await saveThreadAnswer({
+            threadId,
+            questionId: pending.questionId ?? '',
+            text: pending.text,
+            thinking: pending.thinking,
+            thinkingMs: pending.thinkingMs,
+            phase: pending.phase,
+            error: pending.error,
+            model: pending.model
+          })
+
+    if (result.status === 'saved') {
+      clearPendingSave(threadId)
+      if (state.currentId === threadId) set({ current: result.thread })
+      void refreshThreads()
+      return
+    }
+    updatePendingSave(threadId, {
+      failure:
+        result.status === 'missing'
+          ? '这条对话已经不在了，未保存的回答无法再写回。'
+          : '原提问或原回答已经不在了，未保存的回答无法再写回。',
+      retryable: false
+    })
+  } catch (error) {
+    updatePendingSave(threadId, {
+      failure: failureText(error, '这条回答没能保存，重试保存。'),
+      retryable: true
+    })
+  } finally {
+    if (state.savingPendingThread === threadId) set({ savingPendingThread: null })
   }
 }
 
@@ -918,16 +1111,23 @@ export function submitEdit(raw: string): boolean {
       })
       if (result.status !== 'asked') {
         set({ busy: false })
-        fail(
-          result.status === 'rejected'
-            ? questionRejectText(result.reason)
-            : '这条对话已经不在了。',
-          '这次修改没有发出去。',
-          result.status === 'rejected' ? null : () => submitEdit(text)
-        )
+        if (state.currentId === view.id) {
+          fail(
+            result.status === 'rejected'
+              ? questionRejectText(result.reason)
+              : '这条对话已经不在了。',
+            '这次修改没有发出去。',
+            result.status === 'rejected' ? null : () => submitEdit(text)
+          )
+        }
         return
       }
-      set({ current: result.thread, editing: null, busy: false })
+      // 改口已经写进 A；是否把 A 摆到界面上只看用户此刻是否还停在 A。
+      if (state.currentId === view.id) {
+        set({ current: result.thread, editing: null, busy: false })
+      } else {
+        set({ busy: false })
+      }
       void refreshThreads()
       startGeneration(result.thread, { kind: 'answer' }, {
         mode: 'answer',
@@ -939,7 +1139,9 @@ export function submitEdit(raw: string): boolean {
       })
     } catch (error) {
       set({ busy: false })
-      fail(error, '这次修改没有发出去，再试一次。', () => submitEdit(text))
+      if (state.currentId === view.id) {
+        fail(error, '这次修改没有发出去，再试一次。', () => submitEdit(text))
+      }
     }
   })()
   return true
