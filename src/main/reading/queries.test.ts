@@ -8,7 +8,7 @@ import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate } from '../db/migrations'
 import { writeSetting } from '../db/settings'
 import { createLearningNote, pinLearningNote } from '../entries/notes'
-import { collectSelection } from '../entries/queries'
+import { collectSelection, deleteEntrySentence } from '../entries/queries'
 import { markArticleCompleted, readHomeSummary } from '../library/queries'
 import {
   openReadingView,
@@ -427,6 +427,26 @@ describe('readReadingView', () => {
       source: 'article'
     })
     expect(view?.readingPoint).toBeNull()
+  })
+
+  it('收词与删除的结果自带刷新后的本篇曾收词数，不用重开阅读视图', () => {
+    const paragraphText =
+      'Reading widely makes hard sentences easier. Context carries most of the meaning.'
+    expect(openReadingView(database, carefulReading.id)?.knownWordCount).toBe(0)
+
+    const collected = collectWord(carefulReading.id, '1', paragraphText, 0, 'hard')
+    if (collected.status === 'rejected') throw new Error('夹具收词被拒绝')
+    expect(collected.knownWordCount).toBe(1)
+
+    // 同篇同句再收一次是 duplicate，计数保持已刷新后的值。
+    const duplicate = collectWord(carefulReading.id, '1', paragraphText, 0, 'hard')
+    if (duplicate.status === 'rejected') throw new Error('夹具重复收词被拒绝')
+    expect(duplicate.knownWordCount).toBe(1)
+
+    const deleted = deleteEntrySentence(database, collected.sentence.id)
+    if (deleted.status !== 'deleted') throw new Error('夹具删除失败')
+    expect(deleted.knownWordCount).toBe(0)
+    expect(openReadingView(database, carefulReading.id)?.knownWordCount).toBe(0)
   })
 
   it('带上这一篇已收集的表达，别的篇不混进来', () => {

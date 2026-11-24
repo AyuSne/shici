@@ -107,6 +107,45 @@ describe('顶部 Toast store', () => {
     expect(snapshot()).toBeNull()
   })
 
+  it('动作接口自己按公开时钟判断过期：计时器没触发，到点后也不能执行', async () => {
+    let clock = 1_000_000
+    const manual = createToastStore({ now: () => clock })
+    const run = vi.fn()
+    const toast = manual.show({
+      message: '已删除',
+      durationMs: 5000,
+      action: { label: '撤销', run }
+    })
+    if (toast === null) throw new Error('Toast 没有出现')
+
+    clock += 5000
+    await expect(manual.runAction(toast.id)).resolves.toBe('noop')
+    expect(run).not.toHaveBeenCalled()
+    expect(manual.getSnapshot()).toBeNull()
+
+    clock += 1
+    await expect(manual.runAction(toast.id)).resolves.toBe('noop')
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('到期前动作照常只执行一次', async () => {
+    let clock = 2_000_000
+    const manual = createToastStore({ now: () => clock })
+    const run = vi.fn()
+    const toast = manual.show({
+      message: '已删除',
+      durationMs: 5000,
+      action: { label: '撤销', run }
+    })
+    if (toast === null) throw new Error('Toast 没有出现')
+
+    clock += 4999
+    await expect(manual.runAction(toast.id)).resolves.toBe('succeeded')
+    expect(run).toHaveBeenCalledTimes(1)
+    await expect(manual.runAction(toast.id)).resolves.toBe('noop')
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
   it('空消息不创建 Toast；错误态保留 tone 供读屏区分', () => {
     expect(store.show({ message: '   ' })).toBeNull()
     expect(snapshot()).toBeNull()

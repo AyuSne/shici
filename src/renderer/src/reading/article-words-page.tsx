@@ -51,6 +51,8 @@ export function ArticleWordsPage({
   const later = useLaterMark()
   /** 保存后重读视图的序号；换文章或离开后旧结果不能覆盖新文章。 */
   const wordsRequest = useRef(0)
+  /** 这一次挂载 + 这一篇文章的生命周期身份；换文章和卸载都会推进它。 */
+  const articleToken = useRef(0)
   /** 打包请求的所有权：切文章 / 卸载后迟到的结果不再导航。 */
   const packAbort = useRef<AbortController | null>(null)
   const mounted = useRef(true)
@@ -59,11 +61,14 @@ export function ArticleWordsPage({
     mounted.current = true
     return () => {
       mounted.current = false
+      articleToken.current += 1
       packAbort.current?.abort()
     }
   }, [])
 
   useEffect(() => {
+    // 换文章 / 重新读取都作废上一份生命周期的迟到回调，包括保存与收回已读完。
+    articleToken.current += 1
     if (articleId === null) {
       setView(null)
       setError(null)
@@ -107,22 +112,28 @@ export function ArticleWordsPage({
     }
   }, [articleId, reloadToken])
 
-  /** 保存学习内容后按库里的真实状态重读列表；草稿与展开状态留在界面这一层。 */
-  function refreshWords(): void {
-    if (articleId === null) return
+  /**
+   * 保存学习内容后按库里的真实状态重读列表；草稿与展开状态留在界面这一层。
+   * 只接受仍属于当前文章生命周期的调用：过期的保存回调不能自己造一次新请求，
+   * 更不能把当前文章（B）的视图换回旧文章（A）。
+   */
+  function refreshWords(token: number, targetArticleId: string): void {
+    if (articleId === null || targetArticleId !== articleId || token !== articleToken.current) {
+      return
+    }
     const request = ++wordsRequest.current
-    loadArticleWords(articleId).then(
+    loadArticleWords(targetArticleId).then(
       (value) => {
-        if (request !== wordsRequest.current) return
+        if (request !== wordsRequest.current || token !== articleToken.current) return
         if (value === null) {
-          forgetLibraryArticle(articleId)
+          forgetLibraryArticle(targetArticleId)
           replaceRoute('library')
           return
         }
         setView(value)
       },
       (failure: unknown) => {
-        if (request !== wordsRequest.current) return
+        if (request !== wordsRequest.current || token !== articleToken.current) return
         showToast({
           message: failureText(failure, '学习内容保存了，但列表没有重新读出来。'),
           tone: 'error'
@@ -176,6 +187,9 @@ export function ArticleWordsPage({
   function saveDraft(entryId: string): void {
     const body = (drafts[entryId] ?? '').trim()
     if (body === '' || savingEntryId !== null) return
+    const token = articleToken.current
+    const targetArticleId = articleId
+    if (targetArticleId === null) return
     setSavingEntryId(entryId)
     setDraftErrors((current) => {
       if (current[entryId] === undefined) return current
@@ -185,11 +199,13 @@ export function ArticleWordsPage({
     })
     createLearningNote({ entryId, body }).then(
       (result) => {
+        // 数据库那笔写可能属于旧文章 A；界面上的状态、Toast 与重读只属于这一次生命周期。
+        if (token !== articleToken.current) return
         setSavingEntryId(null)
         if (result.status === 'saved') {
           setDrafts((current) => ({ ...current, [entryId]: '' }))
           showToast({ message: '学习内容已保存。' })
-          refreshWords()
+          refreshWords(token, targetArticleId)
           return
         }
         if (result.status === 'rejected') {
@@ -206,6 +222,7 @@ export function ArticleWordsPage({
         }))
       },
       (failure: unknown) => {
+        if (token !== articleToken.current) return
         setSavingEntryId(null)
         setDraftErrors((current) => ({
           ...current,
@@ -217,18 +234,22 @@ export function ArticleWordsPage({
 
   /** 就地切换稍后看：同一个词条的所有出现一起更新，失败只提示不假成功。 */
   function toggleLater(entryId: string, mainForm: string, marked: boolean): void {
+    const token = articleToken.current
     void later.setLater(
       { entryId, mainForm, later: !marked },
       {
         failureMessage: '稍后看没有改成功，再试一次。',
         onSettled: ({ entryId: changedId, markedAt, notice }) => {
+          if (token !== articleToken.current) return
           updateEntryEverywhere(changedId, (entry) => ({ ...entry, laterMarkedAt: markedAt }))
           showToast({ message: notice })
         },
         onMissing: () => {
+          if (token !== articleToken.current) return
           showToast({ message: '这个词条已经不在了。', tone: 'error' })
         },
         onError: ({ message }) => {
+          if (token !== articleToken.current) return
           showToast({ message, tone: 'error' })
         }
       }
@@ -295,12 +316,16 @@ export function ArticleWordsPage({
   /** 收回已读完：清完成标记后按主进程返回的真实进度重画，不做乐观更新。 */
   function cancelCompletion(): void {
     if (articleId === null || cancelling) return
+    const token = articleToken.current
+    const targetArticleId = articleId
     setCancelling(true)
     setCancelError(null)
-    uncompleteArticleReading(articleId).then(
+    uncompleteArticleReading(targetArticleId).then(
       (result) => {
+        // 旧文章 A 的收回结果不能给已经打开的 B 改进度、跳文章库或弹提示。
+        if (token !== articleToken.current) return
         if (result.status === 'missing') {
-          forgetLibraryArticle(articleId)
+          forgetLibraryArticle(targetArticleId)
           replaceRoute('library')
           return
         }
@@ -316,6 +341,7 @@ export function ArticleWordsPage({
         showToast({ message: '已收回「已读完」，阅读位置和已收词条都还在。' })
       },
       (failure: unknown) => {
+        if (token !== articleToken.current) return
         setCancelling(false)
         setCancelError(failureText(failure, '没有收回「已读完」，再试一次。'))
       }

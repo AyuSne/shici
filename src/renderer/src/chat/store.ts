@@ -292,7 +292,22 @@ export async function removeChatThread(threadId: string): Promise<boolean> {
   }
 }
 
-const openingThreads = new Map<string, Promise<string | null>>()
+/** 共享打开操作的调用方；全部取消后，晚到的结果不能激活/报错去污染新对话。 */
+type OpenClaimants = { signals: (AbortSignal | null)[] }
+
+/** 一次操作自己是否还有有效调用方，以及它是否仍是最新意图。 */
+type OpenOwnership = {
+  isLive: () => boolean
+  isLatest: () => boolean
+}
+
+const openingThreads = new Map<string, { promise: Promise<string | null>; claimants: OpenClaimants }>()
+let mainOpenSequence = 0
+
+function liveClaimant(claimants: OpenClaimants): boolean {
+  return claimants.signals.some((signal) => signal === null || !signal.aborted)
+}
+
 type OpenThreadOptions = {
   forceNew?: boolean
   ensureSentenceContext?: boolean
@@ -314,7 +329,17 @@ export function openThreadForMain(
   main: CreateThreadRequest['main'],
   options: OpenThreadOptions = {}
 ): Promise<string | null> {
-  if (main.kind === 'none') return openMainThread(main, options)
+  const signal = options.signal ?? null
+  if (main.kind === 'none') {
+    const operation = ++mainOpenSequence
+    const ownership: OpenOwnership = {
+      isLive: () => signal === null || !signal.aborted,
+      isLatest: () => operation === mainOpenSequence
+    }
+    const pending = openMainThread(main, options, ownership)
+    if (signal === null) return pending
+    return pending.then((threadId) => (signal.aborted ? null : threadId))
+  }
   // presentation 必须进 key：就地抽屉与完整对话页对同一个主对象是两种意图，
   // 不能让其中一个的导航被另一个吞掉，也不能互相取消。
   const key = JSON.stringify({
@@ -324,24 +349,42 @@ export function openThreadForMain(
     contextItem: options.contextItem,
     openInPlace: options.openInPlace === true
   })
-  let pending = openingThreads.get(key)
-  if (pending === undefined) {
-    pending = openMainThread(main, options).finally(() => openingThreads.delete(key))
-    openingThreads.set(key, pending)
+  let opening = openingThreads.get(key)
+  if (opening === undefined) {
+    const claimants: OpenClaimants = { signals: [signal] }
+    const operation = ++mainOpenSequence
+    const ownership: OpenOwnership = {
+      isLive: () => liveClaimant(claimants),
+      isLatest: () => operation === mainOpenSequence
+    }
+    const promise = openMainThread(main, options, ownership).finally(() => {
+      openingThreads.delete(key)
+    })
+    opening = { promise, claimants }
+    openingThreads.set(key, opening)
+  } else {
+    // 同一次共享操作多了一个调用方：它取消不影响另一个仍有效的人。
+    // 没有 signal 的调用方按「始终有效」记一个 null，不能因为前一个调用方取消就算全取消。
+    opening.claimants.signals.push(signal)
   }
-  const signal = options.signal
-  if (signal === undefined) return pending
+  const pending = opening.promise
+  if (signal === null) return pending
   // 共享操作照常完成；取消方只是不认领这次结果，另一次有效调用仍能拿到线程。
   return pending.then((threadId) => (signal.aborted ? null : threadId))
 }
 
 async function openMainThread(
   main: CreateThreadRequest['main'],
-  options: OpenThreadOptions
+  options: OpenThreadOptions,
+  ownership: OpenOwnership
 ): Promise<string | null> {
   try {
     const result = await openThreadForMainRequest({ main, forceNew: options.forceNew, ensureSentenceContext: options.ensureSentenceContext })
+    // 所有调用方都取消，或者更新的打开意图已经接管：数据操作可以做完，
+    // 但旧结果不许激活线程、导航或把错误写进新对话的界面。
+    if (!ownership.isLive()) return null
     if (result.status === 'rejected') {
+      if (!ownership.isLatest()) return null
       const message = result.reason === 'context-full'
         ? '这条对话的上下文已满。请新开一条，或先到对话页移除部分上下文。'
         : '关联的内容已删除，没能开对话。'
@@ -352,19 +395,23 @@ async function openMainThread(
     let thread = result.thread
     if (options.contextItem) {
       const saved = await updateThreadContext({ threadId: thread.id, items: [...thread.context, options.contextItem] })
+      if (!ownership.isLive()) return null
       if (saved.status !== 'saved') {
-        fail('摘录没有带上，再试一次。', '摘录没有带上，再试一次。', null)
+        if (ownership.isLatest()) fail('摘录没有带上，再试一次。', '摘录没有带上，再试一次。', null)
         return null
       }
       thread = saved.thread
     }
-    activateThread(thread)
-    // 就地打开只换当前线程；完整对话页仍然是原来的跳转语义。
-    if (options.openInPlace !== true) {
-      navigate('chat', { threadId: thread.id })
+    if (ownership.isLive() && ownership.isLatest()) {
+      activateThread(thread)
+      // 就地打开只换当前线程；完整对话页仍然是原来的跳转语义。
+      if (options.openInPlace !== true) {
+        navigate('chat', { threadId: thread.id })
+      }
     }
     return thread.id
   } catch (error) {
+    if (!ownership.isLive() || !ownership.isLatest()) return null
     fail(error, '没能开对话，再试一次。', () => {
       void openThreadForMain(main, options)
     })

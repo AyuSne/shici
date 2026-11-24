@@ -220,10 +220,24 @@ export type ContinueReading = {
   article: LibraryArticle
   lastReadPoint: ReadingPoint | null
   /**
+   * 保存句里真实收下的词形与句内区间。主进程按 entry_sentence 的原句锚点给出，
+   * 渲染层只按区间高亮，不拿词形去猜；不在这一句里的收集不会混进来。
+   */
+  lastReadPointHighlights: HomeSentenceHighlight[]
+  /**
    * 当前续读篇目里最近拾下的词条，最多 `HOME_ARTICLE_ENTRY_LIMIT` 个；
    * 只认这一篇的 entry_sentence，其他文章的收集不混进来。
    */
   articleEntries: HomeArticleEntry[]
+}
+
+/** 首页续读原句里的一处已拾表达：句内字符区间（0 起），原文一字不改。 */
+export type HomeSentenceHighlight = {
+  entryId: string
+  mainForm: string
+  surface: string
+  start: number
+  end: number
 }
 
 /** 首页「最近收集」的一个词条 chip：复用词条列表那一行，只取 chip 需要的字段。 */

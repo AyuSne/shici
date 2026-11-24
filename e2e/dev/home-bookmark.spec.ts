@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fixtureArticle, writeCorpusDirectory } from '../../src/testing/corpus-fixture'
 import { expect, test } from '../fixtures/app'
+import { expectReadableText } from '../fixtures/contrast'
+import { databasePath, writeSetting } from '../fixtures/database'
 import { seedWordEntries, type SeedPick } from '../fixtures/entries'
 
 /**
@@ -96,6 +98,61 @@ test('继续阅读卡带 3px 琥珀竖线与衬线原句，底部速览本篇最
   await expect(
     page.getByRole('region', { name: '词条内容' }).getByRole('heading', { name: 'Context', level: 2 })
   ).toBeVisible()
+})
+
+test('续读原句只高亮这一句里真实收下的表达，不整段染色', async ({
+  launch,
+  userDataDirectory
+}) => {
+  seedWordEntries(userDataDirectory, corpusDirectory, { picks })
+  const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
+  await page.evaluate(async (articleId) => {
+    const api = (window as unknown as {
+      api: { invoke(channel: string, payload: unknown): Promise<unknown> }
+    }).api
+    await api.invoke('reading:open', { articleId })
+  }, article.id)
+  await page.reload()
+
+  const sentence = page.getByRole('region', { name: '继续阅读' }).locator('.home-sentence')
+  await expect(sentence).toHaveText('Employers approach hiring differently.')
+  const marks = sentence.locator('.home-sentence-collected')
+  await expect(marks).toHaveText(['Employers', 'approach', 'hiring', 'differently'])
+  // Context 在下一句收的，不能因为本篇收过就跨句点亮。
+  await expect(marks.filter({ hasText: 'Context' })).toHaveCount(0)
+  // 整段仍是普通纸面文字，不是整段琥珀。
+  const background = await sentence.evaluate((element) => getComputedStyle(element).backgroundColor)
+  expect(background === 'rgba(0, 0, 0, 0)' || background === 'transparent').toBe(true)
+  await expectReadableText(page, [
+    { label: '浅色续读原句高亮', selector: '.home-sentence-collected' }
+  ])
+})
+
+test('深色下续读原句高亮仍是可读的琥珀小面积文字', async ({
+  launch,
+  userDataDirectory
+}) => {
+  seedWordEntries(userDataDirectory, corpusDirectory, { picks })
+  writeSetting(databasePath(userDataDirectory), 'theme', 'dark')
+  const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
+  await page.evaluate(async (articleId) => {
+    const api = (window as unknown as {
+      api: { invoke(channel: string, payload: unknown): Promise<unknown> }
+    }).api
+    await api.invoke('reading:open', { articleId })
+  }, article.id)
+  await page.reload()
+
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('.home-sentence-collected')).toHaveText([
+    'Employers',
+    'approach',
+    'hiring',
+    'differently'
+  ])
+  await expectReadableText(page, [
+    { label: '深色续读原句高亮', selector: '.home-sentence-collected' }
+  ])
 })
 
 test('本篇还没拾词时卡片照常出现，只是不摆空 chip 行', async ({

@@ -14,7 +14,8 @@ export function SearchableTargetPicker({
   placeholder = '输入关键词过滤…',
   emptyText = '没有匹配的目标',
   disabled = false,
-  autoFocus = false
+  autoFocus = false,
+  onSubmit
 }: {
   /** 字段名与输入框的无障碍名称。 */
   label: string
@@ -25,6 +26,11 @@ export function SearchableTargetPicker({
   emptyText?: string
   disabled?: boolean
   autoFocus?: boolean
+  /**
+   * 列表收起时按 Enter 的语义。钉住弹层传「确认」：预选就绪后一个 Enter 就能落钉；
+   * 不传时保持原行为（打开候选列表），维护表单里的选择器因此不受影响。
+   */
+  onSubmit?: () => void
 }) {
   const listId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -62,6 +68,10 @@ export function SearchableTargetPicker({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    // 输入法组合态里的 Enter / 方向键 / Esc 属于候选词，不属于选择器。
+    if (event.nativeEvent.isComposing) {
+      return
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       setOpen(true)
@@ -70,6 +80,11 @@ export function SearchableTargetPicker({
     }
     if (event.key === 'Enter') {
       if (!open) {
+        if (onSubmit !== undefined) {
+          event.preventDefault()
+          onSubmit()
+          return
+        }
         setOpen(true)
         return
       }

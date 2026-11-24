@@ -458,7 +458,7 @@
   background: var(--bed-pin);
   color: var(--amber);
   font-family: var(--font-serif);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 18px;
   transition:
     border-color var(--motion-hover) ease-out,
@@ -492,6 +492,13 @@
   font-family: var(--font-serif);
   font-size: 16px;
   line-height: 24px;
+}
+
+/* 续读原句里真实收下的表达：沿用已收集的琥珀色与虚线下划线，不做整段底色。 */
+.home-sentence-collected {
+  border-bottom: 1px dashed var(--amber-underline);
+  background: transparent;
+  color: var(--amber);
 }
 
 .home-library {

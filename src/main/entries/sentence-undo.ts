@@ -3,6 +3,7 @@ import type {
   RestoreEntrySentenceResult
 } from '../../shared/entries'
 import type { AppDatabase } from '../db/database'
+import { readArticlePreviouslyCollectedCount } from '../reading/known-words'
 import { refreshLastCollected } from './entry-state'
 import {
   readArticleCollections,
@@ -22,26 +23,23 @@ export function restoreEntrySentence(
   database: AppDatabase,
   snapshot: EntrySentenceSnapshot
 ): RestoreEntrySentenceResult {
+  // 快照来自删除结果，不是用户输入；但公开服务仍要挡住非整数、非有限、倒序这些
+  // 不可能对应真实原句的值，不能拿它们写进库里。
+  if (!validSnapshotRange(snapshot)) {
+    return { status: 'rejected', reason: 'conflict' }
+  }
   const stored = database
-    .prepare('SELECT id, entry_id, article_id, paragraph_id, sentence_ordinal FROM entry_sentence WHERE id = ?')
-    .get(snapshot.id) as
-    | {
-        id: string
-        entry_id: string
-        article_id: string
-        paragraph_id: string
-        sentence_ordinal: number
-      }
-    | undefined
+    .prepare(
+      `SELECT id, entry_id, article_id, paragraph_id, sentence_ordinal,
+              surface, char_start, char_end, collected_at
+         FROM entry_sentence WHERE id = ?`
+    )
+    .get(snapshot.id) as (StoredSnapshotRow & { id: string }) | undefined
 
   if (stored) {
-    // 同一 id 已经在：只有完全同一条关联才算重复恢复；被挪到别处或被改写时不覆盖。
-    if (
-      stored.entry_id !== snapshot.entryId ||
-      stored.article_id !== snapshot.articleId ||
-      stored.paragraph_id !== snapshot.paragraphId ||
-      stored.sentence_ordinal !== snapshot.sentenceOrdinal
-    ) {
+    // 同一 id 已经在：必须连词形、区间与收集时间都完全相同才算重复恢复。
+    // 同一句锚点后来重新圈定过时，快照描述的是旧 quote，判 conflict 且不覆盖新 quote。
+    if (!sameStoredSnapshot(stored, snapshot)) {
       return { status: 'rejected', reason: 'conflict' }
     }
     return readRestored(database, snapshot)
@@ -102,6 +100,46 @@ export function restoreEntrySentence(
 
 type SourceRange = { sentenceStart: number; sentenceEnd: number; text: string }
 
+type StoredSnapshotRow = {
+  entry_id: string
+  article_id: string
+  paragraph_id: string
+  sentence_ordinal: number
+  surface: string
+  char_start: number
+  char_end: number
+  collected_at: string
+}
+
+/** 原始快照的区间必须是真实可存的整数范围；否则连比较都没有意义。 */
+function validSnapshotRange(snapshot: EntrySentenceSnapshot): boolean {
+  return (
+    Number.isInteger(snapshot.sentenceOrdinal) &&
+    snapshot.sentenceOrdinal >= 0 &&
+    Number.isInteger(snapshot.start) &&
+    Number.isInteger(snapshot.end) &&
+    snapshot.start >= 0 &&
+    snapshot.end > snapshot.start
+  )
+}
+
+/** 真正同一份快照：锚点、原文区间、词形与收集时间一项都不能差。 */
+function sameStoredSnapshot(
+  stored: StoredSnapshotRow,
+  snapshot: EntrySentenceSnapshot
+): boolean {
+  return (
+    stored.entry_id === snapshot.entryId &&
+    stored.article_id === snapshot.articleId &&
+    stored.paragraph_id === snapshot.paragraphId &&
+    stored.sentence_ordinal === snapshot.sentenceOrdinal &&
+    stored.surface === snapshot.surface &&
+    stored.char_start === snapshot.start &&
+    stored.char_end === snapshot.end &&
+    stored.collected_at === snapshot.collectedAt
+  )
+}
+
 /** 原文、段落与句子都还在，且快照的区间与当时的词形逐字对应时才算可恢复。 */
 function readSource(
   database: AppDatabase,
@@ -156,6 +194,7 @@ function readRestored(
     entry,
     sentence,
     articleId: snapshot.articleId,
-    marks: readArticleCollections(database, snapshot.articleId)
+    marks: readArticleCollections(database, snapshot.articleId),
+    knownWordCount: readArticlePreviouslyCollectedCount(database, snapshot.articleId)
   }
 }

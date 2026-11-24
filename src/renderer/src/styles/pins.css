@@ -52,18 +52,17 @@
   background: var(--amber);
 }
 
-/* 刚钉下的段落：琥珀竖线 260ms 自上而下划出，不缩放、不弹跳。 */
+/* 刚钉下的段落：琥珀竖线 260ms 自上而下划出，用裁切露出高度，不缩放、不弹跳。 */
 .assistant-text .is-fresh-pin::before {
-  transform-origin: top;
   animation: pin-line-draw 260ms var(--ease-paper) both;
 }
 
 @keyframes pin-line-draw {
   from {
-    transform: scaleY(0);
+    clip-path: inset(0 0 100% 0);
   }
   to {
-    transform: scaleY(1);
+    clip-path: inset(0 0 0 0);
   }
 }
 

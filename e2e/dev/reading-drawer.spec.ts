@@ -247,10 +247,12 @@ test('抽屉内可停止并保留部分结果；只 AI 正文可钉到对应词�
 
   // 思维链不可钉：选中思维链不出现胶囊。
   await expect(drawer(page).getByRole('button', { name: '收回轻问' })).toBeVisible()
-  const thinkingToggle = page.getByRole('button', { name: /思考过程/ })
+  const thinkingToggle = page.getByRole('button', { name: /已思考/ })
   if (await thinkingToggle.count()) {
     await thinkingToggle.click()
   }
+  // 领域术语表把「思考过程」列为 Avoid，界面统一说「已思考」。
+  await expect(page.locator('.reading-drawer')).not.toContainText('思考过程')
   await selectInside(page, '.reading-drawer-thinking-body', '思考中。')
   await expect(page.locator('.selection-capsule')).toHaveCount(0)
 

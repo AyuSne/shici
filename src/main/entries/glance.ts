@@ -2,6 +2,7 @@ import type {
   EntryLearningGlance,
   ReadingEncounter
 } from '../../shared/entries'
+import { excerptText } from '../../shared/excerpt'
 import type { AppDatabase } from '../db/database'
 
 /**
@@ -15,10 +16,7 @@ import type { AppDatabase } from '../db/database'
 export const GLANCE_EXCERPT_LIMIT = 80
 
 export function glanceExcerpt(body: string): string {
-  const flat = body.replace(/\s+/gu, ' ').trim()
-  return flat.length <= GLANCE_EXCERPT_LIMIT
-    ? flat
-    : `${flat.slice(0, GLANCE_EXCERPT_LIMIT)}…`
+  return excerptText(body, GLANCE_EXCERPT_LIMIT)
 }
 
 type PinnedRow = { entry_id: string; id: string; body: string }

@@ -862,7 +862,7 @@
 .instruction-textarea:focus {
   border-color: var(--ink-2);
   outline: 2px solid var(--amber);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .instruction-textarea {

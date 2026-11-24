@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import { useState, type RefObject } from 'react'
 import type { EntryLearningGlance, WordEntryCard } from '../../../shared/entries'
 import { DictionaryView } from '../dictionary/dictionary-view'
 import { phoneticText } from '../dictionary/presentation'
@@ -125,6 +125,66 @@ function PanelGlance({ glance }: { glance: EntryLearningGlance }) {
   )
 }
 
+/**
+ * 阅读卡里的单条原句操作。删除是易误触动作，收进每行的 `···` 菜单；
+ * 高频的查看词条与问模型仍留在卡片动作区。
+ */
+function SentenceRow({
+  sentence,
+  deleting,
+  onDelete
+}: {
+  sentence: {
+    id: string
+    sentenceText: string
+    articleTitle: string
+    paragraphOrdinal: number
+    surface: string
+  }
+  deleting: boolean
+  onDelete: (entrySentenceId: string) => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  return (
+    <li className="reading-panel-sentence-row">
+      <blockquote className="reading-panel-sentence">{sentence.sentenceText}</blockquote>
+      <p className="reading-panel-source">
+        {sentence.articleTitle} · 第 {sentence.paragraphOrdinal} 段 · {sentence.surface}
+      </p>
+      <div className="reading-panel-sentence-more">
+        <button
+          type="button"
+          className="reading-panel-more-toggle"
+          aria-label="原句操作"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          disabled={deleting}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          ···
+        </button>
+        {menuOpen ? (
+          <div className="reading-panel-sentence-menu" role="menu" aria-label="原句操作">
+            <button
+              type="button"
+              role="menuitem"
+              className="reading-panel-delete"
+              aria-label="删除这条原句"
+              disabled={deleting}
+              onClick={() => {
+                setMenuOpen(false)
+                onDelete(sentence.id)
+              }}
+            >
+              删除这条原句
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </li>
+  )
+}
+
 export function EntryPanelView({
   panel,
   panelRef,
@@ -215,24 +275,12 @@ export function EntryPanelView({
 
           <ul className="reading-panel-sentences">
             {panel.card.sentences.map((sentence) => (
-              <li className="reading-panel-sentence-row" key={sentence.id}>
-                <blockquote className="reading-panel-sentence">
-                  {sentence.sentenceText}
-                </blockquote>
-                <p className="reading-panel-source">
-                  {sentence.articleTitle} · 第 {sentence.paragraphOrdinal} 段 ·{' '}
-                  {sentence.surface}
-                </p>
-                <button
-                  type="button"
-                  className="reading-panel-delete"
-                  aria-label="删除这条原句"
-                  disabled={panel.deleting}
-                  onClick={() => onDelete(sentence.id)}
-                >
-                  删除
-                </button>
-              </li>
+              <SentenceRow
+                key={sentence.id}
+                sentence={sentence}
+                deleting={panel.deleting}
+                onDelete={onDelete}
+              />
             ))}
           </ul>
 

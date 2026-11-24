@@ -472,7 +472,8 @@ describe('deleteEntrySentence', () => {
       entryDeleted: true,
       entry: null,
       articleId: article.id,
-      marks: []
+      marks: [],
+      knownWordCount: 0
     })
     expect(readWordEntryCard(database, collected.entry.id)).toBeNull()
     expect(readArticleCollections(database, article.id)).toEqual([])

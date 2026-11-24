@@ -14,6 +14,7 @@ import type { AppDatabase } from '../db/database'
 import type { Dictionary } from '../dictionary/dictionary'
 import { reassignPinsFromEntry } from '../pins/pins'
 import { paragraphLetter } from '../corpus/letter'
+import { readArticlePreviouslyCollectedCount } from '../reading/known-words'
 import { refreshLastCollected } from './entry-state'
 import { readEntryGlance, readEntryGlances } from './glance'
 import { resolveEntryKey } from './key'
@@ -379,7 +380,8 @@ export function collectSelection(
     marks: readArticleCollections(database, request.articleId),
     glance: readEntryGlance(database, stored.entryId, {
       excludeArticleId: request.articleId
-    }) ?? { pinnedNote: null, encounter: null }
+    }) ?? { pinnedNote: null, encounter: null },
+    knownWordCount: readArticlePreviouslyCollectedCount(database, request.articleId)
   }
 }
 
@@ -424,6 +426,7 @@ export function deleteEntrySentence(
     entry: entryDeleted ? null : readEntrySummary(database, stored.entry_id),
     articleId: stored.article_id,
     marks: readArticleCollections(database, stored.article_id),
+    knownWordCount: readArticlePreviouslyCollectedCount(database, stored.article_id),
     // 最后一条不提供撤销：词条、学习内容与钉住落点都一起收走了，只走危险确认。
     ...(entryDeleted
       ? {}

@@ -18,7 +18,6 @@ import {
   updateProviderCredential
 } from '../api'
 import { failureText } from '../errors'
-import { showToast } from '../components/toast-store'
 import { ProviderCredentialEditor } from './credential-editor'
 import { CustomProviderForm } from './custom-provider-form'
 import {
@@ -41,6 +40,7 @@ import {
 import { credentialRejectionText, modelSectionDescription } from './messages'
 import { ProviderEditForm } from './provider-edit-form'
 import { ProviderModelEditor } from './provider-model-editor'
+import { showProviderSavedToast } from './provider-saved-toast'
 
 type ModelSectionProps = {
   overview: SettingsOverview
@@ -174,31 +174,19 @@ export function ModelSection({ overview, onChange, notify }: ModelSectionProps) 
       const saved = next.providers.find((provider) => provider.id === result.providerId)
       const savedName = saved?.displayName ?? setup.displayName
       const becameActive = saved?.active === true
-      showToast({
+      showProviderSavedToast({
         message: becameActive ? `已保存 ${savedName}，设为使用中` : `已保存 ${savedName}`,
-        action: {
-          label: '立即测试连接',
-          run: async () => {
-            const tested = await testProviderConnection({ providerId: result.providerId })
-            // 迟到响应：这套已经被删掉时什么都不写回。
-            if (tested.status === 'missing') {
-              return
-            }
-            await refresh()
-            if (tested.status === 'verified') {
-              setTestFailure((current) =>
-                current?.providerId === result.providerId ? null : current
-              )
-              showToast({ message: `「${savedName}」测试连接通过，已标为已验证。` })
-              return
-            }
-            setTestFailure({ providerId: result.providerId, result: tested })
-            showToast({
-              message: `「${savedName}」${providerTestFailureText(tested)}`,
-              tone: 'error'
-            })
-          },
-          failureMessage: '测试连接没有完成，再试一次。'
+        providerId: result.providerId,
+        displayName: savedName,
+        onTested: async (tested) => {
+          await refresh()
+          if (tested.status === 'verified') {
+            setTestFailure((current) =>
+              current?.providerId === result.providerId ? null : current
+            )
+            return
+          }
+          setTestFailure({ providerId: result.providerId, result: tested })
         }
       })
     })
