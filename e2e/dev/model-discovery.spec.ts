@@ -10,6 +10,7 @@ import {
   seedBuiltinProvider,
   seedModelProvider
 } from '../fixtures/database'
+import { openManageModels, openMoreMenu } from '../fixtures/settings-panel'
 
 /**
  * #64 获取可用模型：全部请求打到本机 stub，不联网、不读真实 .env。
@@ -110,7 +111,8 @@ async function openSettings(page: Page): Promise<void> {
 
 async function openEditPanel(page: Page, providerKey: string): Promise<void> {
   const card = page.locator(`[data-provider-key="${providerKey}"]`)
-  await card.getByRole('button', { name: '编辑提供商' }).click()
+  await openMoreMenu(card)
+  await card.getByRole('button', { name: /^编辑提供商/ }).click()
   await expect(card.locator('.profile-edit-form')).toBeVisible()
 }
 
@@ -234,6 +236,7 @@ test.describe('获取可用模型', () => {
     await expect(page.getByRole('status')).toContainText('已保存自定义提供商')
 
     const card = page.locator('[data-provider-key="my-relay"]')
+    await openManageModels(card)
     await expect(card.locator('[data-model-row="relay-alpha"]')).toBeVisible()
     await expect(card.locator('[data-model-row="relay-beta"]')).toBeVisible()
     await expect(card.locator('[data-model-row="relay-gamma"]')).toHaveCount(0)
@@ -273,6 +276,7 @@ test.describe('获取可用模型', () => {
     const reopened = await launch({ userDataDirectory, env: noEnvironmentConfig })
     await openSettings(reopened.page)
     const reopenedCard = reopened.page.locator('[data-provider-key="my-relay"]')
+    await openManageModels(reopenedCard)
     await expect(reopenedCard.locator('[data-model-row]')).toHaveCount(2)
     await expect(reopenedCard.locator('[data-model-row="relay-alpha"]')).toContainText('获取')
     await expect(
@@ -350,6 +354,7 @@ test.describe('获取可用模型', () => {
     await card.getByRole('checkbox', { name: '选择模型 relay-alpha' }).check()
     await card.getByRole('button', { name: '加入所选模型' }).click()
     await expect(page.getByRole('status')).toContainText('已加入 1 个获取到的模型')
+    await openManageModels(card)
     await expect(card.locator('[data-model-row="relay-alpha"]')).toContainText('获取')
 
     const afterModels = queryModels(userDataDirectory, 'existing-relay')
@@ -372,8 +377,11 @@ test.describe('获取可用模型', () => {
     // 加入模型没有顺手保存上面改过的地址。
     expect(afterProvider?.base_url).toBe('https://unused.example.com/v1')
 
-    // 失败保留已有目录：stub 改成 500，错误可见且行数不变。
+    // 失败保留已有目录：重新打开编辑面板并填回 stub 地址，stub 改成 500，
+    // 错误可见且行数不变。
     stub.setScript({ status: 500, body: '{"error":"must-not-echo-SECRET"}' })
+    await openEditPanel(page, 'existing-relay')
+    await card.getByLabel('编辑接口地址').fill(`${stub.baseUrl}/v1`)
     await card.getByRole('button', { name: '获取可用模型' }).click()
     await expect(card.locator('[data-discovery-error="true"]')).toContainText('HTTP 500')
     expect(queryModels(userDataDirectory, 'existing-relay')).toEqual(afterModels)
@@ -386,6 +394,7 @@ test.describe('获取可用模型', () => {
     const reopened = await launch({ userDataDirectory, env: noEnvironmentConfig })
     await openSettings(reopened.page)
     const reopenedCard = reopened.page.locator('[data-provider-key="existing-relay"]')
+    await openManageModels(reopenedCard)
     await expect(reopenedCard.locator('[data-model-row="relay-alpha"]')).toBeVisible()
     await expect(reopenedCard.getByRole('radio', { name: /saved-model/ })).toBeChecked()
   })
@@ -485,6 +494,7 @@ test.describe('获取可用模型', () => {
     await card.getByRole('checkbox', { name: '选择模型 deepseek-v4-pro' }).check()
     await card.getByRole('button', { name: '加入所选模型' }).click()
     await expect(page.getByRole('status')).toContainText('已加入 1 个获取到的模型')
+    await openManageModels(card)
     await expect(
       card.locator('[data-model-row="deepseek-v4-pro"]')
     ).toContainText('获取')

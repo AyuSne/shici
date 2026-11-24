@@ -1134,6 +1134,13 @@ describe('线程列表', () => {
     })
   })
 
+  it('空白学习在列表里用自己的说法，不露出「未挂对象」这类内部词', () => {
+    const blank = createThread(database, { main: { kind: 'none' } }, { now: T0 })
+    if (blank.status !== 'created') throw new Error('create failed')
+
+    expect(listThreads(database).threads[0]?.mainLabel).toBe('空白学习')
+  })
+
   it('轮数按当前分支算，改口留下的旧提问不算一轮', () => {
     const thread = createThread(database, { main: { kind: 'none' } }, { now: T0 })
     if (thread.status !== 'created') throw new Error('create failed')

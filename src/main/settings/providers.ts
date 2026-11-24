@@ -373,6 +373,26 @@ export function readActiveProviderId(database: AppDatabase): string | null {
   return readModelProvider(database, stored) === null ? null : stored
 }
 
+/**
+ * 保存一套新提供商之后接上「使用中」：
+ *
+ * 只有当前确实没有任何使用中的提供商时才自动接上；已有使用中的一套绝不覆盖。
+ * 「已清空」是用户删掉使用中那套后留下的状态，这时保存新的一套正是重新开始用，
+ * 与设置键一起清掉标记，后续调用不会再提示「没有使用中的提供商」。
+ * 返回本次是否真的写入了选择。
+ */
+export function activateProviderIfNoneActive(
+  database: AppDatabase,
+  providerId: string
+): boolean {
+  if (readActiveProviderId(database) !== null) {
+    return false
+  }
+  writeSetting(database, ACTIVE_PROVIDER_KEY, providerId)
+  clearProviderSelection(database)
+  return true
+}
+
 /** 删掉使用中的 provider 之后，明确进入「没有使用中」的状态。 */
 export function isProviderSelectionCleared(database: AppDatabase): boolean {
   return readSetting(database, PROVIDER_SELECTION_CLEARED_KEY) === '1'

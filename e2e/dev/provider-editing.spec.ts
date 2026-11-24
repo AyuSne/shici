@@ -3,6 +3,11 @@ import { join } from 'node:path'
 import { startSseStub, type SseStub, type StubScript } from '../../src/testing/sse-stub'
 import { expect, test } from '../fixtures/app'
 import { seedBuiltinProvider } from '../fixtures/database'
+import {
+  openManageModels,
+  openProviderDetails,
+  openProviderEditor
+} from '../fixtures/settings-panel'
 
 const stubs: SseStub[] = []
 
@@ -112,13 +117,15 @@ test.describe('自定义 provider 与模型目录', () => {
 
     const relay = page.locator('[data-provider-key="my-relay"]')
     await expect(relay).toContainText('我的中转')
+    await openProviderDetails(relay)
     await expect(relay).toContainText('自定义')
+    await openManageModels(relay)
     await expect(relay.locator('[data-model-row="relay-mystery-model"]')).toContainText(
       '不在目录'
     )
 
     // Provider ID 与协议只读；能改显示名，修改后立即生效。
-    await relay.getByRole('button', { name: '编辑提供商' }).click()
+    await openProviderEditor(relay)
     const editForm = relay.locator('.profile-edit-form')
     await expect(editForm).toContainText('my-relay')
     await expect(editForm).toContainText('OpenAI Chat Completions')
@@ -128,14 +135,14 @@ test.describe('自定义 provider 与模型目录', () => {
     await expect(relay).toContainText('我的中转 2')
 
     // 自定义 provider 的目录至少留一条模型。
+    await openManageModels(relay)
     await relay
       .getByRole('button', { name: '移除模型 relay-mystery-model' })
       .click()
     await expect(relay.locator('.field-error')).toContainText('至少要留一个模型')
     await expect(relay.locator('[data-model-row="relay-mystery-model"]')).toBeVisible()
 
-    // 切为使用中后，未知模型 ID 照常发送；缺容量由主进程兜底。
-    await relay.getByRole('button', { name: '设为当前' }).click()
+    // 首套保存已自动使用中；未知模型 ID 照常发送，缺容量由主进程兜底。
     await expect(relay).toContainText('使用中')
     await openChat(page)
     await ask(page, '用自定义中转回答')
@@ -151,6 +158,7 @@ test.describe('自定义 provider 与模型目录', () => {
     const reopenedRelay = reopened.page.locator('[data-provider-key="my-relay"]')
     await expect(reopenedRelay).toContainText('我的中转 2')
     await expect(reopenedRelay).toContainText('使用中')
+    await openManageModels(reopenedRelay)
     await expect(
       reopenedRelay.locator('[data-model-row="relay-mystery-model"]')
     ).toBeVisible()
@@ -182,13 +190,15 @@ test.describe('自定义 provider 与模型目录', () => {
     await expect(card).toContainText('未验证')
 
     // 内置 provider 的地址可改成中转/镜像地址。
-    await card.getByRole('button', { name: '编辑提供商' }).click()
+    await openProviderEditor(card)
     await card.getByLabel('编辑接口地址').fill(stub.baseUrl)
     await card.getByRole('button', { name: '保存修改' }).click()
     await expect(page.getByRole('status')).toContainText('新地址')
+    await openProviderDetails(card)
     await expect(card).toContainText(stub.baseUrl)
 
     // 手加目录外模型：先提示不在目录，再加入并保留标记。
+    await openManageModels(card)
     await card.getByLabel('添加模型 ID').fill('outside-catalog-model')
     await expect(card.locator('.model-add-hint')).toContainText('不在目录')
     await card.getByRole('button', { name: '加入目录' }).click()
@@ -253,7 +263,9 @@ test.describe('自定义 provider 与模型目录', () => {
     })
     await openSettings(reopened.page)
     const reopenedCard = reopened.page.locator('[data-provider-key="deepseek"]')
+    await openProviderDetails(reopenedCard)
     await expect(reopenedCard).toContainText(stub.baseUrl)
+    await openManageModels(reopenedCard)
     await expect(reopenedCard.locator('[data-model-row]').first()).toHaveAttribute(
       'data-model-row',
       'outside-catalog-model-2'

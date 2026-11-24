@@ -26,6 +26,7 @@ import { prepareProviderCredential } from './credentials'
 import type { SecretStore } from './secret-store'
 import { parseHttpUrl } from './base-url'
 import {
+  activateProviderIfNoneActive,
   readDefaultModel,
   readModelProvider,
   readProviderModels,
@@ -362,6 +363,8 @@ export function createCustomProvider(
       }
       insertModelRow(database, provider, draft, index, now, draft.source, rowId)
     })
+    // 第一套（或删空之后的第一套）保存完就能直接对话，不用再点一次切换。
+    activateProviderIfNoneActive(database, providerId)
   })
   insert()
 

@@ -151,7 +151,7 @@ test('旧纯文本钉住只标相交的段与列表项，错误部分仍可单�
   seedLegacyPin(userDataDirectory)
   stub = await startSseStub({ kind: 'truncate', text: ['**错误前的部分**'] })
   const { page } = await openChat(launch)
-  await page.getByRole('button', { name: /旧版对话 未挂对象/ }).click()
+  await page.getByRole('button', { name: /旧版对话 空白学习/ }).click()
   const firstAnswer = page.getByRole('article', { name: '学习助手' }).first()
   const body = firstAnswer.locator('.assistant-text')
   const bars = body.locator('.is-pinned')

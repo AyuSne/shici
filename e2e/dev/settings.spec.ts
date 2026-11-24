@@ -8,6 +8,12 @@ import { fixtureArticle, writeCorpusDirectory } from '../../src/testing/corpus-f
 import { startSseStub, type SseStub, type StubScript } from '../../src/testing/sse-stub'
 import { expect, test } from '../fixtures/app'
 import { seedLegacyModelProfiles, seedModelProvider } from '../fixtures/database'
+import {
+  openAddConnectionDetails,
+  openManageModels,
+  openMoreMenu,
+  openProviderDetails
+} from '../fixtures/settings-panel'
 
 const stubs: SseStub[] = []
 
@@ -111,17 +117,20 @@ test.describe('设置与密钥', () => {
     const first = cards.filter({ hasText: 'DeepSeek 官方' })
     await expect(first).toContainText('使用中')
     await expect(first).toContainText('已验证')
+    await openProviderDetails(first)
     await expect(first).toContainText('OpenAI Chat Completions')
     await expect(first).toContainText('deepseek-flash')
     await expect(first).toContainText('deepseek')
     await expect(first).toContainText('缺失')
     await expect(first).toContainText('自定义')
     // 迁移来的模型没有容量元数据：不冒充 DeepSeek 的 1,000,000 / 384,000。
+    await openManageModels(first)
     await expect(first).toContainText('目录未提供容量')
 
     const second = cards.filter({ hasText: 'Backup API' })
     await expect(second).not.toContainText('使用中')
     await expect(second).toContainText('未验证')
+    await openProviderDetails(second)
     await expect(second).toContainText('backup-api')
     await expect(second).toContainText('deepseek-v4-pro')
 
@@ -129,17 +138,20 @@ test.describe('设置与密钥', () => {
     await expect(page.getByLabel('内置提供商')).toBeVisible()
     await expect(page.getByLabel('API 密钥')).toBeVisible()
     await expect(page.getByRole('button', { name: '保存提供商' })).toBeVisible()
+    await openManageModels(second)
     await expect(second.getByRole('radio')).toHaveCount(1)
     await expect(page.getByRole('button', { name: '测试当前连接' })).toHaveCount(0)
     await expect(page.getByLabel('名称')).toHaveCount(0)
 
     // 切换使用中只写选择；卡片上的「使用中」跟着走。
-    await second.getByRole('button', { name: '设为当前' }).click()
+    await openMoreMenu(second)
+    await second.getByRole('button', { name: '设为使用中', exact: true }).click()
     await expect(second).toContainText('使用中')
     await expect(first).not.toContainText('使用中')
 
     // 删除使用中的迁移 provider：先明确警告，删完留下「没有使用中」的提示。
-    await second.getByRole('button', { name: '删除' }).click()
+    await openMoreMenu(second)
+    await second.getByRole('button', { name: /^删除提供商/ }).click()
     await expect(second).toContainText('删除当前提供商后，需要另选一套才能继续对话')
     await second.getByRole('button', { name: '确认删除' }).click()
     await expect(page.locator('.profile-card')).toHaveCount(1)
@@ -199,28 +211,32 @@ test.describe('设置与密钥', () => {
       await expect(page.getByLabel('API 密钥')).toHaveValue('')
     }
 
-    // 目录预览：端点、环境变量与模型列表都由内置目录带出。
+    // 目录详情：默认折叠，展开后才看到端点、协议、模型与 Provider ID 规则。
     await page.getByLabel('内置提供商').selectOption('deepseek')
+    await openAddConnectionDetails(page)
     const preview = page.locator('.builtin-preview')
     await expect(preview).toContainText('https://api.deepseek.com')
-    await expect(preview).toContainText('DEEPSEEK_API_KEY')
+    await expect(preview).toContainText('OpenAI Chat Completions')
     await expect(preview).toContainText('deepseek-flash')
     await expect(preview).toContainText('deepseek-v4-pro')
+    await expect(preview).toContainText('保存后分配')
 
     await addProvider('deepseek', 'sk-e2e-deepseek-1111')
     const firstDeepSeek = page.locator('[data-provider-key="deepseek"]')
     await expect(firstDeepSeek).toContainText('DeepSeek')
     await expect(firstDeepSeek).toContainText('未验证')
+    // 库里原本没有使用中的提供商：保存即自动接上，不用再点切换。
+    await expect(firstDeepSeek).toContainText('使用中')
+    await openProviderDetails(firstDeepSeek)
     await expect(firstDeepSeek).toContainText('内置目录 · deepseek')
     await expect(firstDeepSeek).toContainText('sk-·············1111')
+    await openManageModels(firstDeepSeek)
     await expect(firstDeepSeek).toContainText('上下文 1,000,000 · 输出 384,000 · 支持思考')
     await expect(firstDeepSeek.getByRole('radio', { name: /deepseek-flash/ })).toBeChecked()
     await expect(firstDeepSeek.getByRole('radio', { name: /deepseek-v4-pro/ })).not.toBeChecked()
 
-    // 真实用这套「本机保存」的密钥聊天：先选为使用中，再把地址指到本地 stub，
+    // 真实用这套「本机保存」的密钥聊天：把地址指到本地 stub，
     // 验证 safeStorage 解出的是刚存的密钥。
-    await firstDeepSeek.getByRole('button', { name: '设为当前' }).click()
-    await expect(firstDeepSeek).toContainText('使用中')
     const liveDatabase = new Database(join(userDataDirectory, 'english-learning.db'))
     try {
       liveDatabase
@@ -249,23 +265,28 @@ test.describe('设置与密钥', () => {
     await addProvider('deepseek', 'sk-e2e-deepseek-2222')
     const secondDeepSeek = page.locator('[data-provider-key="deepseek-2"]')
     await expect(secondDeepSeek).toContainText('DeepSeek 2')
+    await expect(secondDeepSeek).not.toContainText('使用中')
+    await openProviderDetails(secondDeepSeek)
     await expect(secondDeepSeek).toContainText('sk-·············2222')
     await expect(secondDeepSeek).toContainText('内置目录 · deepseek')
 
     await addProvider('kimi', 'sk-e2e-kimi-3333')
     const kimi = page.locator('[data-provider-key="kimi"]')
     await expect(kimi).toContainText('Kimi')
+    await openProviderDetails(kimi)
     await expect(kimi).toContainText('https://api.moonshot.cn/v1')
     await expect(kimi).toContainText('MOONSHOT_API_KEY')
+    await openManageModels(kimi)
     await expect(kimi).toContainText('上下文 262,144 · 输出 262,144 · 支持思考')
     await expect(kimi.getByRole('radio', { name: /kimi-k2.6/ })).toBeChecked()
 
     await page.getByLabel('内置提供商').selectOption('glm')
     await expect(preview).toContainText('https://open.bigmodel.cn/api/paas/v4')
-    await expect(preview).toContainText('ZAI_API_KEY')
+    await expect(preview).toContainText('智谱 GLM')
     await addProvider('glm', 'sk-e2e-glm-4444')
     const glm = page.locator('[data-provider-key="glm"]')
     await expect(glm).toContainText('智谱 GLM')
+    await openManageModels(glm)
     await expect(glm).toContainText('上下文 204,800 · 输出 131,072 · 支持思考')
 
     // 页面上只有掩码；IPC 概览里也没有任何明文密钥。
@@ -291,18 +312,16 @@ test.describe('设置与密钥', () => {
     const reopened = await launch({ userDataDirectory, env: noEnvironmentConfig })
     await openSettings(reopened.page)
     await expect(reopened.page.locator('.profile-card')).toHaveCount(4)
-    await expect(reopened.page.locator('[data-provider-key="deepseek"]')).toContainText(
-      'sk-·············1111'
-    )
-    await expect(reopened.page.locator('[data-provider-key="deepseek-2"]')).toContainText(
-      'sk-·············2222'
-    )
-    await expect(reopened.page.locator('[data-provider-key="kimi"]')).toContainText(
-      'sk-·············3333'
-    )
-    await expect(reopened.page.locator('[data-provider-key="glm"]')).toContainText(
-      'sk-·············4444'
-    )
+    for (const [key, mask] of [
+      ['deepseek', 'sk-·············1111'],
+      ['deepseek-2', 'sk-·············2222'],
+      ['kimi', 'sk-·············3333'],
+      ['glm', 'sk-·············4444']
+    ] as const) {
+      const reopenedCard = reopened.page.locator(`[data-provider-key="${key}"]`)
+      await openProviderDetails(reopenedCard)
+      await expect(reopenedCard).toContainText(mask)
+    }
 
     // 密钥只以 safeStorage 密文落库。
     const database = new Database(join(userDataDirectory, 'english-learning.db'), {
