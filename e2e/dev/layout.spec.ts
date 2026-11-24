@@ -65,7 +65,8 @@ async function resizeTo(
         const window = BrowserWindow.getAllWindows()[0]
         if (window === undefined) throw new Error('没有主窗口')
         const minimum = window.getMinimumSize()
-        window.setContentSize(size.width, size.height)
+        // 融合标题栏在部分 DPI 下仍留 1px 非客户区：多要 1px，量到的内容宽才是目标断点。
+        window.setContentSize(size.width + 1, size.height)
         return minimum
       },
       { width, height: 820 }

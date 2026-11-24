@@ -8,6 +8,7 @@ import {
   snapshotDirectoryOf
 } from '../data/backup'
 import { readReadingPreferences } from '../reading/queries'
+import { readReadingGlobalPreferences } from '../reading/global-preferences'
 import {
   listModelProviders,
   readActiveProviderId,
@@ -49,6 +50,7 @@ export function readSettingsOverview(
     // 设置页的警告已经说明没有使用中的提供商，这里不能显示一个不会用到的模型名。
     activeModel: defaultModel?.modelId ?? (providers.length === 0 ? options.fallbackModel : ''),
     reading: readReadingPreferences(database),
+    readingGlobal: readReadingGlobalPreferences(database),
     theme: readThemePreference(database),
     appVersion: options.appVersion,
     electronVersion: options.electronVersion,

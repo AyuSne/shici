@@ -42,6 +42,8 @@ import type {
   RestorePinsResult
 } from '../../shared/pins'
 import type {
+  ReadingGlobalPreferences,
+  ReadingGlobalPreferencesResult,
   ReadingProgressResult,
   ReadingSettingsResult,
   ReadingView
@@ -177,6 +179,17 @@ function readingHandlers() {
     'reading:complete': (): MarkArticleCompletedResult => ({ status: 'missing' }),
     'reading:progress': (): ReadingProgressResult => ({ saved: false }),
     'reading:settings': (): ReadingSettingsResult | null => null,
+    'reading:global-preferences': (): ReadingGlobalPreferences => ({
+      silentCollection: false,
+      marginNoteMode: 'all',
+      lightMask: false
+    }),
+    'reading:global-preferences-save': (payload: {
+      preferences: ReadingGlobalPreferences
+    }): ReadingGlobalPreferencesResult => ({
+      saved: true,
+      preferences: payload.preferences
+    }),
     'reading:collect': (): CollectSelectionResult => ({
       status: 'rejected',
       reason: 'article'
@@ -254,6 +267,11 @@ const settingsOverview: SettingsOverview = {
     lineHeight: 1.8,
     annotationsVisible: true,
     weakHighlight: true
+  },
+  readingGlobal: {
+    silentCollection: false,
+    marginNoteMode: 'all',
+    lightMask: false
   },
   theme: 'light',
   appVersion: '0.1.0',
@@ -401,6 +419,40 @@ describe('registerIpcHandlers', () => {
       expect.arrayContaining(['ui:preferences', 'ui:sidebar', 'search:shortcuts'])
     )
     expect(bootstrap.sidebarCollapsed).toBe(false)
+  })
+
+  it('阅读全局偏好读写进入契约，处理函数带回静默 / 眉批 / 轻遮三态', () => {
+    expect(IPC_CHANNELS).toEqual(
+      expect.arrayContaining(['reading:global-preferences', 'reading:global-preferences-save'])
+    )
+
+    const { ipc, registered } = fakeIpcMain()
+    registerIpcHandlers(ipc, {
+      ...chatHandlers(),
+      ...libraryHandlers(),
+      ...searchHandlers(),
+      ...readingHandlers(),
+      ...entriesHandlers(),
+      ...instructionsHandlers(),
+      ...pinsHandlers(),
+      ...dictionaryHandlers(),
+      ...settingsHandlers(),
+      ...uiHandlers(),
+      'app:bootstrap': () => bootstrap,
+      'counts:summary': (): NavCounts => ({ entries: 0, articles: 0, unfiled: 0 })
+    })
+    expect(
+      registered.get('reading:global-preferences')?.(undefined, { sender: { send() {} } })
+    ).toEqual({ silentCollection: false, marginNoteMode: 'all', lightMask: false })
+    expect(
+      registered.get('reading:global-preferences-save')?.(
+        undefined,
+        { preferences: { silentCollection: true, marginNoteMode: 'mine', lightMask: true } }
+      )
+    ).toEqual({
+      saved: true,
+      preferences: { silentCollection: true, marginNoteMode: 'mine', lightMask: true }
+    })
   })
 
   it('契约里的 channel 没有处理函数时启动即报错', () => {    const { ipc } = fakeIpcMain()

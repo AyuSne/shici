@@ -143,7 +143,8 @@ describe('collectSelection', () => {
         paragraphId: paragraphAt(article, 0).id,
         sentenceOrdinal: 0,
         start: paragraphAt(article, 0).text.indexOf('approach'),
-        end: paragraphAt(article, 0).text.indexOf('approach') + 'approach'.length
+        end: paragraphAt(article, 0).text.indexOf('approach') + 'approach'.length,
+        glance: { pinnedNote: null, encounter: null }
       }
     ])
   })

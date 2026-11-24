@@ -98,6 +98,8 @@ import type {
   FetchProviderModelsResult
 } from './model-discovery'
 import type {
+  ReadingGlobalPreferences,
+  ReadingGlobalPreferencesResult,
   ReadingPreferences,
   ReadingProgressRequest,
   ReadingProgressResult,
@@ -192,9 +194,21 @@ export interface IpcContract {
   }
   'reading:progress': { payload: ReadingProgressRequest; result: ReadingProgressResult }
   'reading:settings': { payload: ReadingSettingsRequest; result: ReadingSettingsResult | null }
+  /** 不分篇的静默圈词 / 页边眉批 / 轻遮重读；只写 setting 表。 */
+  'reading:global-preferences': {
+    payload: undefined
+    result: ReadingGlobalPreferences
+  }
+  'reading:global-preferences-save': {
+    payload: { preferences: ReadingGlobalPreferences }
+    result: ReadingGlobalPreferencesResult
+  }
   'reading:collect': { payload: CollectSelectionRequest; result: CollectSelectionResult }
   'dictionary:lookup': { payload: DictionaryLookupRequest; result: DictionaryLookup }
-  'entries:card': { payload: { entryId: string }; result: WordEntryCard | null }
+  'entries:card': {
+    payload: { entryId: string; articleId?: string }
+    result: WordEntryCard | null
+  }
   'entries:delete-sentence': {
     payload: { entrySentenceId: string }
     result: DeleteEntrySentenceResult
@@ -383,6 +397,8 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'reading:complete': true,
   'reading:progress': true,
   'reading:settings': true,
+  'reading:global-preferences': true,
+  'reading:global-preferences-save': true,
   'reading:collect': true,
   'dictionary:lookup': true,
   'entries:card': true,

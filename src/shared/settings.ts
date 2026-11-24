@@ -1,5 +1,5 @@
 import type { ModelProviderSummary } from './model-providers'
-import type { ReadingPreferences } from './reading'
+import type { ReadingGlobalPreferences, ReadingPreferences } from './reading'
 import type { ThemePreference } from './types'
 
 /**
@@ -16,6 +16,8 @@ export type SettingsOverview = {
   /** 后续调用会用的模型名；没有本机配置时回退到环境变量里的那份，仍没有则为空。 */
   activeModel: string
   reading: ReadingPreferences
+  /** 不分篇的静默圈词 / 页边眉批 / 轻遮重读。 */
+  readingGlobal: ReadingGlobalPreferences
   theme: ThemePreference
   appVersion: string
   electronVersion: string
