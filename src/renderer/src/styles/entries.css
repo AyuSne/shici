@@ -475,7 +475,21 @@
   line-height: 16px;
 }
 
-/* 同篇前后句：点开才展开，正文仍是衬线。 */
+/* 同篇前后句：点开才展开，正文仍是衬线；用 grid 行高做 200ms 拉帘。 */
+.entry-neighbors-curtain {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms var(--ease-paper);
+}
+
+.entry-neighbors-curtain[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+.entry-neighbors-curtain-inner {
+  overflow: hidden;
+}
+
 .entry-neighbors {
   display: flex;
   flex-direction: column;
@@ -547,6 +561,61 @@
 
 .entry-action-danger:hover {
   color: var(--danger);
+}
+
+/* 原句的低频动作收在 `···` 里，弹出层贴着这一行。 */
+.entry-sentence-more {
+  position: relative;
+}
+
+.entry-action-more {
+  min-width: 28px;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.entry-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(60, 48, 30, 0.06);
+}
+
+[data-theme='dark'] .entry-menu {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.entry-menu-item {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+}
+
+.entry-menu-item:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.entry-menu-item:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+.entry-menu-maintenance {
+  position: static;
+  margin: 8px 0 16px;
+  box-shadow: none;
 }
 
 .entry-error {
@@ -664,6 +733,37 @@
 
 .entries-rail-head .section-label {
   margin-bottom: 0;
+}
+
+.entries-rail-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.entries-rail-more {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.entries-rail-more:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* 有学习内容时在磁吸拉手上给一颗克制的琥珀微点，不额外用一个开关。 */
+.entries-rail-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--amber);
 }
 
 .entries-rail-close {

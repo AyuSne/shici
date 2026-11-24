@@ -61,6 +61,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
   return {
     id: row.id,
     mainForm: row.main_form,
+    variants: [],
     sentenceCount: row.sentence_count,
     articleCount: row.article_count,
     noteCount: row.note_count,
@@ -199,6 +200,34 @@ function readEntryHits(
 }
 
 /**
+ * 一次批量读回列表行的已收集变体，给组词对话的钉住智能预选与左栏说明复用。
+ * 顺序与词条卡一致：按这个变体首次收集的时间，再按行号。
+ */
+function readEntryVariants(database: AppDatabase, entries: readonly EntryListItem[]): void {
+  if (entries.length === 0) return
+  const placeholders = entries.map(() => '?').join(', ')
+  const rows = database
+    .prepare(
+      `SELECT entry_id, surface
+         FROM entry_sentence
+        WHERE entry_id IN (${placeholders})
+        GROUP BY entry_id, surface
+        ORDER BY entry_id, MIN(collected_at), MIN(rowid)`
+    )
+    .all(...entries.map((entry) => entry.id)) as { entry_id: string; surface: string }[]
+  const byEntry = new Map<string, string[]>()
+  for (const row of rows) {
+    const list = byEntry.get(row.entry_id) ?? []
+    list.push(row.surface)
+    byEntry.set(row.entry_id, list)
+  }
+  for (const entry of entries) {
+    const surfaces = byEntry.get(entry.id) ?? []
+    entry.variants = surfaces.filter((surface) => surface !== entry.mainForm)
+  }
+}
+
+/**
  * 左栏列表。搜索匹配主词形、已收原句正文与学习内容正文；每条命中的词条带回
  * 命中类型、高亮片段与定位 id。`total` 始终是库里的词条总数，搜索与筛选只改 `entries`。
  */
@@ -246,6 +275,7 @@ export function readEntryList(
     return true
   })
   const entries: EntryListItem[] = matched.map(toEntryListItem)
+  readEntryVariants(database, entries)
   if (query !== '') {
     const hits = readEntryHits(database, matched, query)
     for (const entry of entries) {

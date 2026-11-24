@@ -254,12 +254,12 @@ test.describe('收官验收 · 深色对比度', () => {
       { label: '原句出处', selector: '.entry-sentence-source' },
       { label: '文章分组名', selector: '.entry-group-head' }
     ])
-    await page.getByRole('button', { name: /^学习内容/ }).click()
+    await page.getByRole('button', { name: /^展开学习内容/ }).click()
     await expect(page.locator('.entry-note-body')).toBeVisible()
     await expectReadableText(page, [
       { label: '学习内容正文', selector: '.entry-note-body' },
-      { label: '右栏计数', selector: '.entries-rail-meta' },
-      { label: '右栏说明', selector: '.entries-rail-title' }
+      { label: '右栏分区标签', selector: '.entries-rail-open .section-label' },
+      { label: '主词形当前项', selector: '.entry-form-current' }
     ])
 
     // 设置页：导航、说明、提示与空态。
@@ -316,7 +316,7 @@ test.describe('收官验收 · 深色对比度', () => {
     // 钉住一段到词条：角标、钉板卡片两种状态。
     await selectAnswerText(page, 'approach 指接近')
     await page
-      .locator('.pin-selection-card')
+      .locator('.selection-capsule')
       .getByRole('button', { name: '钉住', exact: true })
       .click()
     const pinDialog = page.getByRole('dialog', { name: '钉到哪儿' })
@@ -354,7 +354,7 @@ test.describe('收官验收 · 深色对比度', () => {
     await nav(page, '词条')
     await page.locator('.entries-row').first().click()
     await expect(page.getByRole('heading', { name: 'approach', level: 2 })).toBeVisible()
-    await page.getByRole('button', { name: /^学习内容/ }).click()
+    await page.getByRole('button', { name: /^展开学习内容/ }).click()
     await expect(
       page.locator('.entry-note-body').filter({ hasText: 'approach 指接近' })
     ).toBeVisible()

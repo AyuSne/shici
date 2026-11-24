@@ -52,6 +52,21 @@
   background: var(--amber);
 }
 
+/* 刚钉下的段落：琥珀竖线 260ms 自上而下划出，不缩放、不弹跳。 */
+.assistant-text .is-fresh-pin::before {
+  transform-origin: top;
+  animation: pin-line-draw 260ms var(--ease-paper) both;
+}
+
+@keyframes pin-line-draw {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
 .assistant-text li.is-pinned::before {
   /* Draw the bar to the left of the list marker (24px list indent). */
   left: -36px;
@@ -104,7 +119,49 @@
   margin-top: 0;
 }
 
-[data-theme="dark"] .pin-selection-card {
+/* ---------- 选中回答片段的轻胶囊 ---------- */
+
+/* 浮在选区正上方；transform 把底边贴到选区上沿再留 8px。 */
+.selection-capsule {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line-pin);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(60, 48, 30, 0.06);
+  transform: translate(-50%, -100%);
+}
+
+[data-theme='dark'] .selection-capsule {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.selection-capsule-action {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  transition:
+    background 150ms ease-out,
+    color 150ms ease-out;
+}
+
+.selection-capsule-action:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.selection-capsule-action:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+[data-theme='dark'] .pin-selection-card {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 
@@ -248,6 +305,7 @@
 
 .pin-board {
   display: flex;
+  grid-column: 3;
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--rule);
@@ -286,6 +344,14 @@
 .pin-board-label {
   writing-mode: vertical-rl;
   letter-spacing: 0.06em;
+}
+
+/* 有当前对话钉住或未归档时，磁吸拉手上给一颗克制的琥珀微点。 */
+.pin-board-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--amber);
 }
 
 .pin-board-open {
@@ -507,6 +573,10 @@
 @media (min-width: 901px) and (max-width: 1100px) {
   .chat-page {
     grid-template-columns: 236px minmax(0, 1fr);
+  }
+
+  .chat-page[data-rail-collapsed='true'] {
+    grid-template-columns: 0 minmax(0, 1fr);
   }
 }
 

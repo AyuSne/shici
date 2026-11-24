@@ -179,7 +179,7 @@ test.describe('收官验收 · 强杀重启', () => {
     await nav(page, '词条')
     await page.locator('.entries-row').first().click()
     await expect(page.getByRole('heading', { name: 'approach', level: 2 })).toBeVisible()
-    await page.getByRole('button', { name: '开始对话' }).click()
+    await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).click()
     await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
     await page.getByRole('textbox', { name: '输入问题' }).fill('this 在这个句子里怎么理解？')
     await page.getByRole('button', { name: '发送' }).click()
@@ -231,8 +231,8 @@ test.describe('收官验收 · 强杀重启', () => {
     await expect(
       reopened.locator('.entry-sentence-text').filter({ hasText: 'Readers approach' })
     ).toBeVisible()
-    await expect(reopened.getByRole('button', { name: /^学习内容/ })).toContainText('1')
-    await reopened.getByRole('button', { name: /^学习内容/ }).click()
+    await expect(reopened.getByRole('button', { name: /^展开学习内容/ })).toContainText('1')
+    await reopened.getByRole('button', { name: /^展开学习内容/ }).click()
     await expect(reopened.locator('.entry-note-body')).toContainText(ANSWER)
     await expect(reopened.locator('.entry-note-source')).toContainText('来自 approach · 第 1 轮')
 

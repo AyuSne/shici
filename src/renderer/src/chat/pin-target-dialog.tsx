@@ -4,6 +4,8 @@ import type { LibraryArticle } from '../../../shared/library'
 import type { PinTargetKind, PinTargetView } from '../../../shared/pins'
 import { loadEntryList, loadLibrary } from '../api'
 import { ErrorBlock } from '../components/error-block'
+import { SearchableTargetPicker } from '../components/searchable-target-picker'
+import type { SearchableTarget } from '../components/target-search'
 import { failureText } from '../errors'
 
 /**
@@ -90,6 +92,21 @@ export function PinTargetDialog({
 
   const selectedEntry = entries?.find((entry) => entry.id === entryId) ?? null
   const selectedArticle = articles?.find((article) => article.id === articleId) ?? null
+  const entryTargets: SearchableTarget[] = (entries ?? []).map((entry) => ({
+    id: entry.id,
+    label: entry.mainForm,
+    detail: [
+      entry.variants.length > 0 ? entry.variants.join('、') : '',
+      `${entry.sentenceCount} 句`
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }))
+  const articleTargets: SearchableTarget[] = (articles ?? []).map((article) => ({
+    id: article.id,
+    label: article.title,
+    detail: article.kindLabel
+  }))
   const entryLabel = selectedEntry?.mainForm ?? (initial.kind === 'entry' ? initial.label : '词条')
   const articleLabel =
     selectedArticle?.title ?? (initial.kind === 'article' ? initial.label : '文章')
@@ -127,7 +144,14 @@ export function PinTargetDialog({
       return
     }
     const tag = (event.target as HTMLElement).tagName
-    if (event.key === 'Enter' && tag !== 'SELECT' && tag !== 'BUTTON' && tag !== 'TEXTAREA') {
+    if (
+      event.key === 'Enter' &&
+      tag !== 'SELECT' &&
+      tag !== 'BUTTON' &&
+      tag !== 'TEXTAREA' &&
+      tag !== 'INPUT' &&
+      !event.defaultPrevented
+    ) {
       event.preventDefault()
       confirm()
     }
@@ -169,18 +193,15 @@ export function PinTargetDialog({
         ) : entries.length === 0 ? (
           <p className="pin-dialog-hint">还没有词条，先读一篇圈几个词。</p>
         ) : (
-          <select
-            className="pin-select"
-            aria-label="选择词条"
-            value={entryId ?? ''}
-            onChange={(event) => setEntryId(event.target.value)}
-          >
-            {entries.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.mainForm} · {entry.sentenceCount} 句
-              </option>
-            ))}
-          </select>
+          <SearchableTargetPicker
+            label="选择词条"
+            targets={entryTargets}
+            value={entryId}
+            onChange={setEntryId}
+            placeholder="搜索词条或已收变体…"
+            emptyText="没有匹配的词条"
+            autoFocus
+          />
         )
       ) : null}
 
@@ -190,18 +211,15 @@ export function PinTargetDialog({
         ) : articles.length === 0 ? (
           <p className="pin-dialog-hint">文章库还是空的。</p>
         ) : (
-          <select
-            className="pin-select"
-            aria-label="选择文章"
-            value={articleId ?? ''}
-            onChange={(event) => setArticleId(event.target.value)}
-          >
-            {articles.map((article) => (
-              <option key={article.id} value={article.id}>
-                {article.title}
-              </option>
-            ))}
-          </select>
+          <SearchableTargetPicker
+            label="选择文章"
+            targets={articleTargets}
+            value={articleId}
+            onChange={setArticleId}
+            placeholder="搜索文章篇名…"
+            emptyText="没有匹配的文章"
+            autoFocus
+          />
         )
       ) : null}
 

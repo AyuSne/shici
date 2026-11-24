@@ -199,10 +199,10 @@ export function LibraryPage({
     navigate('reading', { articleId, readingFrom: 'library' })
   }
 
-  async function askAboutArticle(forceNew = false): Promise<void> {
+  async function askAboutArticle(): Promise<void> {
     if (detail === null) return
     setLoadError(null)
-    const opened = await openThreadForMain({ kind: 'article', articleId: detail.id }, { forceNew })
+    const opened = await openThreadForMain({ kind: 'article', articleId: detail.id })
     if (opened === null) setLoadError(getChatStore().error ?? '没能打开对话，请刷新文章库后再试。')
   }
 
@@ -467,10 +467,7 @@ export function LibraryPage({
                   className="button"
                   onClick={() => void askAboutArticle()}
                 >
-                  与这篇对话
-                </button>
-                <button type="button" className="button" onClick={() => void askAboutArticle(true)}>
-                  新开一条
+                  问模型
                 </button>
               </div>
               <ArticleCollectedSection article={detail} />

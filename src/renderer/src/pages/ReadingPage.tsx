@@ -992,14 +992,12 @@ export function ReadingPage({
   }
 
   async function openReadingThread(
-    main: CreateThreadRequest['main'],
-    forceNew = false
+    main: CreateThreadRequest['main']
   ): Promise<void> {
     if (openingThread) return
     setOpeningThread(true)
     setCollectError(null)
     const threadId = await openThreadForMain(main, {
-      forceNew,
       ensureSentenceContext: main.kind === 'sentence'
     })
     if (threadId === null) {
@@ -1190,19 +1188,7 @@ export function ReadingPage({
                 }
               >
                 <Icon name="chat" size={14} />
-                与这篇文章对话
-              </button>
-              <button
-                type="button"
-                className="reading-tool"
-                aria-label="新开一条文章对话"
-                disabled={openingThread}
-                onClick={() =>
-                  void openReadingThread({ kind: 'article', articleId: view.article.id }, true)
-                }
-              >
-                <Icon name="spark" size={14} />
-                新开一条
+                问模型
               </button>
               <button
                 type="button"
@@ -1387,7 +1373,7 @@ export function ReadingPage({
             } }).then((id) => {
               if (id === null) { setOpeningThread(false); setCollectError(getChatStore().error ?? '摘录没有带上，再试一次。') }
             })
-          }}>带这段去对话</button>
+          }}>问模型</button>
           <button type="button" onClick={() => { void navigator.clipboard.writeText(excerpt.text).then(() => { setHint('已复制'); setExcerpt(null); window.getSelection()?.removeAllRanges() }, () => setCollectError('复制失败，请再试一次。')) }}>复制</button>
         </div>
       ) : null}
@@ -1430,11 +1416,6 @@ export function ReadingPage({
           onAsk={() => {
             if (panel.entrySentenceId !== null) {
               void openReadingThread({ kind: 'sentence', entrySentenceId: panel.entrySentenceId })
-            }
-          }}
-          onAskNew={() => {
-            if (panel.entrySentenceId !== null) {
-              void openReadingThread({ kind: 'sentence', entrySentenceId: panel.entrySentenceId }, true)
             }
           }}
           openingThread={openingThread}

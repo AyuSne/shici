@@ -131,7 +131,6 @@ export function EntryPanelView({
   onClose,
   onOpenEntry,
   onAsk,
-  onAskNew,
   openingThread,
   laterBusy,
   onToggleLater,
@@ -144,7 +143,6 @@ export function EntryPanelView({
   onClose: () => void
   onOpenEntry: () => void
   onAsk: () => void
-  onAskNew: () => void
   openingThread: boolean
   laterBusy: boolean
   onToggleLater: () => void
@@ -192,20 +190,11 @@ export function EntryPanelView({
             </button>
             <button
               type="button"
-              className="button"
+              className="button button-primary"
               disabled={openingThread || panel.entrySentenceId === null}
               onClick={onAsk}
             >
-              就这个词提问
-            </button>
-            <button
-              type="button"
-              className="button"
-              aria-label="为这句新建对话"
-              disabled={openingThread || panel.entrySentenceId === null}
-              onClick={onAskNew}
-            >
-              新建对话
+              问模型
             </button>
             <button
               type="button"

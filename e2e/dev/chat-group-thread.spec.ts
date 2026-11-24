@@ -193,9 +193,9 @@ test('多选两个词开一条新线程：带词与各自原句，可增删，�
   )
   await dialog.getByRole('button', { name: '钉住', exact: true }).click()
   await expect(page.getByText('已放进未归档')).toBeVisible()
-  await expect(page.getByRole('button', { name: '钉板 1 · 本对话', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^钉板 1 / })).toBeVisible()
   const board = page.getByRole('complementary', { name: '钉板', exact: true })
-  await expect(board.getByRole('button', { name: '未归档 1', exact: true })).toBeVisible()
+  await expect(board.getByRole('button', { name: /未归档 1/ })).toBeVisible()
 
   const boardState = await page.evaluate(async (threadId) => {
     const api = (window as unknown as {

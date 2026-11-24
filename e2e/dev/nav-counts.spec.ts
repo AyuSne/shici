@@ -231,7 +231,7 @@ test('收词后词条数即时更新；稍后看不计数；删最后一句连�
   await expectCounts(page, { entries: 1, articles: 2, unfiled: 0 })
 
   // 从词条开对话，把整条回答钉到这个词条：未归档仍是 0。
-  await page.getByRole('button', { name: '开始对话' }).click()
+  await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).click()
   await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
   await page.getByRole('textbox', { name: '输入问题' }).fill('approach 怎么用？')
   await page.getByRole('button', { name: '发送' }).click()
@@ -250,7 +250,9 @@ test('收词后词条数即时更新；稍后看不计数；删最后一句连�
   await nav(page).getByRole('button', { name: '词条' }).click()
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
   const sentence = page.locator('.entry-sentence').first()
-  await sentence.getByRole('button', { name: '删除' }).click()
+  await sentence.hover()
+  await sentence.getByRole('button', { name: '更多原句操作' }).click()
+  await sentence.getByRole('menuitem', { name: '删除' }).click()
   const removeDialog = page.getByRole('alertdialog', { name: '删除最后一条原句' })
   await removeDialog.getByRole('button', { name: '删除词条与原句' }).click()
   await expect(page.getByText('原句与「approach」已删除。')).toBeVisible()
@@ -308,7 +310,6 @@ test('钉住/撤销/归位/移动/丢弃/批量归位后未归档数即时更新
   )
   await expect(page.locator('#nav-count-unfiled')).toHaveText('未归档 2 条')
 
-  const board = page.getByRole('complementary', { name: '钉板' })
   await nav(page).getByRole('button', { name: '对话' }).click()
   await page.locator('.thread-row').filter({ hasText: 'approach' }).click()
 
@@ -322,7 +323,7 @@ test('钉住/撤销/归位/移动/丢弃/批量归位后未归档数即时更新
   await page.getByRole('button', { name: '撤销' }).click()
   await expectCounts(page, { entries: 1, articles: 2, unfiled: 2 })
 
-  await board.getByRole('button', { name: '未归档 2', exact: true }).click()
+  await page.getByRole('button', { name: /^钉板 / }).click()
   await expect(page.getByRole('tab', { name: '未归档 2' })).toBeVisible()
 
   // 丢弃一条再撤销：未归档先减后回。
@@ -361,7 +362,7 @@ test('钉住/撤销/归位/移动/丢弃/批量归位后未归档数即时更新
   await expectCounts(page, { entries: 1, articles: 2, unfiled: 2 })
 
   // 空白线程里全部归位：未归档归零；撤销再回到 2。
-  await board.getByRole('button', { name: '未归档 2', exact: true }).click()
+  await page.getByRole('button', { name: /^钉板 / }).click()
   await expect(page.getByRole('tab', { name: '未归档 2' })).toBeVisible()
   await page.getByRole('button', { name: '全部归位' }).click()
   const fileAllDialog = page.getByRole('dialog', { name: '全部未归档归到哪儿' })

@@ -65,8 +65,7 @@ function nav(page: Page, name: string) {
 }
 
 async function expectDeletedSnapshots(page: Page) {
-  await page.getByRole('complementary', { name: '对话列表' })
-    .getByRole('button', { name: '未归档 1', exact: true }).click()
+  await page.getByRole('button', { name: /^钉板 / }).click()
   const card = page.getByRole('article').filter({ hasText: answer })
   await expect(card).toContainText(original)
   await expect(card).toContainText('源对话已删除')
@@ -75,7 +74,7 @@ async function expectDeletedSnapshots(page: Page) {
 
   await nav(page, '词条').click()
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
-  await page.getByRole('button', { name: /^学习内容/ }).click()
+  await page.getByRole('button', { name: /^展开学习内容/ }).click()
   const note = page.getByRole('article').filter({ hasText: answer })
   await expect(note).toContainText('源对话已删除')
   await expect(note.getByRole('button', { name: /看原对话/ })).toBeDisabled()
@@ -127,7 +126,7 @@ test('旧快照的线程仍在但原回答缺失，来源禁跳且丢弃前保�
   await nav(page, '对话').click()
   await page.locator('.thread-row').filter({ hasText: 'approach' }).click()
   await expect(page.getByRole('heading', { name: 'approach', level: 1 })).toBeVisible()
-  await page.getByRole('button', { name: '钉板 2 · 本对话' }).click()
+  await page.getByRole('button', { name: /^钉板 / }).click()
   const board = page.getByRole('complementary', { name: '钉板' })
   const card = board.getByRole('article').filter({ hasText: answer })
   const source = card.getByRole('button', { name: '看原对话' })
@@ -146,7 +145,7 @@ test('旧快照的线程仍在但原回答缺失，来源禁跳且丢弃前保�
 
   await nav(page, '词条').click()
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
-  await page.getByRole('button', { name: /^学习内容/ }).click()
+  await page.getByRole('button', { name: /^展开学习内容/ }).click()
   const note = page.getByRole('article').filter({ hasText: answer })
   await expect(note).toContainText('原回答找不到')
   await expect(note.getByRole('button', { name: /看原对话/ })).toBeDisabled()

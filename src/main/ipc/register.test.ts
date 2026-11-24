@@ -12,6 +12,7 @@ import type {
   MergeEntriesResult,
   MoveEntrySentenceResult,
   ReselectEntrySentenceResult,
+  RestoreEntrySentenceResult,
   SetEntryLaterResult,
   WordEntryCard
 } from '../../shared/entries'
@@ -202,6 +203,7 @@ function entriesHandlers() {
   return {
     'entries:card': (): WordEntryCard | null => null,
     'entries:delete-sentence': (): DeleteEntrySentenceResult => ({ status: 'missing' }),
+    'entries:restore-sentence': (): RestoreEntrySentenceResult => ({ status: 'missing' }),
     'entries:list': (): EntryListResult => ({ total: 0, entries: [] }),
     'entries:page': (): EntryPage | null => null,
     'entries:sentence': (): EntrySentenceTarget | null => null,

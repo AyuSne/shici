@@ -315,7 +315,7 @@ test.describe('收官验收 · 错误态', () => {
 
     await nav(page, '词条')
     await page.locator('.entries-row').first().click()
-    await page.getByRole('button', { name: '开始对话' }).click()
+    await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).click()
     await page.getByRole('textbox', { name: '输入问题' }).fill('这段能收吗？')
     await page.getByRole('button', { name: '发送' }).click()
     await expect(page.locator('.assistant-text')).toContainText('这段可以钉住。')
@@ -324,7 +324,7 @@ test.describe('收官验收 · 错误态', () => {
     await removeHandler(electronApp, 'entries:list')
     await selectAnswerText(page, '这段可以钉住')
     await page
-      .locator('.pin-selection-card')
+      .locator('.selection-capsule')
       .getByRole('button', { name: '钉住', exact: true })
       .click()
 

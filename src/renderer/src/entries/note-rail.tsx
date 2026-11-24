@@ -14,10 +14,10 @@ import { useDictionaryLookup } from '../dictionary/lookup'
 import { draftFromSense } from '../dictionary/presentation'
 import { failureText } from '../errors'
 import { navigate } from '../navigate'
-import { entryHeadlineText, EMPTY_LEARNING_NOTES_TEXT, noteSourceText } from './format'
+import { EMPTY_LEARNING_NOTES_TEXT, noteSourceText } from './format'
 import { searchUiOwns } from '../search/ownership'
 import { LearningBody } from './learning-body'
-import { MoreActions } from './more-actions'
+import { MoreActions, type MoreForm } from './more-actions'
 
 /**
  * 词条页右栏。收窄时只留一条竖着的「学习内容」入口；点开才是主词形、词典、
@@ -62,6 +62,8 @@ export function NoteRail({
   const [busyNoteId, setBusyNoteId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [moreForm, setMoreForm] = useState<MoreForm | null>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
   const railRef = useRef<HTMLElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
@@ -148,6 +150,9 @@ export function NoteRail({
         >
           <span className="entries-rail-tab-label">学习内容</span>
           <span className="entries-rail-count">{page.entry.noteCount}</span>
+          {page.entry.noteCount > 0 ? (
+            <span className="entries-rail-dot" aria-hidden="true" />
+          ) : null}
         </button>
       </aside>
     )
@@ -250,18 +255,64 @@ export function NoteRail({
     >
       <header className="entries-rail-head">
         <p className="section-label">学习内容</p>
-        <button
-          type="button"
-          className="entries-rail-close"
-          aria-label="收起学习内容"
-          onClick={onClose}
-        >
-          ×
-        </button>
+        <div className="entries-rail-head-actions">
+          <button
+            type="button"
+            className="entries-rail-more"
+            aria-label="词条维护"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen || moreForm !== null}
+            onClick={() => {
+              if (moreForm !== null) {
+                setMoreForm(null)
+                setMoreOpen(false)
+                return
+              }
+              setMoreOpen((open) => !open)
+            }}
+          >
+            ···
+          </button>
+          <button
+            type="button"
+            className="entries-rail-close"
+            aria-label="收起学习内容"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
       </header>
 
-      <h2 className="entries-rail-title">{page.entry.mainForm}</h2>
-      <p className="entries-rail-meta">{entryHeadlineText(page.entry)}</p>
+      {moreOpen ? (
+        <MoreActions
+          page={page}
+          entries={entries}
+          form={null}
+          onPick={(next) => {
+            setMoreOpen(false)
+            setMoreForm(next)
+          }}
+          onClose={() => {
+            setMoreOpen(false)
+            setMoreForm(null)
+          }}
+          onChanged={onChanged}
+          onEntryGone={onEntryGone}
+        />
+      ) : null}
+      {moreForm === null ? null : (
+        <MoreActions
+          key={moreForm}
+          page={page}
+          entries={entries}
+          form={moreForm}
+          onPick={() => undefined}
+          onClose={() => setMoreForm(null)}
+          onChanged={onChanged}
+          onEntryGone={onEntryGone}
+        />
+      )}
 
       <section className="entries-rail-section" aria-label="主词形">
         <p className="section-label">主词形</p>
@@ -431,16 +482,6 @@ export function NoteRail({
             {error}
           </p>
         )}
-      </section>
-
-      <section className="entries-rail-section" aria-label="更多">
-        <p className="section-label">更多</p>
-        <MoreActions
-          page={page}
-          entries={entries}
-          onChanged={onChanged}
-          onEntryGone={onEntryGone}
-        />
       </section>
     </aside>
   )

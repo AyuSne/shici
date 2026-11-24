@@ -143,7 +143,7 @@ async function containerState(
 }
 
 async function openRail(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /^学习内容/ }).click()
+  await page.getByRole('button', { name: /^展开学习内容/ }).click()
   await expect(page.locator('.entries-rail-open')).toBeVisible()
 }
 

@@ -248,6 +248,21 @@ describe('readEntryList search hits', () => {
       entrySentenceId: conclusion.sentence.id
     })
   })
+
+  it('列表行带回已收集的变体，按首次收集排且不含主词形', () => {
+    collect(database, firstArticle, 0, 'approach', T0)
+    collect(database, secondArticle, 0, 'approaches', T1)
+    collect(database, firstArticle, 1, 'approached', T2)
+    collect(database, firstArticle, 0, 'Approaching', T3)
+
+    const listing = readEntryList(database, {})
+
+    expect(listing.entries).toHaveLength(1)
+    expect(listing.entries[0]).toMatchObject({
+      mainForm: 'approach',
+      variants: ['approaches', 'approached', 'Approaching']
+    })
+  })
 })
 
 describe('readEntryPage', () => {
