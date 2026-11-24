@@ -112,7 +112,15 @@ describe('buildReadingBlocks', () => {
           {
             kind: 'text',
             text: 'hard',
-            mark: { entryId: 'entry-1', label: 'hard', selected: false }
+            mark: {
+              entryId: 'entry-1',
+              markId: null,
+              label: 'hard',
+              selected: false,
+              ink: false,
+              masked: false,
+              maskRevealed: false
+            }
           },
           { kind: 'text', text: ' sentences easier.' }
         ]

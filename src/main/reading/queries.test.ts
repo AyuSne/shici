@@ -7,6 +7,7 @@ import { importCorpus } from '../corpus/import'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate } from '../db/migrations'
 import { writeSetting } from '../db/settings'
+import { createLearningNote, pinLearningNote } from '../entries/notes'
 import { collectSelection } from '../entries/queries'
 import { markArticleCompleted, readHomeSummary } from '../library/queries'
 import {
@@ -51,7 +52,12 @@ const olderReading = fixtureArticle({
   year: 2023,
   month: 12,
   set: 1,
-  sentences: [['Old passages still repay a visit.', 'Review begins with the sentence.']]
+  sentences: [[
+    'Old passages still repay a visit.',
+    'Review begins with the sentence.',
+    'A quiet hour of reading repays the visit.',
+    'A hard sentence rewards a slow reading.'
+  ]]
 })
 
 // 段落 id 不是字母的长篇匹配：段首字母按段序补，超过 P 的段不编号。
@@ -442,6 +448,63 @@ describe('readReadingView', () => {
       sentenceOrdinal: 0,
       start: 21,
       end: 25
+    })
+  })
+
+  it('带出全局阅读偏好、本篇已识词数与标记的置顶内容 / 故人重逢', () => {
+    const olderText =
+      'Old passages still repay a visit. Review begins with the sentence. A quiet hour of reading repays the visit. A hard sentence rewards a slow reading.'
+    // 「reading」只在别篇收过，本篇正文里出现；它也该算进本篇已识词数。
+    const reading = collectWord(olderReading.id, '1', olderText, 2, 'reading', '2026-11-18T07:00:00.000Z')
+    // 「hard」两边都收过：本篇的标记要带出别篇那条故人重逢。
+    const olderHard = collectWord(
+      olderReading.id,
+      '1',
+      olderText,
+      3,
+      'hard',
+      '2026-11-18T08:00:00.000Z'
+    )
+    const hard = collectWord(
+      carefulReading.id,
+      '1',
+      'Reading widely makes hard sentences easier. Context carries most of the meaning.',
+      0,
+      'hard',
+      '2026-11-18T09:00:00.000Z'
+    )
+    if (reading.status === 'rejected' || olderHard.status === 'rejected' || hard.status === 'rejected') {
+      throw new Error('夹具收词被拒绝')
+    }
+
+    const note = createLearningNote(database, {
+      entryId: hard.entry.id,
+      body: 'hard 在这里是「难懂的」，不是「坚硬的」。'
+    })
+    if (note.status !== 'saved') throw new Error('学习内容没有写成')
+    pinLearningNote(database, { noteId: note.note.id, pinned: true })
+
+    const view = readReadingView(database, carefulReading.id)
+    expect(view?.globalPreferences).toEqual({
+      silentCollection: false,
+      marginNoteMode: 'all',
+      lightMask: false
+    })
+    expect(view?.knownWordCount).toBe(2)
+    expect(view?.collected).toHaveLength(1)
+    expect(view?.collected[0]).toMatchObject({
+      surface: 'hard',
+      glance: {
+        pinnedNote: { id: note.note.id, excerpt: 'hard 在这里是「难懂的」，不是「坚硬的」。' },
+        encounter: {
+          entrySentenceId: olderHard.sentence.id,
+          articleId: olderReading.id,
+          articleTitle: '2023年12月 · 第1套 · 仔细阅读 Passage One',
+          paragraphOrdinal: 1,
+          sentenceText: 'A hard sentence rewards a slow reading.',
+          surface: 'hard'
+        }
+      }
     })
   })
 

@@ -2,7 +2,7 @@ import { importCorpus } from '../../src/main/corpus/import'
 import { openDatabase } from '../../src/main/db/database'
 import { migrate } from '../../src/main/db/migrations'
 import { collectSelection } from '../../src/main/entries/queries'
-import { createLearningNote } from '../../src/main/entries/notes'
+import { createLearningNote, pinLearningNote } from '../../src/main/entries/notes'
 import type { FixtureEntry } from '../../src/testing/corpus-fixture'
 import { databasePath } from './database'
 
@@ -22,6 +22,8 @@ export type SeedPick = {
 export type SeedNote = {
   entryMainForm: string
   body: string
+  /** 阅读卡与悬停一瞥只展示置顶那条。 */
+  pinned?: boolean
 }
 
 type JsonParagraph = {
@@ -82,7 +84,13 @@ export function seedWordEntries(
       if (!entry) {
         throw new Error(`没有词条 ${note.entryMainForm}`)
       }
-      createLearningNote(database, { entryId: entry.id, body: note.body })
+      const created = createLearningNote(database, { entryId: entry.id, body: note.body })
+      if (note.pinned === true) {
+        if (created.status !== 'saved') {
+          throw new Error(`学习内容没有写成：${note.entryMainForm}`)
+        }
+        pinLearningNote(database, { noteId: created.note.id, pinned: true })
+      }
     }
   } finally {
     database.close()
