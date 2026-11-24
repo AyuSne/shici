@@ -735,7 +735,7 @@ button:focus-visible {
   color: var(--paper);
   box-shadow: var(--shadow-dialog);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   transform: translateX(-50%);
   animation: toast-in var(--motion-float) var(--ease-paper);
 }

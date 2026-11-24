@@ -7,10 +7,19 @@ const api = vi.hoisted(() => ({
   loadThreads: vi.fn(),
   updateThreadContext: vi.fn(),
   openThreadForMainRequest: vi.fn(),
-  packArticleWords: vi.fn()
+  packArticleWords: vi.fn(),
+  createGroupThread: vi.fn(),
+  createThread: vi.fn(),
+  askThread: vi.fn()
 }))
 
 vi.mock('../api', () => api)
+
+const windowApi = vi.hoisted(() => ({
+  invoke: vi.fn().mockResolvedValue({ accepted: true }),
+  subscribe: vi.fn()
+}))
+vi.stubGlobal('window', { api: windowApi })
 
 /** 导航是页面级副作用；in-place 打开要求它完全不被调用。 */
 const navigation = vi.hoisted(() => ({
@@ -88,6 +97,10 @@ beforeEach(async () => {
   api.updateThreadContext.mockReset()
   api.openThreadForMainRequest.mockReset()
   api.packArticleWords.mockReset()
+  api.createGroupThread.mockReset()
+  api.createThread.mockReset()
+  api.askThread.mockReset()
+  windowApi.invoke.mockClear()
   navigation.navigate.mockReset()
   navigation.replaceRoute.mockReset()
   navigation.forgetChatThread.mockReset()
@@ -190,7 +203,7 @@ describe('就地打开对话（迷你轻问抽屉）', () => {
     expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-page' })
   })
 
-  it('in-place 与完整页的同一对象请求不共享同一个在途操作，互不吞掉导航意图', async () => {
+  it('就地先发起、完整页随后是更新的意图：完整页导航胜出，旧就地打开不返回成功 id', async () => {
     const inPlace = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
     const fullPage = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
     api.openThreadForMainRequest
@@ -203,8 +216,9 @@ describe('就地打开对话（迷你轻问抽屉）', () => {
     expect(api.openThreadForMainRequest).toHaveBeenCalledTimes(2)
     inPlace.resolve({ status: 'created', thread: view('t-local', []) })
     fullPage.resolve({ status: 'created', thread: view('t-page', []) })
-    await expect(local).resolves.toBe('t-local')
+    await expect(local).resolves.toBeNull()
     await expect(page).resolves.toBe('t-page')
+    expect(store.getChatStore().currentId).toBe('t-page')
     expect(navigation.navigate).toHaveBeenCalledTimes(1)
     expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-page' })
   })
@@ -277,7 +291,7 @@ describe('就地/完整页打开的所有权与最新意图', () => {
     expect(navigation.navigate).toHaveBeenCalledTimes(1)
 
     pendingA.resolve({ status: 'created', thread: view('t-older', []) })
-    await expect(a).resolves.toBe('t-older')
+    await expect(a).resolves.toBeNull()
 
     expect(store.getChatStore().currentId).toBe('t-newer')
     expect(navigation.navigate).toHaveBeenCalledTimes(1)
@@ -333,6 +347,170 @@ describe('就地/完整页打开的所有权与最新意图', () => {
     expect(store.getChatStore().currentId).toBe('t-page')
     expect(navigation.navigate).toHaveBeenCalledTimes(1)
     expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-page' })
+  })
+})
+
+describe('跨入口的对话意图：任何真实打开方式都让旧请求过期', () => {
+  const mainA = { kind: 'entry', entryId: 'e-a' } as const
+
+  it('打开已有对话 B（B 还在读）时，晚到的 A 不激活、不返回成功 id，B 的读回仍生效', async () => {
+    const pendingA = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    const pendingB = deferred<Awaited<ReturnType<typeof api.loadThread>>>()
+    api.openThreadForMainRequest.mockReturnValueOnce(pendingA.promise)
+    api.loadThread.mockReturnValueOnce(pendingB.promise)
+
+    const a = store.openThreadForMain(mainA, { openInPlace: true })
+    store.openChatThread('t-existing')
+    expect(store.getChatStore().currentId).toBe('t-existing')
+
+    // A 先回来：B 的数据还在路上。旧代码会把 currentId 改成 A，随后 B 的读回
+    // 被 currentId guard 丢掉；正确行为是 A 过期，B 的读回照常落地。
+    pendingA.resolve({ status: 'created', thread: view('t-late-a', []) })
+    await expect(a).resolves.toBeNull()
+    expect(store.getChatStore().currentId).toBe('t-existing')
+
+    pendingB.resolve(view('t-existing', []))
+    await vi.waitFor(() =>
+      expect(store.getChatStore().current?.id).toBe('t-existing')
+    )
+    expect(store.getChatStore().error).toBeNull()
+    expect(navigation.navigate).not.toHaveBeenCalled()
+  })
+
+  it('打包打开 B 后，晚到的 A 不覆盖 B 的当前对话，也不再多导航一次', async () => {
+    const pendingA = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    const pendingPack = deferred<Awaited<ReturnType<typeof api.packArticleWords>>>()
+    api.openThreadForMainRequest.mockReturnValueOnce(pendingA.promise)
+    api.packArticleWords.mockReturnValueOnce(pendingPack.promise)
+
+    const a = store.openThreadForMain(mainA, { openInPlace: true })
+    const pack = store.openArticlePackThread('article-1')
+    pendingPack.resolve({
+      status: 'created',
+      thread: view('t-packed', []),
+      packedCount: 1,
+      totalCount: 1,
+      omittedCount: 0
+    })
+    await expect(pack).resolves.toMatchObject({ status: 'created' })
+    expect(store.getChatStore().currentId).toBe('t-packed')
+    expect(navigation.navigate).toHaveBeenCalledTimes(1)
+
+    pendingA.resolve({ status: 'created', thread: view('t-late-a', []) })
+    await expect(a).resolves.toBeNull()
+
+    expect(store.getChatStore().currentId).toBe('t-packed')
+    expect(navigation.navigate).toHaveBeenCalledTimes(1)
+    expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-packed' })
+    expect(store.getChatStore().error).toBeNull()
+  })
+
+  it('组词打开 B 后，晚到的 A 不覆盖 B，也不把错误写进 B', async () => {
+    const pendingA = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest.mockReturnValueOnce(pendingA.promise)
+    api.createGroupThread.mockResolvedValueOnce({ status: 'created', thread: view('t-group', []) })
+
+    const a = store.openThreadForMain(mainA, { openInPlace: true })
+    await expect(store.openGroupThread(['e-a'])).resolves.toBe('t-group')
+    expect(store.getChatStore().currentId).toBe('t-group')
+
+    pendingA.resolve({ status: 'created', thread: view('t-late-a', []) })
+    await expect(a).resolves.toBeNull()
+
+    expect(store.getChatStore().currentId).toBe('t-group')
+    expect(store.getChatStore().error).toBeNull()
+    expect(navigation.navigate).toHaveBeenCalledTimes(1)
+  })
+
+  it('空白对话先建好并激活后，晚到的 A 不把它换回旧线程', async () => {
+    const pendingA = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest.mockReturnValueOnce(pendingA.promise)
+    api.createThread.mockResolvedValueOnce({ status: 'created', thread: view('t-blank', []) })
+
+    const a = store.openThreadForMain(mainA, { openInPlace: true })
+    await expect(store.ensureBlankContextThread()).resolves.toMatchObject({ id: 't-blank' })
+    expect(store.getChatStore().currentId).toBe('t-blank')
+
+    pendingA.resolve({ status: 'created', thread: view('t-late-a', []) })
+    await expect(a).resolves.toBeNull()
+
+    expect(store.getChatStore().currentId).toBe('t-blank')
+    expect(store.getChatStore().error).toBeNull()
+  })
+
+  it('空白第一问的正常路径：路由对同一条线程再打开也不丢刚写下的 turn', async () => {
+    const ask = deferred<Awaited<ReturnType<typeof api.askThread>>>()
+    api.createThread.mockResolvedValueOnce({ status: 'created', thread: view('t-question', []) })
+    api.askThread.mockReturnValueOnce(ask.promise)
+
+    expect(store.sendChatMessage('正常第一问')).toBe(true)
+    await vi.waitFor(() => expect(api.askThread).toHaveBeenCalledTimes(1))
+    // 路由挂载会对当前线程再调一次 openChatThread；这不是切到别的对话。
+    store.openChatThread('t-question')
+
+    const askedThread = view('t-question', [])
+    ask.resolve({ status: 'asked', questionId: 'q-normal', thread: askedThread })
+    await vi.waitFor(() => expect(store.getChatStore().current).toBe(askedThread))
+    expect(store.getChatStore().session.generation?.threadId).toBe('t-question')
+    expect(store.getChatStore().session.generation?.questionId).toBe('q-normal')
+  })
+
+  it('空白第一问创建期间路由先落到空白对话：创建回来仍要占住它自己的当前线程', async () => {
+    const pendingCreate = deferred<Awaited<ReturnType<typeof api.createThread>>>()
+    const ask = deferred<Awaited<ReturnType<typeof api.askThread>>>()
+    api.createThread.mockReturnValueOnce(pendingCreate.promise)
+    api.askThread.mockReturnValueOnce(ask.promise)
+
+    expect(store.sendChatMessage('路由竞态也要显示')).toBe(true)
+    // ChatPage 的 mount effect 可能先于 createThread 回复执行；这是同一个空白意图。
+    store.openChatThread(null)
+    pendingCreate.resolve({ status: 'created', thread: view('t-race', []) })
+    await vi.waitFor(() => expect(api.askThread).toHaveBeenCalledTimes(1))
+
+    const askedThread = view('t-race', [])
+    ask.resolve({ status: 'asked', questionId: 'q-race', thread: askedThread })
+    await vi.waitFor(() => expect(store.getChatStore().current).toBe(askedThread))
+    expect(store.getChatStore().currentId).toBe('t-race')
+    expect(store.getChatStore().session.generation?.threadId).toBe('t-race')
+  })
+
+  it('空白第一问的创建迟到：问题仍写进 A 并在 A 生成，B 的当前对话不被改写', async () => {
+    const pendingCreate = deferred<Awaited<ReturnType<typeof api.createThread>>>()
+    const pendingAsk = deferred<Awaited<ReturnType<typeof api.askThread>>>()
+    const pendingB = deferred<Awaited<ReturnType<typeof api.loadThread>>>()
+    api.createThread.mockReturnValueOnce(pendingCreate.promise)
+    api.askThread.mockReturnValueOnce(pendingAsk.promise)
+    api.loadThread.mockReturnValueOnce(pendingB.promise)
+
+    expect(store.sendChatMessage('这个问题属于 A')).toBe(true)
+    store.openChatThread('t-existing')
+    expect(store.getChatStore().currentId).toBe('t-existing')
+
+    pendingCreate.resolve({ status: 'created', thread: view('t-question', []) })
+    await vi.waitFor(() =>
+      expect(api.askThread).toHaveBeenCalledWith({
+        threadId: 't-question',
+        text: '这个问题属于 A',
+        context: []
+      })
+    )
+
+    pendingAsk.resolve({
+      status: 'asked',
+      questionId: 'q-a',
+      thread: view('t-question', [])
+    })
+    await vi.waitFor(() =>
+      expect(store.getChatStore().session.generation?.threadId).toBe('t-question')
+    )
+
+    // B 的读回迟到：提问与生成留在 A，但当前界面仍是 B。
+    pendingB.resolve(view('t-existing', []))
+    await vi.waitFor(() => expect(store.getChatStore().current?.id).toBe('t-existing'))
+    expect(store.getChatStore().session.generation?.threadId).toBe('t-question')
+    expect(store.getChatStore().session.generation?.questionId).toBe('q-a')
+    expect(store.getChatStore().busy).toBe(false)
+    expect(store.getChatStore().error).toBeNull()
   })
 })
 

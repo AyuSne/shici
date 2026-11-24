@@ -210,6 +210,9 @@ function activateThread(view: ChatThreadView): void {
 }
 
 export function openChatThread(threadId: string | null): void {
+  // 打开一条已有线程（或空白线程）也是一次真实的对话意图：在途的主对象打开
+  // 必须立刻过期，不能等它的 IPC 回来再抢走当前对话。
+  claimConversationIntent()
   if (threadId === state.currentId && state.current !== null) {
     void refreshThreads()
     return
@@ -302,7 +305,20 @@ type OpenOwnership = {
 }
 
 const openingThreads = new Map<string, { promise: Promise<string | null>; claimants: OpenClaimants }>()
-let mainOpenSequence = 0
+/**
+ * 一次「用户现在要看哪条对话」的意图。所有真实打开入口（已有线程、主对象、
+ * 组词、打包、空白线程）都推进它；晚到的旧请求因此不能再激活/导航/报错。
+ */
+let conversationIntentSequence = 0
+
+function claimConversationIntent(): number {
+  conversationIntentSequence += 1
+  return conversationIntentSequence
+}
+
+function intentIsCurrent(intent: number): boolean {
+  return intent === conversationIntentSequence
+}
 
 function liveClaimant(claimants: OpenClaimants): boolean {
   return claimants.signals.some((signal) => signal === null || !signal.aborted)
@@ -331,10 +347,10 @@ export function openThreadForMain(
 ): Promise<string | null> {
   const signal = options.signal ?? null
   if (main.kind === 'none') {
-    const operation = ++mainOpenSequence
+    const intent = claimConversationIntent()
     const ownership: OpenOwnership = {
       isLive: () => signal === null || !signal.aborted,
-      isLatest: () => operation === mainOpenSequence
+      isLatest: () => intentIsCurrent(intent)
     }
     const pending = openMainThread(main, options, ownership)
     if (signal === null) return pending
@@ -352,10 +368,10 @@ export function openThreadForMain(
   let opening = openingThreads.get(key)
   if (opening === undefined) {
     const claimants: OpenClaimants = { signals: [signal] }
-    const operation = ++mainOpenSequence
+    const intent = claimConversationIntent()
     const ownership: OpenOwnership = {
       isLive: () => liveClaimant(claimants),
-      isLatest: () => operation === mainOpenSequence
+      isLatest: () => intentIsCurrent(intent)
     }
     const promise = openMainThread(main, options, ownership).finally(() => {
       openingThreads.delete(key)
@@ -408,8 +424,11 @@ async function openMainThread(
       if (options.openInPlace !== true) {
         navigate('chat', { threadId: thread.id })
       }
+      return thread.id
     }
-    return thread.id
+    // 过期/被别的入口接管的操作不返回成功 id：调用方不能拿它去开一个
+    // 与当前真正激活的对话不同的 UI。
+    return null
   } catch (error) {
     if (!ownership.isLive() || !ownership.isLatest()) return null
     fail(error, '没能开对话，再试一次。', () => {
@@ -456,8 +475,11 @@ export async function openGroupThread(
   }
   // caller 取消、离开页面或开始下一次尝试都会推进序号；迟到的结果不许再改当前状态。
   const operation = ++groupOpenSequence
+  const intent = claimConversationIntent()
   const isCurrent = (): boolean =>
-    operation === groupOpenSequence && options.signal?.aborted !== true
+    operation === groupOpenSequence &&
+    intentIsCurrent(intent) &&
+    options.signal?.aborted !== true
   try {
     const result = await createGroupThread({ entryIds: ids })
     if (!isCurrent()) return null
@@ -492,8 +514,11 @@ export async function openArticlePackThread(
   } = {}
 ): Promise<PackArticleWordsResult | null> {
   const operation = ++packOpenSequence
+  const intent = claimConversationIntent()
   const isCurrent = (): boolean =>
-    operation === packOpenSequence && options.signal?.aborted !== true
+    operation === packOpenSequence &&
+    intentIsCurrent(intent) &&
+    options.signal?.aborted !== true
   try {
     const result = await packArticleWords({ articleId })
     if (!isCurrent()) return null
@@ -515,14 +540,17 @@ export async function openArticlePackThread(
 /** 空白对话选材料时先创建对话，以便持久化所选上下文。 */
 export async function ensureBlankContextThread(): Promise<ChatThreadView | null> {
   if (state.current) return state.current
+  const intent = claimConversationIntent()
   try {
     const result = await createThread({ main: { kind: 'none' } })
+    if (!intentIsCurrent(intent)) return null
     if (result.status !== 'created') return null
     set({ current: result.thread, currentId: result.thread.id })
     replaceRoute('chat', { threadId: result.thread.id })
     void refreshThreads()
     return result.thread
   } catch (error) {
+    if (!intentIsCurrent(intent)) return null
     fail(error, '没能新建对话，再试一次。', null)
     return null
   }
@@ -546,39 +574,67 @@ export function sendChatMessage(raw: string): boolean {
 }
 
 async function submitQuestion(text: string): Promise<void> {
+  const intentAtStart = conversationIntentSequence
+  let blankIntent: number | null = null
+  let errorThreadId: string | null = null
+  const presentationOwned = (): boolean =>
+    blankIntent === null
+      ? intentAtStart === conversationIntentSequence
+      : intentIsCurrent(blankIntent)
+  // 路由挂载会对同一条线程再调一次 openChatThread，推进全局意图；这不是
+  // 「用户切到了别的对话」。只要线程仍是当前线程，更新它自己的 turn 就不算劫持。
+  const ownsThread = (threadId: string): boolean =>
+    presentationOwned() || state.currentId === threadId
   try {
     let view = state.current
     if (view === null) {
+      // 空白线程的第一问本身就是一次新的对话意图；但创建出来之后即使用户
+      // 已经切到 B，问题与回答仍归 A，只放弃把 A 摆到当前界面上。
+      blankIntent = claimConversationIntent()
       const created = await createThread({ main: { kind: 'none' } })
       if (created.status !== 'created') {
         set({ busy: false })
-        fail('没能新建对话。', '没能新建对话，再试一次。', () => {
-          set({ busy: true })
-          void submitQuestion(text)
-        })
+        if (presentationOwned()) {
+          fail('没能新建对话。', '没能新建对话，再试一次。', () => {
+            set({ busy: true })
+            void submitQuestion(text)
+          })
+        }
         return
       }
       view = created.thread
-      set({ current: view, currentId: view.id })
-      replaceRoute('chat', { threadId: view.id })
+      // 路由 mount effect 可能在新线程创建回来前先把空白对话记为当前意图；
+      // 只要此刻没有另一条当前线程，这条新线程仍是用户要的对话。
+      if (presentationOwned() || state.currentId === null) {
+        set({ current: view, currentId: view.id })
+        replaceRoute('chat', { threadId: view.id })
+      }
     }
+    errorThreadId = view.id
 
     const asked = await askThread({ threadId: view.id, text, context: view.context })
     if (asked.status !== 'asked') {
       set({ busy: false })
-      fail(
-        asked.status === 'rejected' ? questionRejectText(asked.reason) : '这条对话已经不在了。',
-        '这条提问没有发出去。',
-        asked.status === 'rejected'
-          ? null
-          : () => {
-              set({ busy: true })
-              void submitQuestion(text)
-            }
-      )
+      if (ownsThread(view.id)) {
+        fail(
+          asked.status === 'rejected' ? questionRejectText(asked.reason) : '这条对话已经不在了。',
+          '这条提问没有发出去。',
+          asked.status === 'rejected'
+            ? null
+            : () => {
+                set({ busy: true })
+                void submitQuestion(text)
+              }
+        )
+      }
       return
     }
-    set({ current: asked.thread, busy: false })
+    // 过期只代表不再展示 A：提问已经写进 A，回答生成仍归属 A，B 的正文不被改写。
+    if (ownsThread(asked.thread.id)) {
+      set({ current: asked.thread, busy: false })
+    } else {
+      set({ busy: false })
+    }
     void refreshThreads()
     startGeneration(asked.thread, { kind: 'answer' }, {
       mode: 'answer',
@@ -590,10 +646,12 @@ async function submitQuestion(text: string): Promise<void> {
     })
   } catch (error) {
     set({ busy: false })
-    fail(error, '这次提问没有发出去，再试一次。', () => {
-      set({ busy: true })
-      void submitQuestion(text)
-    })
+    if (errorThreadId === null || ownsThread(errorThreadId)) {
+      fail(error, '这次提问没有发出去，再试一次。', () => {
+        set({ busy: true })
+        void submitQuestion(text)
+      })
+    }
   }
 }
 

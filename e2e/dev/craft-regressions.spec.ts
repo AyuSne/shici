@@ -179,6 +179,7 @@ test('导航 / 选择器 / Toast / 钉住竖线的运行时样式符合 token', 
     const fresh = document.querySelector('.is-fresh-pin')
     return {
       toastFont: getComputedStyle(toast).fontSize,
+      toastLineHeight: getComputedStyle(toast).lineHeight,
       progressTransform: getComputedStyle(progress).transform,
       countdownFrames: keyframesOf('toast-countdown'),
       pinFrames: keyframesOf('pin-line-draw'),
@@ -190,6 +191,8 @@ test('导航 / 选择器 / Toast / 钉住竖线的运行时样式符合 token', 
     }
   })
   expect(animationStyles.toastFont).toBe('12px')
+  // caption 角色是 12/16，不能只有字号对、行高停在 18。
+  expect(animationStyles.toastLineHeight).toBe('16px')
   expect(animationStyles.progressTransform).toBe('none')
 
   expect(animationStyles.countdownFrames.length).toBeGreaterThan(0)

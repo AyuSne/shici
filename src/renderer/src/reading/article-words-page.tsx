@@ -281,10 +281,12 @@ export function ArticleWordsPage({
       if (controller.signal.aborted) return
       if (mounted.current) setPacking(false)
       if (result === null) {
-        showToast({
-          message: getChatStore().error ?? '没能把本篇的词打包问模型，再试一次。',
-          tone: 'error'
-        })
+        if (getChatStore().error !== null) {
+          showToast({
+            message: getChatStore().error ?? '没能把本篇的词打包问模型，再试一次。',
+            tone: 'error'
+          })
+        }
         return
       }
       if (result.status === 'created') return

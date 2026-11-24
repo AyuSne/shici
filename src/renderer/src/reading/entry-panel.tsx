@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react'
+import { useRef, useState, type RefObject } from 'react'
 import type { EntryLearningGlance, WordEntryCard } from '../../../shared/entries'
 import { DictionaryView } from '../dictionary/dictionary-view'
 import { phoneticText } from '../dictionary/presentation'
@@ -145,15 +145,27 @@ function SentenceRow({
   onDelete: (entrySentenceId: string) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const toggleRef = useRef<HTMLButtonElement>(null)
   return (
     <li className="reading-panel-sentence-row">
       <blockquote className="reading-panel-sentence">{sentence.sentenceText}</blockquote>
       <p className="reading-panel-source">
         {sentence.articleTitle} · 第 {sentence.paragraphOrdinal} 段 · {sentence.surface}
       </p>
-      <div className="reading-panel-sentence-more">
+      <div
+        className="reading-panel-sentence-more"
+        onKeyDown={(event) => {
+          // Esc 的层级是：先收这一行的菜单，再轮到整张词条卡。
+          if (event.key !== 'Escape' || !menuOpen) return
+          event.preventDefault()
+          event.stopPropagation()
+          setMenuOpen(false)
+          toggleRef.current?.focus()
+        }}
+      >
         <button
           type="button"
+          ref={toggleRef}
           className="reading-panel-more-toggle"
           aria-label="原句操作"
           aria-haspopup="menu"
@@ -171,6 +183,7 @@ function SentenceRow({
               className="reading-panel-delete"
               aria-label="删除这条原句"
               disabled={deleting}
+              autoFocus
               onClick={() => {
                 setMenuOpen(false)
                 onDelete(sentence.id)

@@ -33,14 +33,49 @@ describe('homeSentenceSegments', () => {
     ])
   })
 
-  it('重叠区间取先给出的那一段，不重复输出文字', () => {
+  it('同起点的词与短语并集覆盖到更长的短语，不丢后半段', () => {
+    const text = 'Readers approach new methods.'
+    const segments = homeSentenceSegments(text, [
+      { entryId: 'e-word', mainForm: 'approach', surface: 'approach', start: 8, end: 16 },
+      {
+        entryId: 'e-phrase',
+        mainForm: 'approach new',
+        surface: 'approach new',
+        start: 8,
+        end: 20
+      }
+    ])
+    expect(segments.map((segment) => segment.text).join('')).toBe(text)
+    expect(segments).toEqual([
+      { text: 'Readers ', entryId: null },
+      { text: 'approach new', entryId: 'e-phrase' },
+      { text: ' methods.', entryId: null }
+    ])
+  })
+
+  it('部分重叠的区间取并集，不丢任何已收集字符且不重复输出', () => {
+    const text = 'alpha bravo charlie'
+    const segments = homeSentenceSegments(text, [
+      { entryId: 'e-a', mainForm: 'alpha b', surface: 'alpha b', start: 0, end: 7 },
+      { entryId: 'e-b', mainForm: ' bravo', surface: ' bravo', start: 5, end: 11 }
+    ])
+    expect(segments.map((segment) => segment.text).join('')).toBe(text)
+    expect(segments).toEqual([
+      { text: 'alpha bravo', entryId: 'e-b' },
+      { text: ' charlie', entryId: null }
+    ])
+  })
+
+  it('互不相交的区间仍是两段标记，中间空白保持普通文本', () => {
     const segments = homeSentenceSegments('alpha bravo', [
       { entryId: 'e-1', mainForm: 'alpha', surface: 'alpha', start: 0, end: 5 },
-      { entryId: 'e-2', mainForm: 'alpha bravo', surface: 'alpha bravo', start: 0, end: 11 }
+      { entryId: 'e-2', mainForm: 'bravo', surface: 'bravo', start: 6, end: 11 }
     ])
-    expect(segments.map((segment) => segment.text).join('')).toBe('alpha bravo')
-    expect(segments.filter((segment) => segment.entryId !== null)).toHaveLength(1)
-    expect(segments[0]).toEqual({ text: 'alpha', entryId: 'e-1' })
+    expect(segments).toEqual([
+      { text: 'alpha', entryId: 'e-1' },
+      { text: ' ', entryId: null },
+      { text: 'bravo', entryId: 'e-2' }
+    ])
   })
 
   it('越界、倒序、非整数区间与空文本都按普通文本处理', () => {

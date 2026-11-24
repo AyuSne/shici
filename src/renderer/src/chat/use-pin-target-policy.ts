@@ -30,7 +30,6 @@ export type PinTargetPolicy = {
   defaultTarget: PinTargetView
   /** 用户确认弹层后调用；原样接受自动预选不会记成手动偏好。 */
   rememberChoice: (initial: PinTargetView, chosen: PinTargetView) => void
-  clearPreference: () => void
 }
 
 /**
@@ -94,9 +93,6 @@ export function usePinTargetPolicy(input: {
         return
       }
       manualByThread.set(threadId, { target: next, mainKey })
-    },
-    clearPreference: () => {
-      if (threadId !== null) manualByThread.delete(threadId)
     }
   }
 }

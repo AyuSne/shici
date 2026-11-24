@@ -276,6 +276,30 @@ describe('首页继续阅读原句里的已拾区间', () => {
     ])
   })
 
+  it('同句收下词与包含它的短语时，两条权威区间都会返回，交给渲染层做并集', () => {
+    openArticle(database, thirdArticle.id, { now: T0 })
+    const wordId = collect(thirdArticle, 0, 'Reading', T0)
+    const phraseId = collect(thirdArticle, 0, 'Reading keeps reading', T1)
+
+    const summary = readHomeSummary(database)
+    if (summary.continueReading === null) throw new Error('应该有续读篇目')
+    const highlights = summary.continueReading.lastReadPointHighlights
+    expect(highlights).toEqual([
+      expect.objectContaining({
+        entryId: wordId,
+        surface: 'Reading',
+        start: 0,
+        end: 7
+      }),
+      expect.objectContaining({
+        entryId: phraseId,
+        surface: 'Reading keeps reading',
+        start: 0,
+        end: 21
+      })
+    ])
+  })
+
   it('只取保存句里的区间：同篇别的句子与别的文章都不混进来', () => {
     openArticle(database, firstArticle.id, { now: T0 })
     const approachId = collect(firstArticle, 0, 'approach', T0)

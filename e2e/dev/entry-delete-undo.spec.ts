@@ -82,6 +82,28 @@ test('非最后一条从次级菜单删除：顶部撤销恢复原句、卡片�
   await expect(card.getByRole('button', { name: '删除这条原句' })).toHaveCount(0)
   await expect(card.getByRole('button', { name: '原句操作' })).toHaveCount(2)
 
+  // 菜单要有点击区、层级与 Esc 层级：Esc 先收菜单，不收起整张词条卡。
+  const moreButton = card.getByRole('button', { name: '原句操作' }).first()
+  await moreButton.click()
+  const menu = card.getByRole('menu', { name: '原句操作' })
+  await expect(menu).toBeVisible()
+  const moreBox = await moreButton.boundingBox()
+  if (moreBox === null) throw new Error('没有量到原句操作按钮')
+  expect(moreBox.width).toBeGreaterThanOrEqual(24)
+  expect(moreBox.height).toBeGreaterThanOrEqual(24)
+  const menuStyle = await menu.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return { radius: style.borderRadius, zIndex: style.zIndex }
+  })
+  expect(menuStyle.radius).toBe('10px')
+  expect(Number(menuStyle.zIndex)).toBeGreaterThan(1)
+  expect(
+    await moreButton.evaluate((element) => getComputedStyle(element).borderRadius)
+  ).toBe('8px')
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(card).toBeVisible()
+
   await deleteFromMenu(card)
   await expect(card.getByText('已收集 1 条原句 · 来自 1 篇文章')).toBeVisible()
   await expect(page.locator('.reading-collected')).toHaveCount(1)
