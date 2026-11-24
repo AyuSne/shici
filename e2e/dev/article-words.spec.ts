@@ -38,7 +38,7 @@ test.afterAll(async () => {
   await rm(corpusDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
 })
 
-test('从阅读页页脚进入本篇选词，按段落列出词条与原句，点词条选中对应词条', async ({
+test('从阅读顶栏查看本篇已拾词，按段落列出词条与原句，点词条选中对应词条', async ({
   launch,
   userDataDirectory
 }) => {
@@ -52,7 +52,7 @@ test('从阅读页页脚进入本篇选词，按段落列出词条与原句，�
   const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
   await openArticle(page, TITLE)
 
-  await page.getByRole('button', { name: '进入本篇选词' }).click()
+  await page.getByRole('button', { name: '查看本篇已拾词' }).click()
 
   await expect(page.locator('[data-article-words="true"]')).toBeVisible()
   await expect(page.getByRole('heading', { name: TITLE, level: 1 })).toBeVisible()
@@ -78,13 +78,17 @@ test('从阅读页页脚进入本篇选词，按段落列出词条与原句，�
   )
   await expect(entries.nth(1).locator('.article-words-surface')).toHaveText('Practice')
 
+  // 点词条本身是原地展开词典；去词条页要显式点「打开词条」。
   await entries.nth(1).locator('.article-words-entry-link').click()
+  await expect(entries.nth(1).locator('.article-words-dictionary')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toContain('/words')
+  await entries.nth(1).getByRole('button', { name: '打开词条' }).click()
   await expect(page.getByRole('heading', { name: '词条', level: 1 })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Practice', level: 2 })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/entries\//)
 })
 
-test('页脚进入本篇选词后，左上返回指向阅读页而不是文章库', async ({
+test('底部读完进入本篇选词后，左上返回指向阅读页而不是文章库', async ({
   launch,
   userDataDirectory
 }) => {
@@ -94,7 +98,7 @@ test('页脚进入本篇选词后，左上返回指向阅读页而不是文章�
   const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
   await openArticle(page, TITLE)
 
-  await page.getByRole('button', { name: '进入本篇选词' }).click()
+  await page.getByRole('button', { name: '读完并整理本篇选词' }).click()
   await expect(page.locator('[data-article-words="true"]')).toBeVisible()
 
   // 页脚是直接上游：说「返回阅读」，回阅读页，且阅读页自己的「返回文章库」没被改写。
@@ -118,20 +122,21 @@ test('阅读页原本来自词条或首页时，经本篇选词回来仍回到�
   })
   const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
 
-  // 首页 → 继续阅读 → 本篇选词 → 返回阅读 → 返回首页。先走这条：它会把本篇标成
-  // 已读完，必须在首页还有「继续阅读」时做。
+  // 首页 → 继续阅读 → 本篇选词 → 返回阅读 → 返回首页。顶栏查看不写完成时间，
+  // 首页的「继续阅读」仍在。
   await openArticle(page, TITLE)
   await page.keyboard.press('Escape')
   await page.getByRole('navigation', { name: '全局导航' })
     .getByRole('button', { name: '首页' }).click()
   await page.getByRole('button', { name: '继续阅读' }).click()
   await expect(page.getByRole('button', { name: '返回首页' })).toBeVisible()
-  await page.getByRole('button', { name: '进入本篇选词' }).click()
+  await page.getByRole('button', { name: '查看本篇已拾词' }).click()
   await expect(page.getByRole('button', { name: '返回阅读' })).toBeVisible()
   await page.getByRole('button', { name: '返回阅读' }).click()
   await expect(page.getByRole('button', { name: '返回首页' })).toBeVisible()
   await page.getByRole('button', { name: '返回首页' }).click()
-  await expect(page.getByRole('button', { name: '从文章库挑一篇' })).toBeVisible()
+  // 顶栏查看不写完成时间：首页仍有「继续阅读」，不是「都读完了」的空态。
+  await expect(page.getByRole('region', { name: '继续阅读' })).toBeVisible()
 
   // 词条 → 原文 → 本篇选词 → 返回阅读 → 返回词条。
   await page.getByRole('navigation', { name: '全局导航' })
@@ -139,7 +144,7 @@ test('阅读页原本来自词条或首页时，经本篇选词回来仍回到�
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
   await page.getByRole('button', { name: '回到原文' }).first().click()
   await expect(page.getByRole('button', { name: '返回词条' })).toBeVisible()
-  await page.getByRole('button', { name: '进入本篇选词' }).click()
+  await page.getByRole('button', { name: '查看本篇已拾词' }).click()
   await expect(page.getByRole('button', { name: '返回阅读' })).toBeVisible()
   await page.getByRole('button', { name: '返回阅读' }).click()
   await expect(page.getByRole('button', { name: '返回词条' })).toBeVisible()
@@ -229,7 +234,7 @@ test('进入、退出与刷新本篇选词都不改阅读位置与本篇阅读�
   const footer = (await page.locator('.reading-foot span').first().textContent()) ?? ''
   expect(footer).toMatch(/读到 第 \d+ 段 · 第 \d+ 句/)
 
-  await page.getByRole('button', { name: '进入本篇选词' }).click()
+  await page.getByRole('button', { name: '查看本篇已拾词' }).click()
   await expect(page.locator('[data-article-words="true"]')).toBeVisible()
   await page.getByRole('button', { name: '回到阅读' }).click()
   await expect(page.locator('[data-reading-page="true"]')).toBeVisible()
@@ -237,7 +242,7 @@ test('进入、退出与刷新本篇选词都不改阅读位置与本篇阅读�
   expect(await readingFontSize(page)).toBe('22px')
 
   // 刷新停留在本篇选词的地址：仍是本篇选词；回阅读后仍是同一条位置、同一份设置。
-  await page.getByRole('button', { name: '进入本篇选词' }).click()
+  await page.getByRole('button', { name: '查看本篇已拾词' }).click()
   await expect(page.locator('[data-article-words="true"]')).toBeVisible()
   const wordsHash = await page.evaluate(() => window.location.hash)
   await page.reload()

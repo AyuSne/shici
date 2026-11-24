@@ -78,3 +78,20 @@ export function callUnknownChannel(page: Page): Promise<string | null> {
     }
   })
 }
+
+/**
+ * 让某个真实 IPC 通道在这一次调用里失败：用于验证界面失败时不变脏、不做乐观更新。
+ * 只替换这一条通道，其余处理函数与真实服务不动；用例进程结束即恢复。
+ */
+export async function failIpcReply(
+  app: ElectronApplication,
+  channel: IpcChannel,
+  message = 'e2e 模拟失败'
+): Promise<void> {
+  await app.evaluate(({ ipcMain }, { channel: target, message: text }) => {
+    ipcMain.removeHandler(target)
+    ipcMain.handle(target, () => {
+      throw new Error(text)
+    })
+  }, { channel, message })
+}

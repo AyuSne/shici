@@ -5,10 +5,21 @@ import type { ChatThreadView, ThreadContextItem } from '../../../shared/threads'
 const api = vi.hoisted(() => ({
   loadThread: vi.fn(),
   loadThreads: vi.fn(),
-  updateThreadContext: vi.fn()
+  updateThreadContext: vi.fn(),
+  openThreadForMainRequest: vi.fn(),
+  packArticleWords: vi.fn()
 }))
 
 vi.mock('../api', () => api)
+
+/** 导航是页面级副作用；in-place 打开要求它完全不被调用。 */
+const navigation = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  replaceRoute: vi.fn(),
+  forgetChatThread: vi.fn()
+}))
+
+vi.mock('../navigate', () => navigation)
 
 function deferred<T>(): {
   promise: Promise<T>
@@ -75,6 +86,11 @@ beforeEach(async () => {
   api.loadThread.mockReset()
   api.loadThreads.mockReset()
   api.updateThreadContext.mockReset()
+  api.openThreadForMainRequest.mockReset()
+  api.packArticleWords.mockReset()
+  navigation.navigate.mockReset()
+  navigation.replaceRoute.mockReset()
+  navigation.forgetChatThread.mockReset()
   api.loadThreads.mockResolvedValue({ threads: [] })
   store = await import('./store')
 })
@@ -147,5 +163,121 @@ describe('changeContext 的恢复读', () => {
     await Promise.resolve()
     expect(store.getChatStore().currentId).toBe('t-2')
     expect(store.getChatStore().current?.context.map((item) => item.id)).toEqual([gamma.id])
+  })
+})
+
+describe('就地打开对话（迷你轻问抽屉）', () => {
+  const main = { kind: 'entry', entryId: 'e-1' } as const
+
+  it('openInPlace 只激活线程、不导航；默认仍走完整对话页', async () => {
+    api.openThreadForMainRequest.mockResolvedValueOnce({
+      status: 'created',
+      thread: view('t-in-place', [])
+    })
+
+    await store.openThreadForMain(main, { openInPlace: true })
+
+    expect(store.getChatStore().currentId).toBe('t-in-place')
+    expect(navigation.navigate).not.toHaveBeenCalled()
+
+    api.openThreadForMainRequest.mockResolvedValueOnce({
+      status: 'created',
+      thread: view('t-page', [])
+    })
+    await store.openThreadForMain(main)
+
+    expect(store.getChatStore().currentId).toBe('t-page')
+    expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-page' })
+  })
+
+  it('in-place 与完整页的同一对象请求不共享同一个在途操作，互不吞掉导航意图', async () => {
+    const inPlace = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    const fullPage = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest
+      .mockReturnValueOnce(inPlace.promise)
+      .mockReturnValueOnce(fullPage.promise)
+
+    const local = store.openThreadForMain(main, { openInPlace: true })
+    const page = store.openThreadForMain(main)
+
+    expect(api.openThreadForMainRequest).toHaveBeenCalledTimes(2)
+    inPlace.resolve({ status: 'created', thread: view('t-local', []) })
+    fullPage.resolve({ status: 'created', thread: view('t-page', []) })
+    await expect(local).resolves.toBe('t-local')
+    await expect(page).resolves.toBe('t-page')
+    expect(navigation.navigate).toHaveBeenCalledTimes(1)
+    expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-page' })
+  })
+
+  it('一个调用方取消不会误取消另一个有效调用方，迟到的激活也不会替取消方导航', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.openThreadForMainRequest>>>()
+    api.openThreadForMainRequest.mockReturnValueOnce(pending.promise)
+    const controller = new AbortController()
+
+    const cancelled = store.openThreadForMain(main, {
+      openInPlace: true,
+      signal: controller.signal
+    })
+    const valid = store.openThreadForMain(main, { openInPlace: true })
+    expect(api.openThreadForMainRequest).toHaveBeenCalledTimes(1)
+
+    controller.abort()
+    pending.resolve({ status: 'created', thread: view('t-shared', []) })
+
+    await expect(cancelled).resolves.toBeNull()
+    await expect(valid).resolves.toBe('t-shared')
+    expect(store.getChatStore().currentId).toBe('t-shared')
+    expect(navigation.navigate).not.toHaveBeenCalled()
+  })
+})
+
+describe('本篇未整理词打包问模型', () => {
+  it('创建成功才激活线程并跳对话页；没有可打包的词时不动当前对话也不跳', async () => {
+    api.packArticleWords.mockResolvedValueOnce({
+      status: 'created',
+      thread: view('t-pack', []),
+      packedCount: 2,
+      totalCount: 3,
+      omittedCount: 1
+    })
+
+    const created = await store.openArticlePackThread('article-1')
+
+    expect(created).toMatchObject({ status: 'created', packedCount: 2, omittedCount: 1 })
+    expect(store.getChatStore().currentId).toBe('t-pack')
+    expect(navigation.navigate).toHaveBeenCalledWith('chat', { threadId: 't-pack' })
+
+    navigation.navigate.mockClear()
+    const before = store.getChatStore().currentId
+    api.packArticleWords.mockResolvedValueOnce({
+      status: 'empty',
+      reason: 'all-organized',
+      totalCount: 0
+    })
+    const empty = await store.openArticlePackThread('article-1')
+
+    expect(empty).toEqual({ status: 'empty', reason: 'all-organized', totalCount: 0 })
+    expect(store.getChatStore().currentId).toBe(before)
+    expect(navigation.navigate).not.toHaveBeenCalled()
+  })
+
+  it('迟到的打包结果在取消后不激活、不导航', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof api.packArticleWords>>>()
+    api.packArticleWords.mockReturnValueOnce(pending.promise)
+    const controller = new AbortController()
+
+    const call = store.openArticlePackThread('article-1', { signal: controller.signal })
+    controller.abort()
+    pending.resolve({
+      status: 'created',
+      thread: view('t-late', []),
+      packedCount: 1,
+      totalCount: 1,
+      omittedCount: 0
+    })
+
+    await expect(call).resolves.toBeNull()
+    expect(store.getChatStore().currentId).toBeNull()
+    expect(navigation.navigate).not.toHaveBeenCalled()
   })
 })

@@ -14,6 +14,7 @@ import {
   findRecentThreadForMain,
   listThreads,
   openThreadForMain,
+  packArticleUnorganizedWords,
   readContextCandidates,
   readArticleContextMaterials,
   readThreadView,
@@ -78,7 +79,8 @@ import {
   readArticleDetail,
   readHomeSummary,
   readLibrary,
-  searchLibrary
+  searchLibrary,
+  unmarkArticleCompleted
 } from './library/queries'
 import {
   openReadingView,
@@ -275,6 +277,7 @@ function start(): void {
     'reading:open': (payload) => openReadingView(opened, payload.articleId),
     'reading:words': (payload) => readArticleWords(opened, payload.articleId),
     'reading:complete': (payload) => markArticleCompleted(opened, payload.articleId),
+    'reading:uncomplete': (payload) => unmarkArticleCompleted(opened, payload.articleId),
     'reading:progress': (payload) => saveReadingPoint(opened, payload),
     'reading:settings': (payload) => saveReadingSettings(opened, payload),
     // 静默圈词 / 页边眉批 / 轻遮重读都是不分篇的偏好，只落 setting 表。
@@ -321,6 +324,7 @@ function start(): void {
     'chat:thread': (payload) => readThreadView(opened, payload.threadId),
     'chat:create': (payload) => createThread(opened, payload),
     'chat:create-group': (payload) => createGroupThread(opened, payload),
+    'chat:pack-article': (payload) => packArticleUnorganizedWords(opened, payload),
     'chat:delete': (payload) => {
       // 两个操作都在主进程同步判断，活跃流不得被删除，已删除的对话也不能开新流。
       return chat.hasActiveThread(payload.threadId) ? { status: 'busy' } : deleteThread(opened, payload)

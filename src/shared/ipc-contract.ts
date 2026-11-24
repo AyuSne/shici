@@ -46,6 +46,7 @@ import type {
   LibraryListing,
   LibrarySearchResults,
   MarkArticleCompletedResult,
+  MarkArticleUncompletedResult,
   RenameArticleRequest,
   RenameArticleResult,
   SaveGeneratedArticleRequest,
@@ -136,6 +137,8 @@ import type {
   ExportThreadResult,
   OpenThreadForMainRequest,
   OpenThreadForMainResult,
+  PackArticleWordsRequest,
+  PackArticleWordsResult,
   QuestionResult,
   SaveAnswerRequest,
   SaveAnswerResult,
@@ -193,6 +196,11 @@ export interface IpcContract {
   'reading:complete': {
     payload: { articleId: string }
     result: MarkArticleCompletedResult
+  }
+  /** 收回「已读完」：只清完成时间，阅读位置、本篇设置与已收原句都保留。 */
+  'reading:uncomplete': {
+    payload: { articleId: string }
+    result: MarkArticleUncompletedResult
   }
   'reading:progress': { payload: ReadingProgressRequest; result: ReadingProgressResult }
   'reading:settings': { payload: ReadingSettingsRequest; result: ReadingSettingsResult | null }
@@ -272,6 +280,11 @@ export interface IpcContract {
   'chat:create-group': {
     payload: CreateGroupThreadRequest
     result: CreateGroupThreadResult
+  }
+  /** 把本篇未整理学习内容的词连同本文原句打包成一条新对话。 */
+  'chat:pack-article': {
+    payload: PackArticleWordsRequest
+    result: PackArticleWordsResult
   }
   'chat:delete': { payload: DeleteThreadRequest; result: DeleteThreadResult }
   'chat:find-for-main': { payload: CreateThreadRequest; result: ChatThreadView | null }
@@ -401,6 +414,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'reading:open': true,
   'reading:words': true,
   'reading:complete': true,
+  'reading:uncomplete': true,
   'reading:progress': true,
   'reading:settings': true,
   'reading:global-preferences': true,
@@ -434,6 +448,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'chat:thread': true,
   'chat:create': true,
   'chat:create-group': true,
+  'chat:pack-article': true,
   'chat:delete': true,
   'chat:find-for-main': true,
   'chat:open-for-main': true,

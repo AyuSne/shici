@@ -26,6 +26,7 @@ import type {
   LibraryListing,
   LibrarySearchResults,
   MarkArticleCompletedResult,
+  MarkArticleUncompletedResult,
   RenameArticleResult,
   SaveGeneratedArticleResult
 } from '../../shared/library'
@@ -55,6 +56,7 @@ import type {
   CreateGroupThreadResult,
   CreateThreadResult,
   ExportThreadResult,
+  PackArticleWordsResult,
   QuestionResult,
   SaveAnswerResult,
   SwitchThreadResult,
@@ -108,6 +110,7 @@ function chatHandlers() {
       status: 'rejected',
       reason: 'empty'
     }),
+    'chat:pack-article': (): PackArticleWordsResult => ({ status: 'missing' }),
     'chat:delete': () => ({ status: 'missing' as const }),
     'chat:find-for-main': (): ChatThreadView | null => null,
     'chat:open-for-main': (): CreateThreadResult => ({ status: 'rejected', reason: 'missing-main' }),
@@ -178,6 +181,7 @@ function readingHandlers() {
     'reading:open': (): ReadingView | null => null,
     'reading:words': (): ArticleWordsView | null => null,
     'reading:complete': (): MarkArticleCompletedResult => ({ status: 'missing' }),
+    'reading:uncomplete': (): MarkArticleUncompletedResult => ({ status: 'missing' }),
     'reading:progress': (): ReadingProgressResult => ({ saved: false }),
     'reading:settings': (): ReadingSettingsResult | null => null,
     'reading:global-preferences': (): ReadingGlobalPreferences => ({
@@ -423,11 +427,59 @@ describe('registerIpcHandlers', () => {
     expect(bootstrap.sidebarCollapsed).toBe(false)
   })
 
+  it('收回已读完进入契约，处理函数把清完成标记的结果带回', () => {
+    expect(IPC_CHANNELS).toEqual(expect.arrayContaining(['reading:uncomplete']))
+
+    const { ipc, registered } = fakeIpcMain()
+    registerIpcHandlers(ipc, {
+      ...chatHandlers(),
+      ...libraryHandlers(),
+      ...searchHandlers(),
+      ...readingHandlers(),
+      ...entriesHandlers(),
+      ...instructionsHandlers(),
+      ...pinsHandlers(),
+      ...dictionaryHandlers(),
+      ...settingsHandlers(),
+      ...uiHandlers(),
+      'app:bootstrap': () => bootstrap,
+      'counts:summary': (): NavCounts => ({ entries: 0, articles: 0, unfiled: 0 })
+    })
+    expect(
+      registered.get('reading:uncomplete')?.(undefined, { sender: { send() {} } })
+    ).toEqual({ status: 'missing' })
+  })
+
+  it('本篇未整理词打包进入契约，处理函数带回空结果', () => {
+    expect(IPC_CHANNELS).toEqual(expect.arrayContaining(['chat:pack-article']))
+
+    const { ipc, registered } = fakeIpcMain()
+    registerIpcHandlers(ipc, {
+      ...chatHandlers(),
+      ...libraryHandlers(),
+      ...searchHandlers(),
+      ...readingHandlers(),
+      ...entriesHandlers(),
+      ...instructionsHandlers(),
+      ...pinsHandlers(),
+      ...dictionaryHandlers(),
+      ...settingsHandlers(),
+      ...uiHandlers(),
+      'app:bootstrap': () => bootstrap,
+      'counts:summary': (): NavCounts => ({ entries: 0, articles: 0, unfiled: 0 })
+    })
+    expect(
+      registered.get('chat:pack-article')?.(
+        { articleId: 'article-1' },
+        { sender: { send() {} } }
+      )
+    ).toEqual({ status: 'missing' })
+  })
+
   it('阅读全局偏好读写进入契约，处理函数带回静默 / 眉批 / 轻遮三态', () => {
     expect(IPC_CHANNELS).toEqual(
       expect.arrayContaining(['reading:global-preferences', 'reading:global-preferences-save'])
     )
-
     const { ipc, registered } = fakeIpcMain()
     registerIpcHandlers(ipc, {
       ...chatHandlers(),

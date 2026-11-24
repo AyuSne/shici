@@ -82,6 +82,17 @@ describe('createBridge', () => {
     ])
   })
 
+  it('把本篇未整理词打包的请求穿过白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+
+    await bridge.invoke('chat:pack-article', { articleId: 'article-1' })
+
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      { channel: 'chat:pack-article', payload: { articleId: 'article-1' } }
+    ])
+  })
+
   it('删除线程的请求和结果穿过 preload 白名单', async () => {    const { ipc } = fakeRenderer()
     const calls: unknown[] = []
     const bridge = createBridge({
@@ -149,7 +160,7 @@ describe('createBridge', () => {
     ])
   })
 
-  it('文章重命名与删除的请求和结果穿过 preload 白名单', async () => {
+  it('文章重命名、删除与读完状态命令穿过 preload 白名单', async () => {
     const { ipc, invocations } = fakeRenderer()
     const bridge = createBridge(ipc)
     const confirmed = {
@@ -166,12 +177,14 @@ describe('createBridge', () => {
     await bridge.invoke('library:delete-preview', { articleId: 'article-1' })
     await bridge.invoke('library:delete', { articleId: 'article-1', confirmed })
     await bridge.invoke('reading:complete', { articleId: 'article-1' })
+    await bridge.invoke('reading:uncomplete', { articleId: 'article-1' })
 
     expect(JSON.parse(JSON.stringify(invocations))).toEqual([
       { channel: 'library:rename', payload: { articleId: 'article-1', title: '我的文章' } },
       { channel: 'library:delete-preview', payload: { articleId: 'article-1' } },
       { channel: 'library:delete', payload: { articleId: 'article-1', confirmed } },
-      { channel: 'reading:complete', payload: { articleId: 'article-1' } }
+      { channel: 'reading:complete', payload: { articleId: 'article-1' } },
+      { channel: 'reading:uncomplete', payload: { articleId: 'article-1' } }
     ])
   })
 

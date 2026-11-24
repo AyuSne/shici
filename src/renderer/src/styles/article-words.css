@@ -12,6 +12,23 @@
   white-space: nowrap;
 }
 
+/* 已读完只是状态说明；收回入口与「回到阅读」并排，读屏也能听到当前状态。 */
+.article-words-completed {
+  padding: 2px 8px;
+  border: 1px solid var(--line-pin);
+  border-radius: 999px;
+  background: var(--bed-pin);
+  color: var(--amber);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.article-words-cancel-error {
+  max-width: 820px;
+  margin: 0 auto 16px;
+}
+
 .reading-foot-words {
   padding: 4px 10px;
   border: 1px solid var(--rule);
@@ -34,6 +51,35 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.article-words-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 工作台顶部：还没整理学习内容的词一键打包问模型。 */
+.article-words-pack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--line-pin);
+  border-radius: 10px;
+  background: var(--bed-pin);
+}
+
+.article-words-pack-hint {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.article-words-pack-button {
+  flex: none;
 }
 
 .article-words-paragraph-head {
@@ -101,6 +147,132 @@
 
 .article-words-entry-meta {
   color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* 首屏直接透出的离线词典信息：音标与首义都只读，不是学习内容。 */
+.article-words-entry-phonetic {
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.article-words-entry-sense {
+  flex-basis: 100%;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.article-words-entry-status {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.article-words-entry-status[data-has-notes="true"] {
+  border-color: var(--line-pin);
+  background: var(--bed-pin);
+  color: var(--amber);
+}
+
+.article-words-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.article-words-open-entry,
+.article-words-later {
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  transition:
+    border-color var(--motion-hover) ease-out,
+    background var(--motion-hover) ease-out,
+    color var(--motion-hover) ease-out;
+}
+
+.article-words-open-entry:hover,
+.article-words-later:hover {
+  border-color: var(--rule-hover);
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.article-words-later[aria-pressed="true"] {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.article-words-entry-actions .article-words-entry-meta {
+  margin-left: auto;
+}
+
+.article-words-dictionary {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.article-words-draft-box {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.article-words-draft {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--sunken);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  resize: vertical;
+}
+
+.article-words-draft:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.article-words-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.article-words-draft-hint {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.article-words-draft-error {
+  margin-bottom: 8px;
+  color: var(--danger);
   font-size: 12px;
   line-height: 16px;
 }

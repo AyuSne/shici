@@ -44,6 +44,20 @@ export type MarkArticleCompletedResult =
   | { status: 'completed'; articleId: string; completedAt: string; changed: boolean }
   | { status: 'missing' }
 
+/**
+ * 收回「已读完」的结果：只清完成时间，阅读位置、本篇设置与已收原句都不动。
+ * `changed` 说明这次是否真的清掉了标记；重复收回是 no-op，不报错。
+ * `progress` 是清掉之后库里的真实进度，界面直接按它渲染，不做乐观假设。
+ */
+export type MarkArticleUncompletedResult =
+  | {
+      status: 'uncompleted'
+      articleId: string
+      changed: boolean
+      progress: ReadingProgress
+    }
+  | { status: 'missing' }
+
 export type LibraryArticle = {
   id: string
   /** 完整篇名，形如「2024年6月 · 第1套 · 仔细阅读 Passage One」。 */
