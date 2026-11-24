@@ -5,6 +5,7 @@ import {
   deduplicateArticleContext,
   type ChatThreadView,
   type CreateThreadRequest,
+  type PackArticleWordsResult,
   type ThreadContextItem,
   type ThreadListItem
 } from '../../../shared/threads'
@@ -17,6 +18,7 @@ import {
   loadThread,
   loadThreads,
   openThreadForMainRequest,
+  packArticleWords,
   saveThreadAnswer,
   saveThreadContinuation,
   switchThreadAnswer,
@@ -82,6 +84,8 @@ let contextSequence = 0
 let threadListSequence = 0
 /** 「用这些词学习」的调用序号；取消、离开或再开一次都会让旧结果失效。 */
 let groupOpenSequence = 0
+/** 「本篇未整理词打包」的调用序号；换文章 / 离开工作台后旧结果不得再导航。 */
+let packOpenSequence = 0
 const deletedThreads = new Set<string>()
 
 export function isDeletedChatThread(threadId: string): boolean {
@@ -289,7 +293,21 @@ export async function removeChatThread(threadId: string): Promise<boolean> {
 }
 
 const openingThreads = new Map<string, Promise<string | null>>()
-type OpenThreadOptions = { forceNew?: boolean; ensureSentenceContext?: boolean; contextItem?: ThreadContextItem }
+type OpenThreadOptions = {
+  forceNew?: boolean
+  ensureSentenceContext?: boolean
+  contextItem?: ThreadContextItem
+  /**
+   * 就地打开：仍在同一份 store 里激活线程、沿用同一套生成事件、停止与落库，
+   * 只是不跳去对话页。迷你轻问抽屉用它；默认（false）保持完整对话页语义。
+   */
+  openInPlace?: boolean
+  /**
+   * 这次调用方的所有权。取消只让这一个调用方拿到 null，不会撤销另一个
+   * 仍然有效的同对象请求；也不阻止已共享的操作完成激活。
+   */
+  signal?: AbortSignal
+}
 
 /** 从词条、原句或文章打开最近对话；明确要求时新开一条。 */
 export function openThreadForMain(
@@ -297,17 +315,24 @@ export function openThreadForMain(
   options: OpenThreadOptions = {}
 ): Promise<string | null> {
   if (main.kind === 'none') return openMainThread(main, options)
+  // presentation 必须进 key：就地抽屉与完整对话页对同一个主对象是两种意图，
+  // 不能让其中一个的导航被另一个吞掉，也不能互相取消。
   const key = JSON.stringify({
     main,
     forceNew: options.forceNew === true,
     ensureSentenceContext: options.ensureSentenceContext === true,
-    contextItem: options.contextItem
+    contextItem: options.contextItem,
+    openInPlace: options.openInPlace === true
   })
-  const pending = openingThreads.get(key)
-  if (pending) return pending
-  const operation = openMainThread(main, options).finally(() => openingThreads.delete(key))
-  openingThreads.set(key, operation)
-  return operation
+  let pending = openingThreads.get(key)
+  if (pending === undefined) {
+    pending = openMainThread(main, options).finally(() => openingThreads.delete(key))
+    openingThreads.set(key, pending)
+  }
+  const signal = options.signal
+  if (signal === undefined) return pending
+  // 共享操作照常完成；取消方只是不认领这次结果，另一次有效调用仍能拿到线程。
+  return pending.then((threadId) => (signal.aborted ? null : threadId))
 }
 
 async function openMainThread(
@@ -334,7 +359,10 @@ async function openMainThread(
       thread = saved.thread
     }
     activateThread(thread)
-    navigate('chat', { threadId: thread.id })
+    // 就地打开只换当前线程；完整对话页仍然是原来的跳转语义。
+    if (options.openInPlace !== true) {
+      navigate('chat', { threadId: thread.id })
+    }
     return thread.id
   } catch (error) {
     fail(error, '没能开对话，再试一次。', () => {
@@ -398,6 +426,40 @@ export async function openGroupThread(
     if (!isCurrent()) return null
     fail(error, '没能用这些词开对话，再试一次。', () => {
       void openGroupThread(ids)
+    })
+    return null
+  }
+}
+
+/**
+ * 「把本篇未整理学习内容的词打包问模型」：只读筛选与组线程都在主进程完成，
+ * 创建成功才激活并跳去对话页；没有可打包的词时原样返回 empty，由工作台温和提示。
+ * `onCreated` 在跳转之后、页面卸载之前执行，调用方据此给出一条跟得过去的回执。
+ * 取消 / 换文章 / 离开工作台后迟到的结果不再导航。
+ */
+export async function openArticlePackThread(
+  articleId: string,
+  options: {
+    signal?: AbortSignal
+    onCreated?: (result: Extract<PackArticleWordsResult, { status: 'created' }>) => void
+  } = {}
+): Promise<PackArticleWordsResult | null> {
+  const operation = ++packOpenSequence
+  const isCurrent = (): boolean =>
+    operation === packOpenSequence && options.signal?.aborted !== true
+  try {
+    const result = await packArticleWords({ articleId })
+    if (!isCurrent()) return null
+    if (result.status === 'created') {
+      activateThread(result.thread)
+      navigate('chat', { threadId: result.thread.id })
+      options.onCreated?.(result)
+    }
+    return result
+  } catch (error) {
+    if (!isCurrent()) return null
+    fail(error, '没能把本篇的词打包问模型，再试一次。', () => {
+      void openArticlePackThread(articleId)
     })
     return null
   }

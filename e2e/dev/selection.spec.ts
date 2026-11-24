@@ -38,6 +38,13 @@ async function openTestArticle(page: Page): Promise<void> {
   await openArticle(page, articleTitle)
 }
 
+/** 阅读页问模型先在右侧轻问抽屉就地打开；要看完整对话页时显式展开。 */
+async function expandDrawer(page: Page): Promise<void> {
+  const drawer = page.locator('[data-question-drawer="true"]')
+  await expect(drawer).toBeVisible()
+  await drawer.getByRole('button', { name: '在对话页展开' }).click()
+}
+
 test.describe('选词与原句', () => {
   test('跨句摘录带进文章对话，发送给模型且不收词', async ({ launch }) => {
     const stub = await startSseStub({ kind: 'stream', text: ['收到'] })
@@ -50,6 +57,7 @@ test.describe('选词与原句', () => {
       await expect(excerptToolbar.getByRole('button', { name: '问模型' })).toBeVisible()
       await expect(page.locator('.reading-selected')).toHaveCount(0)
       await excerptToolbar.getByRole('button', { name: '问模型' }).click()
+      await expandDrawer(page)
       await expect(page.getByTestId('context-summary')).toContainText('1 条摘录')
       const chip = page.locator('.context-chip').filter({ hasText: '摘录' })
       await expect(chip).toContainText('摘录')
@@ -68,6 +76,7 @@ test.describe('选词与原句', () => {
     const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openTestArticle(page)
     await page.getByRole('button', { name: '问模型' }).click()
+    await expandDrawer(page)
     await expect(page.getByTestId('context-summary')).toBeVisible()
     const threadHash = await page.evaluate(() => window.location.hash)
     await openTestArticle(page)
@@ -88,6 +97,7 @@ test.describe('选词与原句', () => {
       .getByRole('toolbar', { name: '摘录操作' })
       .getByRole('button', { name: '问模型' })
       .click()
+    await expandDrawer(page)
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(threadHash)
     const chip = page.locator('.context-chip').filter({ hasText: '摘录' })
     await expect(chip.locator('.context-chip-label')).toHaveAttribute('title', /段 1、段 2/)

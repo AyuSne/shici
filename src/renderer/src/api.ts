@@ -11,6 +11,7 @@ import type {
   LibraryListing,
   LibrarySearchResults,
   MarkArticleCompletedResult,
+  MarkArticleUncompletedResult,
   RenameArticleRequest,
   RenameArticleResult,
   SaveGeneratedArticleRequest,
@@ -143,7 +144,9 @@ import type {
 } from '../../shared/threads'
 import type {
   CreateGroupThreadRequest,
-  CreateGroupThreadResult
+  CreateGroupThreadResult,
+  PackArticleWordsRequest,
+  PackArticleWordsResult
 } from '../../shared/threads'
 import type { AppBootstrap, ThemePreference } from '../../shared/types'
 import type { IpcChannel, IpcContract } from '../../shared/ipc-contract'
@@ -257,13 +260,23 @@ export function loadArticleWords(articleId: string): Promise<ArticleWordsView | 
 }
 
 /**
- * 显式标记这一篇已读完：只写完成时间、只写一次。进入本篇选词的页面先发这条命令，
- * 再读视图；命令失败就报错重试，不拿乐观的 100% 冒充已读完。
+ * 显式标记这一篇已读完：只写完成时间、只写一次。由阅读页底部的显式手势发出，
+ * 成功后才进本篇选词；命令失败就原地报错，不拿乐观的 100% 冒充已读完。
  */
 export function completeArticleReading(
   articleId: string
 ): Promise<MarkArticleCompletedResult> {
   return invoke('reading:complete', { articleId })
+}
+
+/**
+ * 收回「已读完」：只清完成时间，保留阅读位置、本篇设置与已收原句。
+ * 幂等，重复收回返回 changed:false；结果带回清掉之后的真实进度。
+ */
+export function uncompleteArticleReading(
+  articleId: string
+): Promise<MarkArticleUncompletedResult> {
+  return invoke('reading:uncomplete', { articleId })
 }
 
 /** 记下读到哪一段、哪一句。 */
@@ -453,6 +466,16 @@ export function createGroupThread(
   request: CreateGroupThreadRequest
 ): Promise<CreateGroupThreadResult> {
   return invoke('chat:create-group', request)
+}
+
+/**
+ * 把本篇未整理学习内容的词连同它们在本文的原句打包成一条新对话。
+ * 只读筛选与组线程；全部整理好时返回 empty，不创建空对话。
+ */
+export function packArticleWords(
+  request: PackArticleWordsRequest
+): Promise<PackArticleWordsResult> {
+  return invoke('chat:pack-article', request)
 }
 
 /** 按主对象复用最近线程，或明确新开一条。 */

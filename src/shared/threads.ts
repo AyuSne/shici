@@ -208,6 +208,33 @@ export type CreateGroupThreadResult =
   | { status: 'created'; thread: ChatThreadView }
   | { status: 'rejected'; reason: 'empty' | 'missing-word' | 'too-many-words' }
 
+/**
+ * 「把本篇未整理学习内容的词打包问模型」：只读这篇的已收词与原句，
+ * 取仍没有学习内容的词条，按它们在本文首次出现的段落 / 句序 / 字区间排序。
+ * 上下文只带这些词在本文对应的原句，不拿别篇最近收的句子充数。
+ */
+export type PackArticleWordsRequest = { articleId: string }
+
+export type PackArticleWordsResult =
+  | {
+      status: 'created'
+      thread: ChatThreadView
+      /** 实际带上的词条数，最多 `GROUP_WORD_LIMIT`。 */
+      packedCount: number
+      /** 本文还没整理学习内容的词条总数（去重后）。 */
+      totalCount: number
+      /** 因为上限没带上的词条数。 */
+      omittedCount: number
+    }
+  | {
+      /** 不创建空线程：这篇没收过词，或所有收词都已整理学习内容。 */
+      status: 'empty'
+      reason: 'no-words' | 'all-organized'
+      /** 待打包的词条数；empty 时恒为 0。 */
+      totalCount: number
+    }
+  | { status: 'missing' }
+
 export type OpenThreadForMainRequest = CreateThreadRequest & {
   forceNew?: boolean
   /** 阅读页主动就所点词提问时，复用线程也应带上该词及原句。 */

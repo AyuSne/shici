@@ -6,13 +6,16 @@ import { fixtureArticle, writeCorpusDirectory } from '../../testing/corpus-fixtu
 import { importCorpus } from '../corpus/import'
 import { openDatabase, type AppDatabase } from '../db/database'
 import { migrate } from '../db/migrations'
+import { collectSelection } from '../entries/queries'
+import { readReadingPoint } from './queries'
 import {
   markArticleCompleted,
   openArticle,
   readArticleDetail,
   readHomeSummary,
   readLibrary,
-  searchLibrary
+  searchLibrary,
+  unmarkArticleCompleted
 } from './queries'
 
 let directory: string
@@ -272,6 +275,101 @@ describe('markArticleCompleted', () => {
     expect(markArticleCompleted(database, 'nope', { now: '2026-11-18T08:00:00.000Z' })).toEqual({
       status: 'missing'
     })
+    expect(readLibrary(database).articleCount).toBe(3)
+  })
+})
+
+type JsonParagraph = {
+  id: string
+  text: string
+  sentences: { ordinal: number; text: string; start: number; end: number }[]
+}
+
+function collect(paragraphIndex: number, needle: string): void {
+  const paragraph = (carefulReading.json.paragraphs as JsonParagraph[])[paragraphIndex]
+  if (!paragraph) throw new Error(`语料没有第 ${paragraphIndex} 段`)
+  const start = paragraph.text.indexOf(needle)
+  if (start < 0) throw new Error(`第 ${paragraphIndex} 段没有 ${needle}`)
+  const sentenceOrdinal = paragraph.sentences.findIndex(
+    (sentence) => sentence.start <= start && start < sentence.end
+  )
+  const result = collectSelection(
+    database,
+    {
+      articleId: carefulReading.id,
+      paragraphId: paragraph.id,
+      sentenceOrdinal,
+      start,
+      end: start + needle.length
+    },
+    { now: '2026-11-18T08:30:00.000Z' }
+  )
+  if (result.status === 'rejected') throw new Error(`圈 ${needle} 被拒绝：${result.reason}`)
+}
+
+describe('unmarkArticleCompleted', () => {
+  it('收回已读完：只清完成时间，阅读位置、本篇设置与已收原句都保留', () => {
+    openArticle(database, carefulReading.id, { now: '2026-11-18T08:00:00.000Z' })
+    database
+      .prepare('UPDATE article SET last_paragraph_id = ?, last_sentence_index = ? WHERE id = ?')
+      .run('2', 0, carefulReading.id)
+    collect(0, 'Context')
+    markArticleCompleted(database, carefulReading.id, { now: '2026-11-18T09:00:00.000Z' })
+
+    const pointBefore = readReadingPoint(database, carefulReading.id)
+    const settingsBefore = database
+      .prepare('SELECT font_size, line_height_tenths, annotations_visible, weak_highlight FROM article_reading_setting WHERE article_id = ?')
+      .get(carefulReading.id)
+    const quotesBefore = database
+      .prepare('SELECT id, entry_id, surface, char_start, char_end FROM entry_sentence WHERE article_id = ?')
+      .all(carefulReading.id)
+
+    const result = unmarkArticleCompleted(database, carefulReading.id)
+
+    // 清掉完成时间后立刻给回真实进度，界面不用自己猜「现在算读到哪」。
+    expect(result).toMatchObject({
+      status: 'uncompleted',
+      articleId: carefulReading.id,
+      changed: true,
+      progress: { state: 'reading' }
+    })
+    expect(readArticleDetail(database, carefulReading.id)?.progress.state).toBe('reading')
+    expect(readReadingPoint(database, carefulReading.id)).toEqual(pointBefore)
+    expect(
+      database
+        .prepare('SELECT font_size, line_height_tenths, annotations_visible, weak_highlight FROM article_reading_setting WHERE article_id = ?')
+        .get(carefulReading.id)
+    ).toEqual(settingsBefore)
+    expect(
+      database
+        .prepare('SELECT id, entry_id, surface, char_start, char_end FROM entry_sentence WHERE article_id = ?')
+        .all(carefulReading.id)
+    ).toEqual(quotesBefore)
+  })
+
+  it('幂等：本来就没标已读完时再收回是 no-op，不报错也不改别的状态', () => {
+    openArticle(database, carefulReading.id, { now: '2026-11-18T08:00:00.000Z' })
+
+    const result = unmarkArticleCompleted(database, carefulReading.id)
+
+    expect(result).toMatchObject({ status: 'uncompleted', changed: false })
+    expect(readArticleDetail(database, carefulReading.id)?.progress.state).toBe('reading')
+    expect(readHomeSummary(database).completedArticleCount).toBe(0)
+  })
+
+  it('收回后可以重新读完，完成时间重新写入', () => {
+    markArticleCompleted(database, carefulReading.id, { now: '2026-11-18T08:00:00.000Z' })
+    unmarkArticleCompleted(database, carefulReading.id)
+
+    const again = markArticleCompleted(database, carefulReading.id, {
+      now: '2026-11-18T09:00:00.000Z'
+    })
+
+    expect(again).toMatchObject({ changed: true, completedAt: '2026-11-18T09:00:00.000Z' })
+  })
+
+  it('文章不存在时返回 missing，库里的文章一篇不动', () => {
+    expect(unmarkArticleCompleted(database, 'nope')).toEqual({ status: 'missing' })
     expect(readLibrary(database).articleCount).toBe(3)
   })
 })

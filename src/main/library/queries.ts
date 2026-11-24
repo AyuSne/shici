@@ -8,6 +8,7 @@ import type {
   LibrarySearchResults,
   LibrarySession,
   MarkArticleCompletedResult,
+  MarkArticleUncompletedResult,
   ReadingPoint,
   ReadingProgress
 } from '../../shared/library'
@@ -389,6 +390,38 @@ export function markArticleCompleted(
   }
 
   return { status: 'completed', articleId, completedAt: now, changed: true }
+}
+
+/**
+ * 收回「已读完」：只把完成时间清空，阅读位置、最近打开、本篇阅读设置与已收原句
+ * 都留在原处。重复调用是幂等的（changed:false），不写任何别的列。
+ * 返回清掉之后的真实进度，界面据此回到「读到一半 / 未读」而不是自己猜。
+ */
+export function unmarkArticleCompleted(
+  database: AppDatabase,
+  articleId: string
+): MarkArticleUncompletedResult {
+  const row = database
+    .prepare('SELECT completed_at FROM article WHERE id = ?')
+    .get(articleId) as { completed_at: string | null } | undefined
+  if (!row) {
+    return { status: 'missing' }
+  }
+
+  const changed = row.completed_at !== null
+  if (changed) {
+    database
+      .prepare('UPDATE article SET completed_at = NULL WHERE id = ? AND completed_at IS NOT NULL')
+      .run(articleId)
+  }
+
+  const article = readArticleDetail(database, articleId)
+  return {
+    status: 'uncompleted',
+    articleId,
+    changed,
+    progress: article?.progress ?? { state: 'unread', percent: 0 }
+  }
 }
 
 /**

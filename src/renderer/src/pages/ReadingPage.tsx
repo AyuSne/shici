@@ -9,7 +9,7 @@ import {
 } from 'react'
 import type { EntrySentence, ReadingCollectionMark } from '../../../shared/entries'
 import type { DictionaryLookup } from '../../../shared/dictionary'
-import type { CreateThreadRequest } from '../../../shared/threads'
+import type { CreateThreadRequest, ThreadContextItem } from '../../../shared/threads'
 import type {
   ReadingGlobalPreferences,
   ReadingPreferences,
@@ -20,6 +20,7 @@ import type {
 import { DEFAULT_READING_GLOBAL_PREFERENCES, DEFAULT_READING_PREFERENCES } from '../../../shared/reading'
 import {
   collectSelection,
+  completeArticleReading,
   deleteEntrySentence,
   loadEntrySentenceTarget,
   loadWordEntryCard,
@@ -55,6 +56,7 @@ import {
   type PanelState
 } from '../reading/entry-panel'
 import { ReadingParagraphView, type ReadingMarginNote } from '../reading/paragraph'
+import { QuestionDrawer } from '../reading/question-drawer'
 import { scrollTargetIntoReading } from '../reading/scroll'
 import { readParagraphSelection, readReadingExcerpt, selectionOffsets, locateWordAt, selectParagraphRange, type ReadingSelection, type ReadingExcerpt } from '../reading/selection'
 import { ReadingSettingsPanel } from '../reading/settings-panel'
@@ -142,7 +144,13 @@ export function ReadingPage({
   const [focus, setFocus] = useState<FocusTarget | null>(null)
   const [hint, setHint] = useState<string | null>(null)
   const [collectError, setCollectError] = useState<string | null>(null)
-  const [openingThread, setOpeningThread] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerOpening, setDrawerOpening] = useState(false)
+  const drawerToken = useRef(0)
+  const drawerAbort = useRef<AbortController | null>(null)
+  /** 阅读页底部「读完并整理本篇选词」是唯一写完成时间的显式手势。 */
+  const [completing, setCompleting] = useState(false)
+  const [completeError, setCompleteError] = useState<string | null>(null)
   const [excerpt, setExcerpt] = useState<(ReadingExcerpt & { rect: DOMRect }) | null>(null)
   const [glance, setGlance] = useState<GlanceState | null>(null)
   const [revealedMaskIds, setRevealedMaskIds] = useState<ReadonlySet<string>>(new Set())
@@ -245,6 +253,13 @@ export function ReadingPage({
     setFocus(null)
     setHint(null)
     setCollectError(null)
+    setCompleting(false)
+    setCompleteError(null)
+    drawerToken.current += 1
+    drawerAbort.current?.abort()
+    drawerAbort.current = null
+    setDrawerOpen(false)
+    setDrawerOpening(false)
     openReadingView(articleId).then(
       (value) => {
         if (!active) return
@@ -346,9 +361,15 @@ export function ReadingPage({
   }
 
   // Esc 先取消词条定位，再关词条卡，再关设置，最后离开阅读页（来自搜索时回搜索结果）。
+  // 抽屉打开时 Esc 归抽屉：内层钉住弹层 → 选中胶囊 → 收回抽屉，不到这里退出阅读页。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.isComposing) return
+      if (drawerOpening) {
+        closeQuestionDrawer()
+        return
+      }
+      if (drawerOpen) return
       if (excerpt !== null) {
         setExcerpt(null)
         window.getSelection()?.removeAllRanges()
@@ -371,7 +392,7 @@ export function ReadingPage({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [excerpt, focus, panel, settingsOpen, readingFrom, entrySentenceId, onOpenSearch])
+  }, [excerpt, focus, panel, settingsOpen, readingFrom, entrySentenceId, onOpenSearch, drawerOpen, drawerOpening])
 
   /**
    * Ctrl/Cmd+Z 只撤销当前那条还活着的收词提示。输入框里不抢浏览器自身的撤销，
@@ -627,6 +648,8 @@ export function ReadingPage({
   }
 
   function openEntryCard(entryId: string, entrySentenceId: string | null): void {
+    // 右侧同一时间只留一块：开词条卡就收回抽屉，避免两层浮层互相遮挡。
+    closeQuestionDrawer()
     clearGlance()
     setActiveSelection(null)
     setHint(null)
@@ -976,13 +999,14 @@ export function ReadingPage({
   }
 
   /**
-   * 进入本篇选词。子视图与正文共用同一篇的文章地址（`#/reading/<id>/words`），
-   * 刷新或直接打开都能回到这里，也不写阅读位置与本篇阅读设置。
-   * 「进入即读完」由子视图页面先发 `reading:complete` 再读视图；`wordsFrom=reader`
-   * 让子视图的返回目标明确指向阅读页，同时把阅读页自己的来源原样带回去。
+   * 顶栏「查看本篇已拾词」只是查看：不写完成时间、不改阅读位置与设置。
+   * 子视图与正文共用同一篇的文章地址（`#/reading/<id>/words`），刷新或直接打开
+   * 都能回到这里；`wordsFrom=reader` 让子视图的返回目标明确指向阅读页，同时把
+   * 阅读页自己的来源原样带回去。
    */
   function openArticleWords(): void {
     if (!view) return
+    setCompleteError(null)
     navigate('reading', {
       articleId: view.article.id,
       words: true,
@@ -991,19 +1015,74 @@ export function ReadingPage({
     })
   }
 
-  async function openReadingThread(
+  /**
+   * 底部「读完并整理本篇选词」：先发显式完成命令，成功后才进子视图。
+   * 失败就留在阅读页、把原因摆出来并可再试，不拿乐观的 100% 冒充已读完。
+   */
+  function finishAndOpenArticleWords(): void {
+    if (!view || completing) return
+    const articleId = view.article.id
+    setCompleting(true)
+    setCompleteError(null)
+    completeArticleReading(articleId).then(
+      (result) => {
+        setCompleting(false)
+        if (result.status === 'missing') {
+          setCompleteError('这篇文章已经不在库里了。')
+          return
+        }
+        openArticleWords()
+      },
+      (failure: unknown) => {
+        setCompleting(false)
+        setCompleteError(failureText(failure, '没有把这篇标记成已读完，再试一次。'))
+      }
+    )
+  }
+
+  /**
+   * 就地打开轻问抽屉：复用同一份对话 store 与打开语义，只是不跳去对话页。
+   * 每次打开有自己的所有权；Esc / 换文章 / 卸载后迟到的结果既不重开也不导航。
+   */
+  async function openQuestionDrawer(request: {
     main: CreateThreadRequest['main']
-  ): Promise<void> {
-    if (openingThread) return
-    setOpeningThread(true)
+    ensureSentenceContext?: boolean
+    contextItem?: ThreadContextItem
+  }): Promise<void> {
+    if (drawerOpening) return
+    const controller = new AbortController()
+    drawerAbort.current?.abort()
+    drawerAbort.current = controller
+    const token = ++drawerToken.current
     setCollectError(null)
-    const threadId = await openThreadForMain(main, {
-      ensureSentenceContext: main.kind === 'sentence'
+    setDrawerOpening(true)
+    const threadId = await openThreadForMain(request.main, {
+      openInPlace: true,
+      signal: controller.signal,
+      ...(request.ensureSentenceContext === true ? { ensureSentenceContext: true } : {}),
+      ...(request.contextItem === undefined ? {} : { contextItem: request.contextItem })
     })
+    if (token !== drawerToken.current || controller.signal.aborted) return
+    setDrawerOpening(false)
     if (threadId === null) {
-      setCollectError(getChatStore().error ?? '没能开对话，再试一次。')
-      setOpeningThread(false)
+      setCollectError(getChatStore().error ?? '没能就着原文打开轻问，再试一次。')
+      return
     }
+    // 抽屉和词条卡是同一块右侧空间：打开抽屉就收起卡、选中与摘录工具条。
+    clearGlance()
+    setPanel(null)
+    setActiveSelection(null)
+    setExcerpt(null)
+    setDrawerOpen(true)
+  }
+
+  /** 收回抽屉：取消还在路上的打开请求，但不停止一条已经在生成的回答。 */
+  function closeQuestionDrawer(): void {
+    drawerToken.current += 1
+    drawerAbort.current?.abort()
+    drawerAbort.current = null
+    setDrawerOpen(false)
+    setDrawerOpening(false)
   }
 
   function sentenceIdOf(target: EventTarget | null, entryId: string): string | null {
@@ -1141,6 +1220,7 @@ export function ReadingPage({
       data-reading-page="true"
       data-margin-notes={marginColumnVisible ? 'true' : 'false'}
       data-panel={panel === null ? 'false' : 'true'}
+      data-drawer={drawerOpen || drawerOpening ? 'true' : 'false'}
       style={
         {
           '--reading-font-size': `${settings?.fontSize ?? DEFAULT_READING_PREFERENCES.fontSize}px`,
@@ -1181,10 +1261,17 @@ export function ReadingPage({
             <>
               <button
                 type="button"
+                className="reading-tool reading-words-preview"
+                onClick={openArticleWords}
+              >
+                查看本篇已拾词
+              </button>
+              <button
+                type="button"
                 className="reading-tool"
-                disabled={openingThread}
+                disabled={drawerOpening}
                 onClick={() =>
-                  void openReadingThread({ kind: 'article', articleId: view.article.id })
+                  void openQuestionDrawer({ main: { kind: 'article', articleId: view.article.id } })
                 }
               >
                 <Icon name="chat" size={14} />
@@ -1313,6 +1400,14 @@ export function ReadingPage({
                 onAction={retryWrite}
               />
             )}
+            {completeError === null ? null : (
+              <ErrorBlock
+                className="reading-write-error"
+                message={completeError}
+                actionLabel="再试一次"
+                onAction={finishAndOpenArticleWords}
+              />
+            )}
             <div
               className={bodyClassName}
               onMouseUp={(event) => {
@@ -1353,8 +1448,13 @@ export function ReadingPage({
               ))}
               <footer className="reading-foot">
                 <span>{position ? `读到 ${readingPointText(position)}` : '还没开始读'}</span>
-                <button type="button" className="reading-foot-words" onClick={openArticleWords}>
-                  进入本篇选词
+                <button
+                  type="button"
+                  className="reading-foot-words"
+                  disabled={completing}
+                  onClick={finishAndOpenArticleWords}
+                >
+                  {completing ? '正在标记已读完…' : '读完并整理本篇选词'}
                 </button>
                 <span>位置自动记住</span>
               </footer>
@@ -1365,13 +1465,16 @@ export function ReadingPage({
 
       {excerpt !== null && view !== null ? (
         <div className="reading-excerpt-toolbar" role="toolbar" aria-label="摘录操作" style={{ left: Math.max(110, Math.min(window.innerWidth - 110, excerpt.rect.left + excerpt.rect.width / 2)), top: Math.max(8, excerpt.rect.top - 48) }}>
-          <button type="button" disabled={openingThread} onClick={() => {
-            setOpeningThread(true)
-            void openThreadForMain({ kind: 'article', articleId: view.article.id }, { contextItem: {
-              id: `excerpt:${crypto.randomUUID()}`, kind: 'excerpt', label: '摘录', text: excerpt.text,
-              source: `${view.article.title} · ${excerpt.source}`
-            } }).then((id) => {
-              if (id === null) { setOpeningThread(false); setCollectError(getChatStore().error ?? '摘录没有带上，再试一次。') }
+          <button type="button" disabled={drawerOpening} onClick={() => {
+            void openQuestionDrawer({
+              main: { kind: 'article', articleId: view.article.id },
+              contextItem: {
+                id: `excerpt:${crypto.randomUUID()}`,
+                kind: 'excerpt',
+                label: '摘录',
+                text: excerpt.text,
+                source: `${view.article.title} · ${excerpt.source}`
+              }
             })
           }}>问模型</button>
           <button type="button" onClick={() => { void navigator.clipboard.writeText(excerpt.text).then(() => { setHint('已复制'); setExcerpt(null); window.getSelection()?.removeAllRanges() }, () => setCollectError('复制失败，请再试一次。')) }}>复制</button>
@@ -1415,10 +1518,13 @@ export function ReadingPage({
           onOpenEntry={() => navigate('entries', { entryId: panel.entryId })}
           onAsk={() => {
             if (panel.entrySentenceId !== null) {
-              void openReadingThread({ kind: 'sentence', entrySentenceId: panel.entrySentenceId })
+              void openQuestionDrawer({
+                main: { kind: 'sentence', entrySentenceId: panel.entrySentenceId },
+                ensureSentenceContext: true
+              })
             }
           }}
-          openingThread={openingThread}
+          openingThread={drawerOpening}
           laterBusy={panel.kind === 'entry' && later.busyEntryId === panel.entryId}
           onToggleLater={togglePanelLater}
           onDelete={requestDeleteSentence}
@@ -1428,6 +1534,16 @@ export function ReadingPage({
           }
         />
       )}
+
+      {drawerOpen ? (
+        <QuestionDrawer
+          onClose={closeQuestionDrawer}
+          onExpand={(threadId) => {
+            setDrawerOpen(false)
+            navigate('chat', { threadId })
+          }}
+        />
+      ) : null}
     </div>
   )
 }

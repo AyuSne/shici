@@ -13,6 +13,8 @@ import type {
   EditQuestionRequest,
   OpenThreadForMainRequest,
   OpenThreadForMainResult,
+  PackArticleWordsRequest,
+  PackArticleWordsResult,
   QuestionResult,
   SaveAnswerRequest,
   SaveAnswerResult,
@@ -895,6 +897,25 @@ function groupTitleOf(forms: readonly string[]): string {
   return forms.length <= 1 ? first : `${first} 等 ${forms.length} 个词`
 }
 
+/**
+ * 空白/组词线程的唯一写入路径：主对象留空，上下文整份写进 `context_json`。
+ * 组词与「本篇未整理词打包」共用，不另建会话表，也不另写一套 generation 状态。
+ */
+function insertContextThread(
+  database: AppDatabase,
+  input: { title: string; context: readonly ThreadContextItem[]; now: string }
+): ChatThreadView | null {
+  const id = randomUUID()
+  database
+    .prepare(
+      `INSERT INTO thread (id, title, main_kind, main_id, context_json, leaf_entry_id,
+                           created_at, updated_at)
+       VALUES (?, ?, 'none', NULL, ?, NULL, ?, ?)`
+    )
+    .run(id, input.title, JSON.stringify(input.context), input.now, input.now)
+  return readThreadView(database, id)
+}
+
 /** 请求里的词条 id 去空白、去重；非字符串与空串不算选中的词。 */
 function uniqueEntryIds(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -951,22 +972,135 @@ export function createGroupThread(
     forms.push(word.label)
   }
 
-  const id = randomUUID()
-  database.transaction(() => {
-    database
-      .prepare(
-        `INSERT INTO thread (id, title, main_kind, main_id, context_json, leaf_entry_id,
-                             created_at, updated_at)
-         VALUES (?, ?, 'none', NULL, ?, NULL, ?, ?)`
-      )
-      .run(id, groupTitleOf(forms), JSON.stringify(context), now, now)
-  }).immediate()
+  const holder: { thread: ChatThreadView | null } = { thread: null }
+  database
+    .transaction(() => {
+      holder.thread = insertContextThread(database, {
+        title: groupTitleOf(forms),
+        context,
+        now
+      })
+    })
+    .immediate()
 
-  const thread = readThreadView(database, id)
+  const thread = holder.thread
   if (!thread) {
     return { status: 'rejected', reason: 'missing-word' }
   }
   return { status: 'created', thread }
+}
+
+type PackArticleRow = SentenceItemRow & {
+  entry_id: string
+  entry_main_form: string
+  note_count: number
+  sentence_count: number
+  article_count: number
+}
+
+/**
+ * 「把本篇未整理学习内容的词打包问模型」：
+ * - 只认本文的 entry_sentence，按段落 / 句序 / 字区间第一次出现的顺序去重词条；
+ * - 只打包 live `noteCount === 0` 的词（置顶学习内容也算已整理）；
+ * - 上下文是每个词 + 它在本文对应到的全部原句，绝不使用别篇最近收的那句；
+ * - 超过 20 个时明确报告没带上的数量，不在服务端假装全带上了；
+ * - 没有可打包的词时不建空线程，交给界面温和提示。
+ */
+export function packArticleUnorganizedWords(
+  database: AppDatabase,
+  request: PackArticleWordsRequest,
+  options: { now?: string } = {}
+): PackArticleWordsResult {
+  const article = database
+    .prepare('SELECT 1 FROM article WHERE id = ?')
+    .get(request.articleId)
+  if (article === undefined) {
+    return { status: 'missing' }
+  }
+
+  const rows = database
+    .prepare(
+      `SELECT es.entry_id, ${SENTENCE_ITEM_SELECT},
+              we.main_form AS entry_main_form,
+              (SELECT COUNT(*) FROM learning_note ln WHERE ln.entry_id = es.entry_id) AS note_count,
+              (SELECT COUNT(*) FROM entry_sentence x WHERE x.entry_id = es.entry_id) AS sentence_count,
+              (SELECT COUNT(DISTINCT x.article_id) FROM entry_sentence x
+                WHERE x.entry_id = es.entry_id) AS article_count
+         FROM entry_sentence es
+         ${SENTENCE_ITEM_JOINS}
+         JOIN word_entry we ON we.id = es.entry_id
+        WHERE es.article_id = ?
+        ORDER BY p.ordinal, es.sentence_ordinal, es.char_start, es.id`
+    )
+    .all(request.articleId) as PackArticleRow[]
+
+  const ordered: { row: PackArticleRow; sentences: PackArticleRow[] }[] = []
+  const byEntry = new Map<string, { row: PackArticleRow; sentences: PackArticleRow[] }>()
+  for (const row of rows) {
+    let group = byEntry.get(row.entry_id)
+    if (group === undefined) {
+      group = { row, sentences: [] }
+      byEntry.set(row.entry_id, group)
+      ordered.push(group)
+    }
+    group.sentences.push(row)
+  }
+
+  if (ordered.length === 0) {
+    return { status: 'empty', reason: 'no-words', totalCount: 0 }
+  }
+
+  const unorganized = ordered.filter((group) => group.row.note_count === 0)
+  if (unorganized.length === 0) {
+    return { status: 'empty', reason: 'all-organized', totalCount: 0 }
+  }
+
+  const packed = unorganized.slice(0, GROUP_WORD_LIMIT)
+  const context: ThreadContextItem[] = []
+  const seen = new Set<string>()
+  for (const group of packed) {
+    const word = toWordItem(
+      group.row.entry_id,
+      group.row.entry_main_form,
+      group.row.sentence_count,
+      group.row.article_count
+    )
+    if (!seen.has(word.id)) {
+      seen.add(word.id)
+      context.push(word)
+    }
+    for (const sentence of group.sentences) {
+      const item = toSentenceItem(sentence)
+      if (!seen.has(item.id)) {
+        seen.add(item.id)
+        context.push(item)
+      }
+    }
+  }
+
+  const now = nowOf(options)
+  const holder: { thread: ChatThreadView | null } = { thread: null }
+  database
+    .transaction(() => {
+      holder.thread = insertContextThread(database, {
+        title: groupTitleOf(packed.map((group) => group.row.entry_main_form)),
+        context,
+        now
+      })
+    })
+    .immediate()
+
+  const thread = holder.thread
+  if (thread === null) {
+    return { status: 'missing' }
+  }
+  return {
+    status: 'created',
+    thread,
+    packedCount: packed.length,
+    totalCount: unorganized.length,
+    omittedCount: unorganized.length - packed.length
+  }
 }
 
 /** 查找与主对象完全相同、最近更新的线程；空白线程不复用。 */
