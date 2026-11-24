@@ -27,10 +27,12 @@ import {
   getChatStore,
   regenerateLastAnswer,
   retryChat,
+  retryPendingSave,
   sendChatMessage,
   stopChat,
   useChatStore
 } from '../chat/store'
+import { PendingSaveNotice } from '../chat/pending-save'
 import { contextSummaryText } from '../chat/turns'
 import { ErrorBlock } from '../components/error-block'
 import { showToast } from '../components/toast-store'
@@ -280,13 +282,15 @@ export function QuestionDrawer({
   }
 
   const busyElsewhere = generatingElsewhere || (store.session.generation !== null && !liveHere)
+  const pendingHere = view === null ? undefined : store.pendingSaves[view.id]
   const canSend =
     view !== null &&
     draft.trim() !== '' &&
     !store.busy &&
     !generatingHere &&
     !busyElsewhere &&
-    !threadGone
+    !threadGone &&
+    pendingHere === undefined
   const marks: PinMarks = { ...EMPTY_MARKS, pins }
 
   return (
@@ -326,6 +330,17 @@ export function QuestionDrawer({
             message={store.error}
             actionLabel={store.canRetry ? '再试一次' : '知道了'}
             onAction={store.canRetry ? retryChat : null}
+          />
+        </div>
+      )}
+
+      {view === null || store.pendingSaves[view.id] === undefined ? null : (
+        <div className="reading-drawer-pending">
+          <PendingSaveNotice
+            pending={store.pendingSaves[view.id]}
+            saving={store.savingPendingThread !== null}
+            savingThis={store.savingPendingThread === view.id}
+            onRetry={() => void retryPendingSave(view.id)}
           />
         </div>
       )}
@@ -417,6 +432,7 @@ export function QuestionDrawer({
                         <button
                           type="button"
                           className="button button-small"
+                          disabled={pendingHere !== undefined}
                           onClick={regenerateLastAnswer}
                         >
                           重试
