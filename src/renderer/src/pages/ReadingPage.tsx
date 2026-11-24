@@ -225,6 +225,10 @@ export function ReadingPage({
   useEffect(() => {
     return () => {
       mounted.current = false
+      // 离开阅读页：在途的轻问打开请求立刻失去调用方，晚到的结果不能激活线程。
+      drawerToken.current += 1
+      drawerAbort.current?.abort()
+      drawerAbort.current = null
       if (glanceTimer.current !== null) {
         clearTimeout(glanceTimer.current)
         glanceTimer.current = null
@@ -1146,10 +1150,13 @@ export function ReadingPage({
       ...(request.ensureSentenceContext === true ? { ensureSentenceContext: true } : {}),
       ...(request.contextItem === undefined ? {} : { contextItem: request.contextItem })
     })
-    if (token !== drawerToken.current || controller.signal.aborted) return
+    if (!mounted.current || token !== drawerToken.current || controller.signal.aborted) return
     setDrawerOpening(false)
     if (threadId === null) {
-      setCollectError(getChatStore().error ?? '没能就着原文打开轻问，再试一次。')
+      // 过期/被别的入口接管时不报假失败；真实失败仍由 store 的错误说明。
+      if (getChatStore().error !== null) {
+        setCollectError(getChatStore().error ?? '没能就着原文打开轻问，再试一次。')
+      }
       return
     }
     // 旧请求可能被更新的打开意图接管：它拿到的线程已经不是当前线程时，

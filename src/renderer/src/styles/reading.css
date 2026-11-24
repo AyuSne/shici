@@ -662,6 +662,57 @@
   border-top: 1px solid var(--rule);
 }
 
+.reading-panel-sentence-more {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.reading-panel-more-toggle {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.reading-panel-more-toggle:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.reading-panel-sentence-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow-dialog);
+}
+
+.reading-panel-sentence-menu .reading-panel-delete {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.reading-panel-sentence-menu .reading-panel-delete:hover {
+  background: var(--danger-bed);
+}
+
 .reading-panel-sentence-row [role="button"],
 .reading-panel-sentence-row .reading-panel-delete {
   margin-top: 4px;
