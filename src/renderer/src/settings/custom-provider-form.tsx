@@ -9,7 +9,8 @@ import {
   isValidEnvVarName,
   type ProviderCredentialDraft
 } from '../../../shared/provider-credentials'
-import { createCustomProvider } from '../api'
+import { createCustomProvider, testProviderConnection } from '../api'
+import { showToast } from '../components/toast-store'
 import { failureText } from '../errors'
 import {
   CredentialEditor,
@@ -19,6 +20,7 @@ import {
   combineCustomProviderModels
 } from './model-discovery'
 import { ModelDiscoveryPanel } from './model-discovery-panel'
+import { providerTestFailureText, providerTestVerifiedText } from './format'
 import { credentialRejectionText } from './messages'
 import {
   baseUrlError,
@@ -46,7 +48,6 @@ const NO_ERRORS: FieldErrors = {
 type CustomProviderFormProps = {
   existingProviderKeys: readonly string[]
   refresh: () => Promise<void>
-  notify: (message: string) => void
 }
 
 /**
@@ -58,8 +59,7 @@ type CustomProviderFormProps = {
  */
 export function CustomProviderForm({
   existingProviderKeys,
-  refresh,
-  notify
+  refresh
 }: CustomProviderFormProps) {
   const [providerId, setProviderId] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -157,7 +157,32 @@ export function CustomProviderForm({
       setDiscoveryReset((current) => current + 1)
       setErrors(NO_ERRORS)
       await refresh()
-      notify(`已保存自定义提供商「${savedName}」`)
+      showToast({
+        message: `已保存自定义提供商「${savedName}」`,
+        action: {
+          label: '立即测试连接',
+          run: async () => {
+            const tested = await testProviderConnection({
+              providerId: result.providerId
+            })
+            // 保存后立刻删除时，迟到结果不写回任何状态。
+            if (tested.status === 'missing') {
+              return
+            }
+            if (tested.status === 'verified') {
+              showToast({
+                message: `「${savedName}」${providerTestVerifiedText(tested)}`
+              })
+              return
+            }
+            showToast({
+              message: `「${savedName}」${providerTestFailureText(tested)}`,
+              tone: 'error'
+            })
+          },
+          failureMessage: '测试连接没有完成，再试一次。'
+        }
+      })
     } catch (error) {
       setFormError(failureText(error, '自定义提供商没有保存成功，再试一次。'))
     } finally {

@@ -862,7 +862,9 @@ describe('内置 provider 与描述符进请求', () => {
       { now: '2026-11-21T00:00:00.000Z' }
     )
     if (added.status !== 'saved') throw new Error('没存上')
-    // 没有 activateModelProvider：provider 行存在但没有使用中。
+    // 本票保存新 provider 会自动接上「使用中」；这里构造旧资料库常见的
+    // 「provider 行存在但没有使用中」状态，验证仍不会静默回落到环境变量。
+    database.prepare(`DELETE FROM setting WHERE key = 'chat.activeProviderId'`).run()
     const env = {
       DEEPSEEK_API_KEY: 'sk-env-other-0002',
       DEEPSEEK_BASE_URL: target.baseUrl,

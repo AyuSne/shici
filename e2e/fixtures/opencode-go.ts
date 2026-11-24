@@ -96,6 +96,11 @@ export function seedOpenCodeGoProvider(
       database
         .prepare("DELETE FROM setting WHERE key = 'chat.providerSelectionCleared'")
         .run()
+    } else {
+      // 新提供商保存会自动接上「使用中」；夹具保留「存在但未启用」的语义。
+      database
+        .prepare("DELETE FROM setting WHERE key = 'chat.activeProviderId' AND value = ?")
+        .run(added.providerId)
     }
     database.pragma('journal_mode = DELETE')
     return added.providerId

@@ -8,10 +8,13 @@ import {
 } from './messages'
 
 describe('共享设置文案', () => {
-  it('模型服务说明简洁地引导添加和测试提供商', () => {
-    expect(modelSectionDescription('DeepSeek、Kimi')).toBe(
-      '添加 DeepSeek、Kimi 等内置提供商，或配置自定义 API。保存后可测试连接。'
+  it('模型服务说明用自然说法引导填密钥和测试，不堆技术名词', () => {
+    const text = modelSectionDescription('DeepSeek、Kimi')
+    expect(text).toBe(
+      'DeepSeek、Kimi 等内置服务填上密钥就能用；想接别处，也可以自定义。保存之后再测试连接。'
     )
+    expect(text).not.toContain('API')
+    expect(text).not.toContain('配置')
   })
   it('只读目录的说明与拒绝共用同一句前缀', () => {
     for (const scene of ['edit', 'discovery'] as const) {

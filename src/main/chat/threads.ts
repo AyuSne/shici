@@ -301,7 +301,8 @@ function mainIdOf(request: CreateThreadRequest['main']): string | null {
 function mainLabelOf(main: ThreadMain): string {
   switch (main.kind) {
     case 'none':
-      return '未挂对象'
+      // 面向学习者的说法：这条对话没有绑定词条/原句/文章，从空白开始。
+      return '空白学习'
     case 'entry':
       return `词条 ${main.mainForm}`
     case 'sentence':

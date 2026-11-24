@@ -3,6 +3,7 @@ import { startSseStub, type SseStub, type StubScript } from '../../src/testing/s
 import { expect, test } from '../fixtures/app'
 import { ask, openChat, openSettings } from '../fixtures/chat'
 import { databasePath, seedModelProvider } from '../fixtures/database'
+import { openProviderDetails } from '../fixtures/settings-panel'
 
 const stubs: SseStub[] = []
 
@@ -47,6 +48,7 @@ test.describe('保存与测试连接分离', () => {
     await expect(page.getByRole('status')).toContainText('已保存')
     const card = page.locator('[data-provider-key="provider-test-relay"]')
     await expect(card).toContainText('未验证')
+    await openProviderDetails(card)
     await expect(card).toContainText('环境 · E2E_TEST_KEY')
     expect(stub.requests).toHaveLength(0)
 
@@ -126,12 +128,20 @@ test.describe('保存与测试连接分离', () => {
     await card.getByRole('button', { name: '测试连接 失败中转' }).click()
 
     await expect(card).toContainText('未验证')
-    await expect(card.locator('.profile-check')).toContainText('密钥无效')
-    await expect(card.locator('.profile-check')).toContainText('请求 ID req-e2e-401')
-    const failureText = card.locator('[data-test-result="provider-failing"]')
+    const failureText = card.locator('[data-provider-test-failure="provider-failing"]')
     await expect(failureText).toContainText('测试没通过：密钥无效')
-    await expect(failureText).toContainText('换一个有效的密钥')
-    await expect(failureText).toContainText('请求 ID req-e2e-401')
+    await expect(failureText).not.toContainText('到设置')
+    await expect(failureText.locator('.profile-test-reason')).not.toContainText('请求 ID')
+    const failureDiagnostic = failureText.locator('details.profile-diagnostic')
+    await failureDiagnostic.locator('summary').click()
+    await expect(failureDiagnostic).toContainText('请求 ID req-e2e-401')
+
+    // 最近一次失败与 request id 都收在连接详情里，不污染日常界面。
+    await openProviderDetails(card)
+    await expect(card.locator('.profile-check')).toContainText('密钥无效')
+    const checkDiagnostic = card.locator('details.profile-details details.profile-diagnostic')
+    await checkDiagnostic.locator('summary').click()
+    await expect(checkDiagnostic).toContainText('请求 ID req-e2e-401')
 
     await handle.close()
     const database = new Database(databasePath(userDataDirectory), {
@@ -206,9 +216,14 @@ test.describe('真实对话与验证状态', () => {
 
     await openSettings(page)
     await expect(card).toContainText('已验证')
+    await openProviderDetails(card)
     await expect(card.locator('.profile-check')).toContainText('最近一次失败')
     await expect(card.locator('.profile-check')).toContainText('服务繁忙')
-    await expect(card.locator('.profile-check')).toContainText('请求 ID req-e2e-500')
+    const lastFailureDiagnostic = card.locator(
+      'details.profile-details details.profile-diagnostic'
+    )
+    await lastFailureDiagnostic.locator('summary').click()
+    await expect(lastFailureDiagnostic).toContainText('请求 ID req-e2e-500')
 
     await handle.close()
     const database = new Database(databasePath(userDataDirectory), {

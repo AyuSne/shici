@@ -202,10 +202,136 @@
   background: var(--bed-pin);
 }
 
+.profile-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-left: auto;
+}
+
+.profile-default-model {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.profile-default-model select {
+  max-width: 200px;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.profile-default-model select:hover {
+  border-color: var(--rule-hover);
+}
+
+.profile-default-model select:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
 .profile-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-left: auto;
+}
+
+.profile-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  background: var(--sunken);
+}
+
+.profile-issue,
+.profile-test-failure {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--rule));
+  border-radius: 8px;
+  background: var(--danger-bed);
+}
+
+.profile-issue-reason,
+.profile-test-reason {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.profile-repair-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* 诊断小字折叠在失败块里；请求 ID 可一键复制，不抢主文案。 */
+.profile-diagnostic {
+  margin-top: 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.profile-diagnostic summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.profile-diagnostic-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.profile-diagnostic-id {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.profile-details,
+.add-connection-details {
+  margin-top: 10px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.profile-details summary,
+.add-connection-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ink-2);
+}
+
+.profile-details summary:hover,
+.add-connection-details summary:hover {
+  color: var(--ink);
+}
+
+.profile-details .profile-facts,
+.add-connection-details .profile-facts {
+  margin-top: 8px;
 }
 
 .link-button {
