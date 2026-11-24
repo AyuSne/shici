@@ -1,6 +1,6 @@
 import type { DictionaryLookup } from '../../shared/dictionary'
 import type { ArticleWordsView } from '../../shared/article-words'
-import type { GlobalSearchResults } from '../../shared/global-search'
+import type { GlobalSearchResults, SearchShortcuts } from '../../shared/global-search'
 import type {
   ArticleDeletionPreview,
   ArticleDetail,
@@ -79,6 +79,10 @@ import type {
   SaveThemeResult,
   SettingsOverview
 } from '../../shared/settings'
+import type {
+  SaveSidebarPreferenceResult,
+  UiPreferences
+} from '../../shared/ui-preferences'
 import type {
   ActivateProviderRequest,
   ActivateProviderResult,
@@ -160,6 +164,18 @@ export function loadBootstrap(): Promise<AppBootstrap> {
   return invoke('app:bootstrap')
 }
 
+/** 界面偏好：当前只有侧栏折叠；启动值在 bootstrap 里已带一份。 */
+export function loadUiPreferences(): Promise<UiPreferences> {
+  return invoke('ui:preferences')
+}
+
+/** 写侧栏折叠偏好；只落 setting 表，随整库备份 / 恢复往返。 */
+export function saveSidebarPreference(
+  collapsed: boolean
+): Promise<SaveSidebarPreferenceResult> {
+  return invoke('ui:sidebar', { collapsed })
+}
+
 /**
  * 左侧全局栏的词条数、文章数与未归档数。独立一条轻查询：
  * 首屏与导航不 await 它，读回来之前界面不显示数字。
@@ -192,6 +208,11 @@ export function searchLibrary(query: string): Promise<LibrarySearchResults> {
 /** 全局搜索：一次查询同时给出词条与文章两组命中；只读，不触发全局栏计数失效。 */
 export function searchEverything(query: string): Promise<GlobalSearchResults> {
   return invoke('search:global', { query })
+}
+
+/** 搜索框为空时的最近文章与最近词条；只在覆盖层空态读一次。 */
+export function loadSearchShortcuts(): Promise<SearchShortcuts> {
+  return invoke('search:shortcuts')
 }
 
 /** 只改文章显示名；语料刷新后仍沿用这个名字。 */

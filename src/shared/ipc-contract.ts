@@ -33,7 +33,7 @@ import type {
   UpdateLearningNoteRequest,
   WordEntryCard
 } from './entries'
-import type { GlobalSearchResults } from './global-search'
+import type { GlobalSearchResults, SearchShortcuts } from './global-search'
 import type {
   ArticleDeletionPreview,
   ArticleDetail,
@@ -146,6 +146,11 @@ import type {
   UpdateThreadContextResult
 } from './threads'
 import type { AppBootstrap } from './types'
+import type {
+  SaveSidebarPreferenceRequest,
+  SaveSidebarPreferenceResult,
+  UiPreferences
+} from './ui-preferences'
 
 /**
  * 渲染层与主进程之间唯一的调用契约。新增能力时先在这里加 channel，
@@ -153,6 +158,12 @@ import type { AppBootstrap } from './types'
  */
 export interface IpcContract {
   'app:bootstrap': { payload: undefined; result: AppBootstrap }
+  /** 界面偏好：侧栏折叠等只写 setting 的全局界面状态。 */
+  'ui:preferences': { payload: undefined; result: UiPreferences }
+  'ui:sidebar': {
+    payload: SaveSidebarPreferenceRequest
+    result: SaveSidebarPreferenceResult
+  }
   'counts:summary': { payload: undefined; result: NavCounts }
   'home:summary': { payload: undefined; result: HomeSummary }
   'library:list': { payload: undefined; result: LibraryListing }
@@ -161,6 +172,8 @@ export interface IpcContract {
   'library:search': { payload: { query: string }; result: LibrarySearchResults }
   /** 全局搜索（#55）：一次查询同时给出词条与文章两组命中。 */
   'search:global': { payload: { query: string }; result: GlobalSearchResults }
+  /** 搜索框为空时的最近文章 / 最近词条快捷项。 */
+  'search:shortcuts': { payload: undefined; result: SearchShortcuts }
   'library:rename': { payload: RenameArticleRequest; result: RenameArticleResult }
   'library:delete-preview': {
     payload: { articleId: string }
@@ -351,6 +364,8 @@ export type IpcEventChannel = keyof IpcEventContract
 // 用 Record 而不是数组列 channel：契约里加了 channel 却忘了登记，这里会编译失败。
 const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'app:bootstrap': true,
+  'ui:preferences': true,
+  'ui:sidebar': true,
   'counts:summary': true,
   'home:summary': true,
   'library:list': true,
@@ -358,6 +373,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'library:detail': true,
   'library:search': true,
   'search:global': true,
+  'search:shortcuts': true,
   'library:rename': true,
   'library:delete-preview': true,
   'library:delete': true,

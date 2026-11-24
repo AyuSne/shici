@@ -14,6 +14,7 @@ import {
 } from '../api'
 import { failureText } from '../errors'
 import { ErrorBlock } from '../components/error-block'
+import { showToast } from '../components/toast-store'
 import { getChatStore, openThreadForMain } from '../chat/store'
 import { LibraryArticleActions } from '../library/article-actions'
 import { ArticleCollectedSection } from '../library/article-collected'
@@ -161,16 +162,17 @@ export function LibraryPage({
     }
   }, [trimmedQuery, reloadToken])
 
+  // 导入结果与文章动作提示统一交给全局顶部 Toast，页面不再自己计时。
   useEffect(() => {
     if (importMessage === null) return
-    const timer = window.setTimeout(() => setImportMessage(null), 5000)
-    return () => window.clearTimeout(timer)
+    showToast({ message: importMessage })
+    setImportMessage(null)
   }, [importMessage])
 
   useEffect(() => {
     if (hint === null) return
-    const timer = window.setTimeout(() => setHint(null), 5000)
-    return () => window.clearTimeout(timer)
+    showToast({ message: hint })
+    setHint(null)
   }, [hint])
 
   function updateExpansion(patch: Partial<ReturnType<typeof libraryViewState>>): void {
@@ -482,17 +484,6 @@ export function LibraryPage({
           )}
         </aside>
       </div>
-
-      {importMessage === null ? null : (
-        <p className="toast" role="status">
-          {importMessage}
-        </p>
-      )}
-      {hint === null ? null : (
-        <p className="toast" role="status">
-          {hint}
-        </p>
-      )}
     </div>
   )
 }

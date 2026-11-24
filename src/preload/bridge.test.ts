@@ -8,6 +8,7 @@ const bootstrap: AppBootstrap = {
   isPackaged: false,
   schemaVersion: 3,
   theme: 'light',
+  sidebarCollapsed: false,
   chatModel: 'deepseek-flash',
   corpusImport: { total: 0, imported: 0, updated: 0, skipped: 0, failed: [] }
 }
@@ -346,6 +347,30 @@ describe('createBridge', () => {
         channel: 'settings:provider-model-reorder',
         payload: { providerId: 'provider-1', modelRowIds: ['model-2', 'model-1'] }
       }
+    ])
+  })
+
+  it('界面偏好的读取与侧栏折叠写入穿过白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+
+    await bridge.invoke('ui:preferences')
+    await bridge.invoke('ui:sidebar', { collapsed: true })
+
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      { channel: 'ui:preferences', payload: undefined },
+      { channel: 'ui:sidebar', payload: { collapsed: true } }
+    ])
+  })
+
+  it('全局搜索空态快捷项走同一份白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+
+    await bridge.invoke('search:shortcuts')
+
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      { channel: 'search:shortcuts', payload: undefined }
     ])
   })
 

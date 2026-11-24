@@ -14,7 +14,7 @@ import { migrate } from '../db/migrations'
 import { setEntryLater } from '../entries/later'
 import { readEntryList } from '../entries/page'
 import { collectSelection } from '../entries/queries'
-import { readHomeSummary } from './queries'
+import { openArticle, readHomeSummary } from './queries'
 
 /**
  * 首页「最近收集」只认真实的词条收集：按每个词条最近一次收词的时间倒序，
@@ -239,6 +239,45 @@ describe('首页最近收集', () => {
     expect(after.recentEntries).toEqual(before)
     expect(after.laterEntries).toEqual([
       { entryId: recentId, mainForm: 'approach', markedAt: T3 }
+    ])
+  })
+})
+
+describe('首页继续阅读的本篇拾词速览', () => {
+  it('只列当前续读篇目里收下的词条，按最近收词倒序', () => {
+    openArticle(database, firstArticle.id, { now: T0 })
+    const approachId = collect(firstArticle, 0, 'approach', T0)
+    const habitId = collect(firstArticle, 1, 'habit', T1)
+    collect(secondArticle, 0, 'Patience', T2)
+    const contextId = collect(firstArticle, 0, 'Context', T3)
+
+    const summary = readHomeSummary(database)
+    if (summary.continueReading === null) throw new Error('应该有续读篇目')
+
+    expect(summary.continueReading.article.id).toBe(firstArticle.id)
+    expect(summary.continueReading.articleEntries).toEqual([
+      { entryId: contextId, mainForm: 'Context' },
+      { entryId: habitId, mainForm: 'habit' },
+      { entryId: approachId, mainForm: 'approach' }
+    ])
+  })
+
+  it('最多 4 个词条，再多留给词条页；没有收词时为空列表', () => {
+    openArticle(database, firstArticle.id, { now: T0 })
+    expect(readHomeSummary(database).continueReading?.articleEntries).toEqual([])
+
+    const words = ['Employers', 'approach', 'hiring', 'differently', 'Context', 'keeps']
+    words.forEach((word, index) => {
+      collect(firstArticle, index < 5 ? 0 : 1, word, `2026-11-18T08:${10 + index}:00.000Z`)
+    })
+
+    const entries = readHomeSummary(database).continueReading?.articleEntries
+    expect(entries).toHaveLength(4)
+    expect(entries?.map((entry) => entry.mainForm)).toEqual([
+      'keeps',
+      'Context',
+      'differently',
+      'hiring'
     ])
   })
 })

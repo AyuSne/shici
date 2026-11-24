@@ -142,6 +142,21 @@ export function HomePage() {
               <p className="home-sentence">{current.lastReadPoint.sentenceText}</p>
             </>
           )}
+          {current.articleEntries.length === 0 ? null : (
+            <div className="home-picked" aria-label="本篇已拾词">
+              <span className="home-picked-label">本篇已拾</span>
+              {current.articleEntries.map((entry) => (
+                <button
+                  key={entry.entryId}
+                  type="button"
+                  className="home-picked-chip"
+                  onClick={() => openEntry(entry.entryId)}
+                >
+                  {entry.mainForm}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="home-actions">
             <button
               type="button"

@@ -1,5 +1,5 @@
 import type { EntrySearchHit } from './entries'
-import type { LibraryArticle } from './library'
+import type { HomeEntryChip, LibraryArticle } from './library'
 import type { SearchSnippet } from './search'
 
 /**
@@ -36,4 +36,18 @@ export type GlobalSearchResults = {
   query: string
   entries: GlobalEntryResult[]
   articles: GlobalArticleResult[]
+}
+
+/** Ctrl+K 空态：最多 3 篇最近打开的文章。 */
+export const SEARCH_SHORTCUT_ARTICLE_LIMIT = 3
+/** Ctrl+K 空态：最多 5 条最近收集的词条。 */
+export const SEARCH_SHORTCUT_ENTRY_LIMIT = 5
+
+/**
+ * 搜索框为空时直接给出的「最近」两组：最近打开的文章与最近收集的词条。
+ * 两组都按最近时间倒序；未归档钉住不是词条，不进来。
+ */
+export type SearchShortcuts = {
+  recentArticles: LibraryArticle[]
+  recentEntries: HomeEntryChip[]
 }

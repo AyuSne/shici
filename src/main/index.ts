@@ -57,6 +57,7 @@ import {
 } from './entries/queries'
 import { registerIpcHandlers } from './ipc/register'
 import { searchEverything } from './search/global'
+import { readSearchShortcuts } from './search/shortcuts'
 import {
   copyLearningInstruction,
   createLearningInstruction,
@@ -119,6 +120,7 @@ import {
   recordProviderFailure
 } from './settings/providers'
 import { saveThemePreference } from './settings/theme'
+import { readUiPreferences, saveSidebarPreference } from './settings/ui-preferences'
 import { applyThemePreference, createMainWindow } from './window'
 
 const DATABASE_FILE = 'english-learning.db'
@@ -245,6 +247,9 @@ function start(): void {
 
   registerIpcHandlers(ipcMain, {
     'app:bootstrap': () => createBootstrap(opened, corpusImport, configuredModel),
+    // 界面偏好与主题一样只落 setting 表；侧栏折叠随整库备份 / 恢复一起走。
+    'ui:preferences': () => readUiPreferences(opened),
+    'ui:sidebar': (payload) => saveSidebarPreference(opened, payload),
     // 左栏计数独立一条轻查询：首屏不跟它互相等，写成功后由渲染层发失效信号重查。
     'counts:summary': () => readNavCounts(opened),
     'home:summary': () => readHomeSummary(opened),
@@ -255,6 +260,7 @@ function start(): void {
     'library:search': (payload) => searchLibrary(opened, payload.query),
     // 全局搜索：词条与文章两组命中，词条复用词条页的命中契约，文章带回段落与句序。
     'search:global': (payload) => searchEverything(opened, payload.query),
+    'search:shortcuts': () => readSearchShortcuts(opened),
     'library:rename': (payload) => renameArticle(opened, payload),
     'library:delete-preview': (payload) =>
       readArticleDeletionPreview(opened, payload.articleId),

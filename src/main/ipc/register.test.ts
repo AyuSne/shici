@@ -75,6 +75,7 @@ const bootstrap: AppBootstrap = {
   isPackaged: false,
   schemaVersion: 3,
   theme: 'light',
+  sidebarCollapsed: false,
   chatModel: 'deepseek-flash',
   corpusImport: { total: 0, imported: 0, updated: 0, skipped: 0, failed: [] }
 }
@@ -164,7 +165,8 @@ function searchHandlers() {
       query: payload.query,
       entries: [],
       articles: []
-    })
+    }),
+    'search:shortcuts': () => ({ recentArticles: [], recentEntries: [] })
   }
 }
 
@@ -263,6 +265,16 @@ const settingsOverview: SettingsOverview = {
   snapshotDirectory: 'C:/data/snapshots'
 }
 
+function uiHandlers() {
+  return {
+    'ui:preferences': () => ({ sidebarCollapsed: false }),
+    'ui:sidebar': (payload: { collapsed: boolean }) => ({
+      saved: true,
+      collapsed: payload.collapsed
+    })
+  }
+}
+
 function settingsHandlers() {
   return {
     'settings:overview': (): SettingsOverview => settingsOverview,
@@ -342,6 +354,7 @@ describe('registerIpcHandlers', () => {
       ...pinsHandlers(),
       ...dictionaryHandlers(),
       ...settingsHandlers(),
+      ...uiHandlers(),
       'app:bootstrap': (payload, event) => {
         received.push(payload)
         events.push(event)
@@ -383,6 +396,13 @@ describe('registerIpcHandlers', () => {
     ).toEqual([])
   })
 
+  it('界面偏好读写进入契约，启动值带侧栏折叠状态', () => {
+    expect(IPC_CHANNELS).toEqual(
+      expect.arrayContaining(['ui:preferences', 'ui:sidebar', 'search:shortcuts'])
+    )
+    expect(bootstrap.sidebarCollapsed).toBe(false)
+  })
+
   it('契约里的 channel 没有处理函数时启动即报错', () => {    const { ipc } = fakeIpcMain()
 
     expect(() =>
@@ -402,6 +422,7 @@ describe('registerIpcHandlers', () => {
       ...pinsHandlers(),
       ...dictionaryHandlers(),
       ...settingsHandlers(),
+      ...uiHandlers(),
       'app:bootstrap': () => bootstrap,
       'counts:summary': (): NavCounts => ({ entries: 0, articles: 0, unfiled: 0 }),
       'app:not-in-contract': () => bootstrap

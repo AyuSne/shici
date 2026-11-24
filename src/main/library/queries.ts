@@ -12,7 +12,7 @@ import type {
   ReadingProgress
 } from '../../shared/library'
 import type { AppDatabase } from '../db/database'
-import { readRecentEntryChips } from '../entries/page'
+import { readArticleEntryChips, readRecentEntryChips } from '../entries/page'
 import { readLaterEntries } from '../entries/later'
 
 type ArticleRow = {
@@ -437,6 +437,25 @@ export function readReadingPoint(
 }
 
 /**
+ * 最近打开过的文章：全局搜索空态与后续「最近」入口共用。
+ * 与首页「继续阅读」不同，这里不排除已读完的篇目；按最后打开时间倒序。
+ */
+export function readRecentlyOpenedArticles(
+  database: AppDatabase,
+  limit: number
+): LibraryArticle[] {
+  const rows = database
+    .prepare(
+      `SELECT ${ARTICLE_COLUMNS} FROM article
+        WHERE last_opened_at IS NOT NULL
+        ORDER BY last_opened_at DESC, rowid DESC
+        LIMIT ?`
+    )
+    .all(limit) as ArticleRow[]
+  return rows.map((row) => toArticle(database, row))
+}
+
+/**
  * 首页：文章库规模，最近打开、还没读完的那一篇，已读完篇数，以及真实的最近收集。
  * 「继续阅读」只挑没读完的：读完后它让位给更早打开的那一篇，全部读完才是 null。
  */
@@ -464,7 +483,8 @@ export function readHomeSummary(database: AppDatabase): HomeSummary {
     continueReading: recent
       ? {
           article: toArticle(database, recent),
-          lastReadPoint: readReadingPoint(database, recent.id)
+          lastReadPoint: readReadingPoint(database, recent.id),
+          articleEntries: readArticleEntryChips(database, recent.id)
         }
       : null,
     completedArticleCount: totals.completed,

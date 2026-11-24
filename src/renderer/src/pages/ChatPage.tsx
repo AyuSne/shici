@@ -83,6 +83,7 @@ import {
   selectedVersionIndex,
   threadHeaderText
 } from '../chat/turns'
+import { dismissToast, showToast as showGlobalToast } from '../components/toast-store'
 import { failureText } from '../errors'
 import { navigate } from '../navigate'
 import { parseView } from '../routes'
@@ -90,11 +91,6 @@ import { searchUiOwns } from '../search/ownership'
 import { threadViewState, updateThreadViewState } from '../view-state'
 
 type PinSelection = AnswerSelection & { text: string }
-
-type ToastState = {
-  message: string
-  undo: (() => void | Promise<void>) | null
-}
 
 type PinDialogState = {
   action: 'create' | 'move' | 'file' | 'file-all'
@@ -168,7 +164,6 @@ export function ChatPage({
   const [boardOpen, setBoardOpen] = useState(false)
   const [boardTab, setBoardTab] = useState<PinTab>('thread')
   const [freshPinIds, setFreshPinIds] = useState<readonly string[]>([])
-  const [toast, setToast] = useState<ToastState | null>(null)
   const [selection, setSelection] = useState<PinSelection | null>(null)
   const [dictionaryWord, setDictionaryWord] = useState<string | null>(null)
   const { lookup: selectionLookup, loading: selectionLookupLoading } =
@@ -249,7 +244,7 @@ export function ChatPage({
       },
       (error: unknown) => {
         if (sequence === boardRequest.current && isCurrent()) {
-          setToast({ message: failureText(error), undo: null })
+          showGlobalToast({ message: failureText(error), tone: 'error' })
         }
       }
     )
@@ -273,7 +268,7 @@ export function ChatPage({
     setBoardOpen(false)
     setBoardTab('thread')
     setFreshPinIds([])
-    setToast(null)
+    dismissToast()
     setSelection(null)
     setPinDialog(null)
     setSource(null)
@@ -291,14 +286,15 @@ export function ChatPage({
     return () => window.clearInterval(timer)
   }, [generatingHere])
 
+  // 「源对话已删」的快照要再点一次才丢弃；这个防误触窗口 5 秒后自己收回。
+  // 用户可见的提示与计时都在全局 Toast 里，这里不再养第二套计时器。
   useEffect(() => {
-    if (toast === null) {
-      setConfirmDiscardId(null)
+    if (confirmDiscardId === null) {
       return
     }
-    const timer = window.setTimeout(() => setToast(null), 5000)
+    const timer = window.setTimeout(() => setConfirmDiscardId(null), 5000)
     return () => window.clearTimeout(timer)
-  }, [toast])
+  }, [confirmDiscardId])
 
   useEffect(() => {
     if (freshPinIds.length === 0) {
@@ -343,7 +339,7 @@ export function ChatPage({
       },
       (error: unknown) => {
         if (active) {
-          setToast({ message: failureText(error), undo: null })
+          showGlobalToast({ message: failureText(error), tone: 'error' })
         }
       }
     )
@@ -538,7 +534,11 @@ export function ChatPage({
     message: string,
     undo: (() => void | Promise<void>) | null = null
   ): void => {
-    setToast({ message, undo })
+    // 全软件共用顶部 Toast：5 秒、单一动作；撤销失败由 store 捕获并换成可见错误。
+    showGlobalToast({
+      message,
+      ...(undo === null ? {} : { action: { label: '撤销', run: undo } })
+    })
   }
 
   const defaultTargetForThread = (): PinTargetView => {
@@ -1407,29 +1407,6 @@ export function ChatPage({
             onCancel={() => setPinDialog(null)}
             onConfirm={(target) => void confirmPinDialog(target)}
           />
-        </div>
-      )}
-
-      {toast === null ? null : (
-        <div className="toast" role="status">
-          <span>{toast.message}</span>
-          {toast.undo === null ? null : (
-            <button
-              type="button"
-              className="toast-undo"
-              onClick={() => {
-                const undo = toast.undo
-                setToast(null)
-                if (undo !== null) {
-                  Promise.resolve(undo()).catch((error: unknown) => {
-                    showToast(failureText(error))
-                  })
-                }
-              }}
-            >
-              撤销
-            </button>
-          )}
         </div>
       )}
     </div>

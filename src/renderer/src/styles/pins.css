@@ -473,8 +473,9 @@
 
 .toast-undo {
   margin-left: 12px;
-  color: var(--amber);
+  color: var(--paper);
   font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   text-decoration: underline;
   text-underline-offset: 2px;
