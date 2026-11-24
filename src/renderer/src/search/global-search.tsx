@@ -9,14 +9,18 @@ import {
 } from 'react'
 import type {
   GlobalArticleResult,
-  GlobalEntryResult
+  GlobalEntryResult,
+  SearchShortcuts
 } from '../../../shared/global-search'
-import { searchEverything } from '../api'
+import type { LibraryArticle } from '../../../shared/library'
+import type { HomeEntryChip } from '../../../shared/library'
+import { loadSearchShortcuts, searchEverything } from '../api'
 import { focusablesIn, trapTabTarget } from '../components/focus-trap'
 import { ENTRY_SEARCH_MATCH_LABELS } from '../entries/format'
 import { failureText } from '../errors'
 import { navigate } from '../navigate'
-import { currentLocationHash, rememberSearchSession } from './session'
+import { NAV_ITEMS } from '../navigation'
+import { clearSearchSession, currentLocationHash, rememberSearchSession } from './session'
 import { SearchSnippetText } from './snippet-text'
 import { INITIAL_SEARCH_MACHINE, searchReducer } from './state'
 
@@ -45,6 +49,7 @@ export function GlobalSearch({
       : searchReducer(base, { type: 'query-changed', query: initialQuery })
   )
   const [input, setInput] = useState(initialQuery)
+  const [shortcuts, setShortcuts] = useState<SearchShortcuts | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const panelRef = useRef<HTMLElement>(null)
   const restoreFocus = useRef<HTMLElement | null>(null)
@@ -74,6 +79,23 @@ export function GlobalSearch({
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [onClose])
+
+  // 空态的最近文章 / 最近词条只读一次：打开搜索时若还没输入，就摆出来。
+  useEffect(() => {
+    let active = true
+    loadSearchShortcuts().then(
+      (value) => {
+        if (active) setShortcuts(value)
+      },
+      () => {
+        // 读不到最近项时仍能正常输入搜索，不把覆盖层卡在错误态。
+        if (active) setShortcuts(null)
+      }
+    )
+    return () => {
+      active = false
+    }
+  }, [])
 
   // 查询进入加载态才发请求；快速改词、清空或关闭后，旧回复靠代次丢弃。
   useEffect(() => {
@@ -136,6 +158,26 @@ export function GlobalSearch({
     })
   }
 
+  /** 空态最近文章：直接进阅读；返回时重新打开空的搜索面板，而不是旧查询。 */
+  function chooseRecentArticle(article: LibraryArticle): void {
+    clearSearchSession()
+    onChooseResult()
+    onClose()
+    navigate('reading', { articleId: article.id, readingFrom: 'search' })
+  }
+
+  function chooseRecentEntry(entry: HomeEntryChip): void {
+    onChooseResult()
+    onClose()
+    navigate('entries', { entryId: entry.id })
+  }
+
+  function choosePage(route: (typeof NAV_ITEMS)[number]['route']): void {
+    onChooseResult()
+    onClose()
+    navigate(route)
+  }
+
   /** Tab 只在覆盖层里循环；第一下 Tab 不会跑到下面的页面。 */
   function handlePanelKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
     if (event.key !== 'Tab') return
@@ -192,7 +234,83 @@ export function GlobalSearch({
         </header>
 
         <div className="global-search-body">
-          {state.status === 'idle' ? <p className="global-search-hint">{IDLE_TEXT}</p> : null}
+          {state.status === 'idle' ? (
+            <>
+              <p className="global-search-hint">{IDLE_TEXT}</p>
+              {shortcuts === null ? null : (
+                <div className="global-search-shortcuts">
+                  {shortcuts.recentArticles.length === 0 ? null : (
+                    <section className="global-search-shortcut-group" aria-label="最近打开的文章">
+                      <h2 className="global-search-group-title">最近打开的文章</h2>
+                      <ul className="global-search-shortcut-list">
+                        {shortcuts.recentArticles.map((article) => (
+                          <li key={article.id}>
+                            <button
+                              type="button"
+                              className="global-search-shortcut"
+                              data-shortcut="article"
+                              onClick={() => chooseRecentArticle(article)}
+                            >
+                              <span className="global-search-shortcut-title">
+                                {article.title}
+                              </span>
+                              <span className="global-search-shortcut-meta">
+                                {article.sourceType === 'ai'
+                                  ? 'AI 生成'
+                                  : `${article.sessionLabel} · ${article.kindLabel}`}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
+                  {shortcuts.recentEntries.length === 0 ? null : (
+                    <section className="global-search-shortcut-group" aria-label="最近收集的词条">
+                      <h2 className="global-search-group-title">最近收集的词条</h2>
+                      <ul className="global-search-shortcut-list">
+                        {shortcuts.recentEntries.map((entry) => (
+                          <li key={entry.id}>
+                            <button
+                              type="button"
+                              className="global-search-shortcut"
+                              data-shortcut="entry"
+                              onClick={() => chooseRecentEntry(entry)}
+                            >
+                              <span className="global-search-shortcut-title">
+                                {entry.mainForm}
+                              </span>
+                              <span className="global-search-shortcut-meta">
+                                {entry.sentenceCount} 句 · {entry.articleCount} 篇
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
+                  <section className="global-search-shortcut-group" aria-label="常用跳转">
+                    <h2 className="global-search-group-title">常用跳转</h2>
+                    <div className="global-search-shortcut-pages">
+                      {NAV_ITEMS.map((item) => (
+                        <button
+                          key={item.route}
+                          type="button"
+                          className="global-search-shortcut-page"
+                          data-shortcut="page"
+                          onClick={() => choosePage(item.route)}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              )}
+            </>
+          ) : null}
           {state.status === 'loading' ? (
             <p className="global-search-status" role="status">
               {LOADING_TEXT}

@@ -3,6 +3,7 @@ import type { SettingsOverview } from '../../../shared/settings'
 import { loadSettingsOverview } from '../api'
 import { setChatModel } from '../chat/store'
 import { ErrorBlock } from '../components/error-block'
+import { showToast } from '../components/toast-store'
 import { failureText } from '../errors'
 import { AboutSection } from '../settings/about-section'
 import { AppearanceSection } from '../settings/appearance-section'
@@ -27,7 +28,6 @@ export function SettingsPage() {
   const [overview, setOverview] = useState<SettingsOverview | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
-  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -47,14 +47,6 @@ export function SettingsPage() {
       active = false
     }
   }, [reloadToken])
-
-  useEffect(() => {
-    if (toast === null) {
-      return
-    }
-    const timer = setTimeout(() => setToast(null), 2800)
-    return () => clearTimeout(timer)
-  }, [toast])
 
   function applyOverview(next: SettingsOverview): void {
     setOverview(next)
@@ -108,37 +100,31 @@ export function SettingsPage() {
             <ModelSection
               overview={overview}
               onChange={applyOverview}
-              notify={setToast}
+              notify={(message) => showToast({ message })}
             />
           ) : section === 'reading' ? (
             <ReadingDefaultsSection
               overview={overview}
               onChange={applyOverview}
-              notify={setToast}
+              notify={(message) => showToast({ message })}
             />
           ) : section === 'appearance' ? (
             <AppearanceSection
               overview={overview}
               onChange={applyOverview}
-              notify={setToast}
+              notify={(message) => showToast({ message })}
             />
           ) : section === 'data' ? (
             <DataSection
               overview={overview}
               onChange={applyOverview}
-              notify={setToast}
+              notify={(message) => showToast({ message })}
             />
           ) : (
             <AboutSection overview={overview} />
           )}
         </div>
       </div>
-
-      {toast === null ? null : (
-        <div className="toast" role="status">
-          {toast}
-        </div>
-      )}
     </div>
   )
 }

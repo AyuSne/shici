@@ -31,6 +31,10 @@
 
 /* ---------- 左栏：词条列表 ---------- */
 
+/*
+ * 左栏保留自己的滚动位置，但把系统滚动条藏掉：页面上只看见 <main> 这一条细滚动条，
+ * 不再出现两条并排的滚动条；滚轮悬停在列表上仍能独立滚动。
+ */
 .entries-list {
   position: sticky;
   top: 0;
@@ -198,7 +202,13 @@
   margin: 0;
   padding: 0 0 8px;
   overflow-y: auto;
+  scrollbar-width: none;
   list-style: none;
+}
+
+.entries-rows::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .entries-row {
@@ -568,6 +578,12 @@
   flex-wrap: wrap;
 }
 
+.entries-main-actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* 「稍后看」是蓝色状态的词，按下时按钮也跟着用蓝字，和阅读侧一致。 */
 .entries-main-actions .button[aria-pressed="true"] {
   border-color: var(--blue);
@@ -927,11 +943,6 @@
   color: var(--danger);
   font-size: 12px;
   line-height: 16px;
-}
-
-/* 提示条样式在 app.css；词条页的提示盖在右栏抽屉之上。 */
-.entries-toast {
-  z-index: 70;
 }
 
 /*

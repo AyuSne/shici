@@ -2,6 +2,37 @@
   box-sizing: border-box;
 }
 
+/*
+ * 暖纸细滚动条：6px、无箭头、半透明墨色拇指，深浅色都取当前主题的 --ink-2。
+ * 所有滚动区域共用这一套，不再出现原生粗灰滚动条。
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink-2) 30%, transparent) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-2) 30%, transparent);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ink-2) 48%, transparent);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 html,
 body,
 #root {
@@ -63,31 +94,103 @@ button:focus-visible {
   line-height: 20px;
 }
 
-/* ---------- 外壳 ---------- */
+/* ---------- 外壳：融合标题栏 + A+B 侧栏 ---------- */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--paper);
+}
+
+/*
+ * 渲染层顶栏：34px，整条可拖动窗口；右侧 150px 让给原生最小化 / 最大化 / 关闭。
+ * 页面里的按钮都在顶栏下方，不会盖住系统控制区。
+ */
+.titlebar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: var(--titlebar-height);
+  padding: 0 150px 0 14px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.titlebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.titlebar-crumb {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.app-stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-stage > .reading {
+  flex: 1;
+  min-height: 0;
+}
 
 .app {
   display: grid;
-  grid-template-columns: 238px minmax(0, 1fr);
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: 224px minmax(0, 1fr);
+  transition: grid-template-columns var(--motion-collapse) var(--ease-paper);
+}
+
+.app.is-sidebar-collapsed {
+  grid-template-columns: 56px minmax(0, 1fr);
 }
 
 .globals {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 16px 8px;
-  background: var(--sunken);
+  padding: 12px 10px;
   border-right: 1px solid var(--rule);
+  background: var(--sunken);
+  transition: padding var(--motion-collapse) var(--ease-paper);
+}
+
+.globals.is-collapsed {
+  padding: 12px 9px;
+}
+
+.nav-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .brand {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 8px;
-  padding: 0 8px 16px;
+  min-width: 0;
+  padding: 0 2px 0 4px;
   font-family: var(--font-serif);
   font-size: 15px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .brand-mark {
@@ -106,30 +209,114 @@ button:focus-visible {
   stroke-width: 1;
 }
 
+.globals.is-collapsed .nav-head {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.globals.is-collapsed .brand {
+  flex: none;
+  padding: 0;
+}
+
+.nav-collapse {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: var(--ink-2);
+  transition:
+    background var(--motion-hover) ease-out,
+    color var(--motion-hover) ease-out;
+}
+
+.nav-collapse:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.nav-search {
+  margin-bottom: 10px;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+}
+
+.nav-search:hover {
+  border-color: var(--rule-hover);
+  color: var(--ink);
+}
+
+.nav-kbd {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 5px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+}
+
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
+  gap: 9px;
   width: 100%;
-  padding: 8px 12px;
+  height: 36px;
+  padding: 0 10px;
   border-radius: 8px;
   color: var(--ink-2);
   font-size: 13px;
   line-height: 18px;
   text-align: left;
   transition:
-    background 150ms ease-out,
-    color 150ms ease-out;
+    background var(--motion-hover) ease-out,
+    color var(--motion-hover) ease-out,
+    padding var(--motion-collapse) var(--ease-paper),
+    gap var(--motion-collapse) var(--ease-paper);
+}
+
+.nav-item:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.nav-item[aria-current="page"] {
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--rule);
+}
+
+.nav-item[aria-current="page"] .icon {
+  color: var(--amber);
+}
+
+.icon {
+  display: block;
+  flex: none;
 }
 
 .nav-label {
   flex: 1;
   min-width: 0;
+  max-width: 140px;
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    opacity 140ms ease-out,
+    max-width var(--motion-collapse) var(--ease-paper);
 }
 
 /* 计数用等宽数字，右对齐；读屏语义由按钮的 aria-describedby 单独给。 */
@@ -139,6 +326,9 @@ button:focus-visible {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  transition:
+    opacity 140ms ease-out,
+    max-width var(--motion-collapse) var(--ease-paper);
 }
 
 .nav-item[aria-current="page"] .nav-count {
@@ -158,23 +348,100 @@ button:focus-visible {
   white-space: nowrap;
 }
 
-.nav-item:hover {
-  background: var(--hover);
+.globals.is-collapsed .nav-item {
+  justify-content: center;
+  gap: 0;
+  padding: 0;
 }
 
-.nav-item[aria-current="page"] {
-  background: var(--panel);
-  color: var(--ink);
-  font-weight: 600;
-  box-shadow: 0 0 0 1px var(--rule);
+.globals.is-collapsed .nav-search {
+  width: 38px;
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+}
+
+.globals.is-collapsed .nav-label,
+.globals.is-collapsed .nav-kbd,
+.globals.is-collapsed .nav-count {
+  max-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 收起态悬停提示：页面名 + 计数，浮在图标右侧，不占布局。 */
+.nav-tip {
+  position: absolute;
+  top: 50%;
+  left: 48px;
+  z-index: 60;
+  display: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-3px, -50%);
+  transition:
+    opacity 140ms ease-out,
+    transform var(--motion-float) var(--ease-paper);
+}
+
+.globals.is-collapsed .nav-item .nav-tip {
+  display: block;
+}
+
+.globals.is-collapsed .nav-item:hover .nav-tip,
+.globals.is-collapsed .nav-item:focus-visible .nav-tip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+/* 未归档琥珀微点：只在 56px 轨道上出现，展开时计数已经够清楚。 */
+.nav-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.globals.is-collapsed .nav-dot {
+  display: block;
 }
 
 .nav-foot {
   margin-top: auto;
-  padding: 8px 12px;
+  padding: 10px 8px 2px;
+  border-top: 1px solid var(--rule);
   color: var(--ink-2);
   font-size: 12px;
   line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.globals.is-collapsed .nav-foot {
+  padding: 10px 0 2px;
+}
+
+.globals.is-collapsed .nav-foot .nav-text {
+  display: block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
 }
 
 .main {
@@ -234,13 +501,21 @@ button:focus-visible {
   font-size: 13px;
   line-height: 18px;
   transition:
-    background 150ms ease-out,
-    border-color 150ms ease-out;
+    background var(--motion-hover) ease-out,
+    border-color var(--motion-hover) ease-out,
+    color var(--motion-hover) ease-out;
 }
 
 .button:hover {
   border-color: var(--rule-hover);
   background: var(--hover);
+}
+
+/* 按下时只下沉 1px，不缩放、不弹跳；与悬停一起构成清晰的点击反馈。 */
+.button:active {
+  transform: translateY(1px);
+  border-color: var(--rule-hover);
+  background: color-mix(in srgb, var(--hover) 82%, var(--rule));
 }
 
 .button-primary {
@@ -251,7 +526,12 @@ button:focus-visible {
 
 .button-primary:hover {
   border-color: var(--ink);
-  background: var(--ink);
+  background: color-mix(in srgb, var(--ink) 88%, var(--paper));
+}
+
+.button-primary:active {
+  border-color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 80%, var(--paper));
 }
 
 .home-section {
@@ -433,37 +713,98 @@ button:focus-visible {
   background: var(--panel);
 }
 
-/* ---------- 底部提示条 ---------- */
+/* ---------- 顶部 Toast ---------- */
 
-/* 阅读页与词条页共用：落在底部中间，几秒后自己消失。 */
-.toast,
-.reading-toast,
-.entries-toast {
+/*
+ * 全软件唯一一种轻提示：标题栏下方居中，绝不落到输入框与底部快捷键行上。
+ * 深墨底 + 纸色字，浅色 / 深色主题下都保持高对比；动作按钮与倒计时条是同一形态。
+ */
+.toast {
   position: fixed;
-  bottom: 24px;
+  top: calc(var(--titlebar-height) + 12px);
   left: 50%;
-  z-index: 50;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   max-width: min(560px, calc(100vw - 48px));
-  padding: 8px 16px;
-  border: 1px solid var(--rule);
+  padding: 8px 14px;
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--panel);
-  color: var(--ink);
-  box-shadow: 0 6px 20px rgba(60, 48, 30, 0.06);
-  font-size: 13px;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: var(--shadow-dialog);
+  font-size: 12.5px;
   line-height: 18px;
   transform: translateX(-50%);
+  animation: toast-in var(--motion-float) var(--ease-paper);
 }
 
-[data-theme="dark"] .toast,
-[data-theme="dark"] .reading-toast,
-[data-theme="dark"] .entries-toast {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+.toast-message {
+  min-width: 0;
 }
 
+.toast-undo {
+  flex: none;
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.toast-undo:hover {
+  opacity: 0.82;
+}
+
+.toast-error {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+}
+
+/* 5 秒倒计时细线：只做视觉提示，动作是否过期由 toast-store 的计时器决定。 */
+.toast-progress {
+  position: absolute;
+  right: 14px;
+  bottom: 4px;
+  left: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 32%, transparent);
+  transform-origin: left;
+  animation: toast-countdown var(--toast-duration, 5000ms) linear forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes toast-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/*
+ * 系统开启「减少动态效果」时全站归零。用全局 !important 而不是逐个组件列选择器，
+ * 后续票新增的 domain CSS（抽屉、拉帘、落墨、Toast）也自动被覆盖，不留漏洞。
+ */
 @media (prefers-reduced-motion: reduce) {
-  .nav-item,
-  .button {
-    transition: none;
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

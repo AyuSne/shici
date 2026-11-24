@@ -25,6 +25,15 @@
   --font-ui: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   --font-serif: "Source Serif 4", Sitka, Georgia, "Songti SC", serif;
 
+  /* 纸墨微动效：起手干脆、落点轻缓；零弹跳、零缩放，reduced-motion 下全部归零。 */
+  --ease-paper: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-collapse: 200ms;
+  --motion-float: 180ms;
+  --motion-hover: 150ms;
+  --motion-ink: 260ms;
+  /* 融合标题栏：渲染层顶栏与原生覆盖控制区共用。 */
+  --titlebar-height: 34px;
+
   color-scheme: light;
 }
 

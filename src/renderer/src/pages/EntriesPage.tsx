@@ -3,6 +3,8 @@ import type { EntryListResult, EntryPage, EntrySentence } from '../../../shared/
 import { deleteEntrySentence, loadEntryList, loadEntryPage } from '../api'
 import { getChatStore, openGroupThread, openThreadForMain } from '../chat/store'
 import { ErrorBlock } from '../components/error-block'
+import { Icon } from '../components/icons'
+import { showToast } from '../components/toast-store'
 import { EntryList, type EntryFilter, type EntrySort } from '../entries/entry-list'
 import { deleteLastSentenceText, entryHeadlineText } from '../entries/format'
 import { entryLayoutForWidth, type EntryLayout } from '../entries/layout'
@@ -230,8 +232,8 @@ export function EntriesPage({
 
   useEffect(() => {
     if (hint === null) return
-    const timer = window.setTimeout(() => setHint(null), 4000)
-    return () => window.clearTimeout(timer)
+    showToast({ message: hint })
+    setHint(null)
   }, [hint])
 
   useEffect(() => {
@@ -475,9 +477,11 @@ export function EntriesPage({
                   className="button"
                   onClick={() => void askAboutEntry()}
                 >
+                  <Icon name="chat" size={14} />
                   开始对话
                 </button>
                 <button type="button" className="button" onClick={() => void askAboutEntry(true)}>
+                  <Icon name="spark" size={14} />
                   新开一条
                 </button>
                 <button
@@ -487,6 +491,7 @@ export function EntriesPage({
                   disabled={later.busyEntryId !== null}
                   onClick={toggleLater}
                 >
+                  <Icon name="eye" size={14} />
                   {laterToggleLabel(page.entry.laterMarkedAt !== null)}
                 </button>
                 <button
@@ -496,6 +501,7 @@ export function EntriesPage({
                   aria-controls={LEARNING_RAIL_ID}
                   onClick={() => setRailOpen(true)}
                 >
+                  <Icon name="book" size={14} />
                   学习内容 {page.entry.noteCount}
                 </button>
               </div>
@@ -608,12 +614,6 @@ export function EntriesPage({
           onChanged={(message) => refresh(message)}
           onEntryGone={entryGone}
         />
-      )}
-
-      {hint === null ? null : (
-        <p className="entries-toast" role="status">
-          {hint}
-        </p>
       )}
     </div>
   )

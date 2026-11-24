@@ -70,7 +70,8 @@ async function resizeTo(
       },
       { width, height: 820 }
     )
-    expect(minimum[0]).toBe(900)
+    // 融合标题栏后窗口没有系统边框：884 内容宽 ≈ 旧版 900 外框的可用正文宽。
+    expect(minimum[0]).toBe(884)
   } else {
     await page.setViewportSize({ width, height: 820 })
   }
@@ -149,7 +150,7 @@ async function walkPages(handle: AppHandle, breakpoint: number): Promise<void> {
   await expect(page.getByRole('heading', { name: '先读一篇' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
   const globalBar = await page.locator('.globals').boundingBox()
-  expect(Math.round(globalBar?.width ?? 0)).toBe(238)
+  expect(Math.round(globalBar?.width ?? 0)).toBe(224)
   await expectInsideViewport(page, '.home-actions .button-primary')
 
   // 文章库：管理页在 1100 以下收成两栏（详情落到列表下面），不横向溢出。

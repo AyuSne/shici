@@ -7,7 +7,7 @@ import type {
   EntrySentence,
   EntrySentenceGroup
 } from '../../shared/entries'
-import type { HomeEntryChip } from '../../shared/library'
+import type { HomeEntryChip, HomeArticleEntry } from '../../shared/library'
 import { buildSearchSnippet } from '../../shared/search'
 import type { AppDatabase } from '../db/database'
 import type { Dictionary } from '../dictionary/dictionary'
@@ -71,6 +71,9 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
 /** 首页最多摆几个词条 chip；再多就交给词条页。 */
 export const HOME_RECENT_ENTRY_LIMIT = 8
 
+/** 首页「继续阅读」卡片底部最多速览几个本篇词条。 */
+export const HOME_ARTICLE_ENTRY_LIMIT = 4
+
 /**
  * 首页「最近收集」：只数真实收下的词条（至少一条原句），排序与词条列表默认一致，
  * 最近收词的排前面；上限固定，稍后看标记与钉住都不参与。
@@ -96,7 +99,30 @@ export function readRecentEntryChips(
 }
 
 /**
- * 每个词条只给一处最能说明问题的命中：主词形 > 最近收集的命中原句 > 置顶/最新的学习内容。
+ * 首页「继续阅读」的本篇速览：只看这一篇的 entry_sentence，按词条在本篇最近一次
+ * 收词时间倒序；同一词条在本篇收过多句也只出现一次。
+ */
+export function readArticleEntryChips(
+  database: AppDatabase,
+  articleId: string,
+  limit: number = HOME_ARTICLE_ENTRY_LIMIT
+): HomeArticleEntry[] {
+  const rows = database
+    .prepare(
+      `SELECT we.id AS entry_id, we.main_form AS main_form, MAX(es.collected_at) AS last_at
+         FROM word_entry we
+         JOIN entry_sentence es ON es.entry_id = we.id
+        WHERE es.article_id = ?
+        GROUP BY we.id
+        ORDER BY last_at DESC, we.id DESC
+        LIMIT ?`
+    )
+    .all(articleId, limit) as { entry_id: string; main_form: string }[]
+
+  return rows.map((row) => ({ entryId: row.entry_id, mainForm: row.main_form }))
+}
+
+/**
  * 一次批量读出，不按词条逐条查；片段与高亮区间都交给 shared/search.ts，界面只按区间切。
  */
 function readEntryHits(

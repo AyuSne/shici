@@ -187,7 +187,7 @@ test.describe('词条页', () => {
     await rail.getByRole('textbox', { name: '写学习内容' }).fill('记：approach 是「做法、途径」。')
     await rail.getByRole('button', { name: '保存学习内容' }).click()
     await expect(rail.locator('.entry-note-body')).toHaveText(['记：approach 是「做法、途径」。'])
-    await expect(page.locator('.entries-toast')).toHaveText('学习内容已保存。')
+    await expect(page.locator('.toast')).toHaveText('学习内容已保存。')
 
     // 就地改，旧稿不保留。
     await rail.locator('.entry-note').first().getByRole('button', { name: '编辑' }).click()

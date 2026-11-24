@@ -196,9 +196,20 @@ export type ReadingPoint = {
   sentenceText: string
 }
 
+/** 首页「继续阅读」卡片底部速览：本篇最近拾下的一个词条，点一下直达词条。 */
+export type HomeArticleEntry = {
+  entryId: string
+  mainForm: string
+}
+
 export type ContinueReading = {
   article: LibraryArticle
   lastReadPoint: ReadingPoint | null
+  /**
+   * 当前续读篇目里最近拾下的词条，最多 `HOME_ARTICLE_ENTRY_LIMIT` 个；
+   * 只认这一篇的 entry_sentence，其他文章的收集不混进来。
+   */
+  articleEntries: HomeArticleEntry[]
 }
 
 /** 首页「最近收集」的一个词条 chip：复用词条列表那一行，只取 chip 需要的字段。 */

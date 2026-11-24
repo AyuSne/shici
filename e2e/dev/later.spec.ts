@@ -78,7 +78,7 @@ test.describe('稍后看', () => {
 
     const marked = main.getByRole('button', { name: '取消稍后看', exact: true })
     await expect(marked).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.locator('.entries-toast')).toHaveText('已把「approach」加入稍后看。')
+    await expect(page.locator('.toast')).toHaveText('已把「approach」加入稍后看。')
 
     // 切到首页：单列显示，最近收集仍是原来的三个词条。
     await nav(page, '首页')

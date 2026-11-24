@@ -30,6 +30,8 @@ import { lookupDictionaryOrUnavailable } from '../dictionary/lookup'
 import { getChatStore, openThreadForMain } from '../chat/store'
 import { ErrorBlock } from '../components/error-block'
 import { failureText } from '../errors'
+import { showToast } from '../components/toast-store'
+import { Icon } from '../components/icons'
 import { useLaterMark } from '../later/use-later-mark'
 import { readingPointText } from '../library/format'
 import {
@@ -323,11 +325,18 @@ export function ReadingPage({
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [])
 
+  // 阅读页的轻提示与失败都交给全局顶部 Toast：5 秒、同一套计时与动作形态。
   useEffect(() => {
     if (hint === null) return
-    const timer = window.setTimeout(() => setHint(null), 4000)
-    return () => window.clearTimeout(timer)
+    showToast({ message: hint })
+    setHint(null)
   }, [hint])
+
+  useEffect(() => {
+    if (collectError === null) return
+    showToast({ message: collectError, tone: 'error' })
+    setCollectError(null)
+  }, [collectError])
 
   const blocks = useMemo(() => {
     if (!view) return []
@@ -835,6 +844,7 @@ export function ReadingPage({
             data-search-trigger="true"
             onClick={() => onOpenSearch()}
           >
+            <Icon name="search" size={14} />
             搜索
           </button>
           {view && settings ? (
@@ -847,6 +857,7 @@ export function ReadingPage({
                   void openReadingThread({ kind: 'article', articleId: view.article.id })
                 }
               >
+                <Icon name="chat" size={14} />
                 与这篇文章对话
               </button>
               <button
@@ -858,6 +869,7 @@ export function ReadingPage({
                   void openReadingThread({ kind: 'article', articleId: view.article.id }, true)
                 }
               >
+                <Icon name="spark" size={14} />
                 新开一条
               </button>
               <button
@@ -869,6 +881,7 @@ export function ReadingPage({
                   updatePreferences({ annotationsVisible: !settings.annotationsVisible })
                 }
               >
+                <Icon name="eye" size={14} />
                 注释：{settings.annotationsVisible ? '开' : '关'}
               </button>
               <div className="reading-settings-anchor" ref={settingsButtonRef}>
@@ -879,6 +892,7 @@ export function ReadingPage({
                   aria-haspopup="true"
                   onClick={() => setSettingsOpen((open) => !open)}
                 >
+                  <Icon name="settings" size={14} />
                   阅读设置
                 </button>
                 {settingsOpen ? (
@@ -1064,17 +1078,6 @@ export function ReadingPage({
             updateEntryPanel((current) => ({ ...current, confirmingDelete: false }))
           }
         />
-      )}
-
-      {hint === null ? null : (
-        <p className="reading-toast" role="status">
-          {hint}
-        </p>
-      )}
-      {collectError === null ? null : (
-        <p className="reading-toast reading-toast-error" role="alert">
-          {collectError}
-        </p>
       )}
     </div>
   )
