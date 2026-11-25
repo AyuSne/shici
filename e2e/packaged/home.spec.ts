@@ -10,8 +10,10 @@ test('打包产物能启动并显示首页', async ({ launch }) => {
   const { page, userDataDirectory, close } = await launch({ packaged: true })
 
   await expect(page).toHaveTitle('拾词')
+  await expect(page.locator('.titlebar-brand')).toContainText('拾词')
+  await expect(page.locator('.titlebar-brand svg.brand-mark')).toBeVisible()
   await expect(page.locator('.brand')).toHaveText('拾词')
-  await expect(page.locator('svg.brand-mark')).toBeVisible()
+  await expect(page.locator('.brand svg.brand-mark')).toBeVisible()
 
   const navigation = page.getByRole('navigation', { name: '全局导航' })
   await expect(navigation).toBeVisible()
