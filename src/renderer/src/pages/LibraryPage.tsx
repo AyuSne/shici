@@ -14,6 +14,7 @@ import {
 } from '../api'
 import { failureText } from '../errors'
 import { ErrorBlock } from '../components/error-block'
+import { showToast } from '../components/toast-store'
 import { getChatStore, openThreadForMain } from '../chat/store'
 import { LibraryArticleActions } from '../library/article-actions'
 import { ArticleCollectedSection } from '../library/article-collected'
@@ -161,16 +162,17 @@ export function LibraryPage({
     }
   }, [trimmedQuery, reloadToken])
 
+  // 导入结果与文章动作提示统一交给全局顶部 Toast，页面不再自己计时。
   useEffect(() => {
     if (importMessage === null) return
-    const timer = window.setTimeout(() => setImportMessage(null), 5000)
-    return () => window.clearTimeout(timer)
+    showToast({ message: importMessage })
+    setImportMessage(null)
   }, [importMessage])
 
   useEffect(() => {
     if (hint === null) return
-    const timer = window.setTimeout(() => setHint(null), 5000)
-    return () => window.clearTimeout(timer)
+    showToast({ message: hint })
+    setHint(null)
   }, [hint])
 
   function updateExpansion(patch: Partial<ReturnType<typeof libraryViewState>>): void {
@@ -197,11 +199,13 @@ export function LibraryPage({
     navigate('reading', { articleId, readingFrom: 'library' })
   }
 
-  async function askAboutArticle(forceNew = false): Promise<void> {
+  async function askAboutArticle(): Promise<void> {
     if (detail === null) return
     setLoadError(null)
-    const opened = await openThreadForMain({ kind: 'article', articleId: detail.id }, { forceNew })
-    if (opened === null) setLoadError(getChatStore().error ?? '没能打开对话，请刷新文章库后再试。')
+    const opened = await openThreadForMain({ kind: 'article', articleId: detail.id })
+    if (opened === null && getChatStore().error !== null) {
+      setLoadError(getChatStore().error ?? '没能打开对话，请刷新文章库后再试。')
+    }
   }
 
   function retryLoad(): void {
@@ -465,10 +469,7 @@ export function LibraryPage({
                   className="button"
                   onClick={() => void askAboutArticle()}
                 >
-                  与这篇对话
-                </button>
-                <button type="button" className="button" onClick={() => void askAboutArticle(true)}>
-                  新开一条
+                  问模型
                 </button>
               </div>
               <ArticleCollectedSection article={detail} />
@@ -482,17 +483,6 @@ export function LibraryPage({
           )}
         </aside>
       </div>
-
-      {importMessage === null ? null : (
-        <p className="toast" role="status">
-          {importMessage}
-        </p>
-      )}
-      {hint === null ? null : (
-        <p className="toast" role="status">
-          {hint}
-        </p>
-      )}
     </div>
   )
 }

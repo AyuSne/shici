@@ -13,6 +13,8 @@ import type {
   EditQuestionRequest,
   OpenThreadForMainRequest,
   OpenThreadForMainResult,
+  PackArticleWordsRequest,
+  PackArticleWordsResult,
   QuestionResult,
   SaveAnswerRequest,
   SaveAnswerResult,
@@ -65,6 +67,13 @@ type ThreadEntryRow = {
   kind: string
   payload: string
   created_at: string
+}
+
+type AttemptEntryRow = {
+  thread_id: string
+  parent_id: string | null
+  kind: string
+  payload: string
 }
 
 type QuestionPayload = {
@@ -301,7 +310,8 @@ function mainIdOf(request: CreateThreadRequest['main']): string | null {
 function mainLabelOf(main: ThreadMain): string {
   switch (main.kind) {
     case 'none':
-      return '未挂对象'
+      // 面向学习者的说法：这条对话没有绑定词条/原句/文章，从空白开始。
+      return '空白学习'
     case 'entry':
       return `词条 ${main.mainForm}`
     case 'sentence':
@@ -894,6 +904,25 @@ function groupTitleOf(forms: readonly string[]): string {
   return forms.length <= 1 ? first : `${first} 等 ${forms.length} 个词`
 }
 
+/**
+ * 空白/组词线程的唯一写入路径：主对象留空，上下文整份写进 `context_json`。
+ * 组词与「本篇未整理词打包」共用，不另建会话表，也不另写一套 generation 状态。
+ */
+function insertContextThread(
+  database: AppDatabase,
+  input: { title: string; context: readonly ThreadContextItem[]; now: string }
+): ChatThreadView | null {
+  const id = randomUUID()
+  database
+    .prepare(
+      `INSERT INTO thread (id, title, main_kind, main_id, context_json, leaf_entry_id,
+                           created_at, updated_at)
+       VALUES (?, ?, 'none', NULL, ?, NULL, ?, ?)`
+    )
+    .run(id, input.title, JSON.stringify(input.context), input.now, input.now)
+  return readThreadView(database, id)
+}
+
 /** 请求里的词条 id 去空白、去重；非字符串与空串不算选中的词。 */
 function uniqueEntryIds(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -950,22 +979,135 @@ export function createGroupThread(
     forms.push(word.label)
   }
 
-  const id = randomUUID()
-  database.transaction(() => {
-    database
-      .prepare(
-        `INSERT INTO thread (id, title, main_kind, main_id, context_json, leaf_entry_id,
-                             created_at, updated_at)
-         VALUES (?, ?, 'none', NULL, ?, NULL, ?, ?)`
-      )
-      .run(id, groupTitleOf(forms), JSON.stringify(context), now, now)
-  }).immediate()
+  const holder: { thread: ChatThreadView | null } = { thread: null }
+  database
+    .transaction(() => {
+      holder.thread = insertContextThread(database, {
+        title: groupTitleOf(forms),
+        context,
+        now
+      })
+    })
+    .immediate()
 
-  const thread = readThreadView(database, id)
+  const thread = holder.thread
   if (!thread) {
     return { status: 'rejected', reason: 'missing-word' }
   }
   return { status: 'created', thread }
+}
+
+type PackArticleRow = SentenceItemRow & {
+  entry_id: string
+  entry_main_form: string
+  note_count: number
+  sentence_count: number
+  article_count: number
+}
+
+/**
+ * 「把本篇未整理学习内容的词打包问模型」：
+ * - 只认本文的 entry_sentence，按段落 / 句序 / 字区间第一次出现的顺序去重词条；
+ * - 只打包 live `noteCount === 0` 的词（置顶学习内容也算已整理）；
+ * - 上下文是每个词 + 它在本文对应到的全部原句，绝不使用别篇最近收的那句；
+ * - 超过 20 个时明确报告没带上的数量，不在服务端假装全带上了；
+ * - 没有可打包的词时不建空线程，交给界面温和提示。
+ */
+export function packArticleUnorganizedWords(
+  database: AppDatabase,
+  request: PackArticleWordsRequest,
+  options: { now?: string } = {}
+): PackArticleWordsResult {
+  const article = database
+    .prepare('SELECT 1 FROM article WHERE id = ?')
+    .get(request.articleId)
+  if (article === undefined) {
+    return { status: 'missing' }
+  }
+
+  const rows = database
+    .prepare(
+      `SELECT es.entry_id, ${SENTENCE_ITEM_SELECT},
+              we.main_form AS entry_main_form,
+              (SELECT COUNT(*) FROM learning_note ln WHERE ln.entry_id = es.entry_id) AS note_count,
+              (SELECT COUNT(*) FROM entry_sentence x WHERE x.entry_id = es.entry_id) AS sentence_count,
+              (SELECT COUNT(DISTINCT x.article_id) FROM entry_sentence x
+                WHERE x.entry_id = es.entry_id) AS article_count
+         FROM entry_sentence es
+         ${SENTENCE_ITEM_JOINS}
+         JOIN word_entry we ON we.id = es.entry_id
+        WHERE es.article_id = ?
+        ORDER BY p.ordinal, es.sentence_ordinal, es.char_start, es.id`
+    )
+    .all(request.articleId) as PackArticleRow[]
+
+  const ordered: { row: PackArticleRow; sentences: PackArticleRow[] }[] = []
+  const byEntry = new Map<string, { row: PackArticleRow; sentences: PackArticleRow[] }>()
+  for (const row of rows) {
+    let group = byEntry.get(row.entry_id)
+    if (group === undefined) {
+      group = { row, sentences: [] }
+      byEntry.set(row.entry_id, group)
+      ordered.push(group)
+    }
+    group.sentences.push(row)
+  }
+
+  if (ordered.length === 0) {
+    return { status: 'empty', reason: 'no-words', totalCount: 0 }
+  }
+
+  const unorganized = ordered.filter((group) => group.row.note_count === 0)
+  if (unorganized.length === 0) {
+    return { status: 'empty', reason: 'all-organized', totalCount: 0 }
+  }
+
+  const packed = unorganized.slice(0, GROUP_WORD_LIMIT)
+  const context: ThreadContextItem[] = []
+  const seen = new Set<string>()
+  for (const group of packed) {
+    const word = toWordItem(
+      group.row.entry_id,
+      group.row.entry_main_form,
+      group.row.sentence_count,
+      group.row.article_count
+    )
+    if (!seen.has(word.id)) {
+      seen.add(word.id)
+      context.push(word)
+    }
+    for (const sentence of group.sentences) {
+      const item = toSentenceItem(sentence)
+      if (!seen.has(item.id)) {
+        seen.add(item.id)
+        context.push(item)
+      }
+    }
+  }
+
+  const now = nowOf(options)
+  const holder: { thread: ChatThreadView | null } = { thread: null }
+  database
+    .transaction(() => {
+      holder.thread = insertContextThread(database, {
+        title: groupTitleOf(packed.map((group) => group.row.entry_main_form)),
+        context,
+        now
+      })
+    })
+    .immediate()
+
+  const thread = holder.thread
+  if (thread === null) {
+    return { status: 'missing' }
+  }
+  return {
+    status: 'created',
+    thread,
+    packedCount: packed.length,
+    totalCount: unorganized.length,
+    omittedCount: unorganized.length - packed.length
+  }
 }
 
 /** 查找与主对象完全相同、最近更新的线程；空白线程不复用。 */
@@ -1138,6 +1280,65 @@ function readEntryRow(
     .get(entryId, threadId) as ThreadEntryRow | undefined
 }
 
+function readAttemptEntry(
+  database: AppDatabase,
+  attemptId: string
+): AttemptEntryRow | undefined {
+  return database
+    .prepare(
+      `SELECT thread_id, parent_id, kind, payload
+         FROM thread_entry WHERE id = ?`
+    )
+    .get(attemptEntryId(attemptId)) as AttemptEntryRow | undefined
+}
+
+function attemptEntryId(attemptId: string): string {
+  return `attempt:${attemptId}`
+}
+
+function attemptIdOf(request: { attemptId?: string }): string | null {
+  const value = request.attemptId?.trim()
+  return value ? value : null
+}
+
+function sameAttemptPayload(
+  existing: AttemptEntryRow,
+  request: SaveAnswerRequest | SaveContinuationRequest
+): boolean {
+  return (
+    existing.payload ===
+    JSON.stringify(
+      answerPayloadOfRequest(
+        request.text,
+        request.thinking,
+        request.thinkingMs,
+        request.phase,
+        request.error,
+        request.model
+      )
+    )
+  )
+}
+
+/** 这条已存在的续写是否确实挂在这次请求的 answer 根下面。 */
+function continuationUnderAnswer(
+  database: AppDatabase,
+  threadId: string,
+  parentId: string | null,
+  answerId: string
+): boolean {
+  let cursor = parentId
+  const seen = new Set<string>()
+  while (cursor !== null && !seen.has(cursor)) {
+    if (cursor === answerId) return true
+    seen.add(cursor)
+    const row = readEntryRow(database, threadId, cursor)
+    if (!row || row.kind === 'question') return false
+    cursor = row.parent_id
+  }
+  return false
+}
+
 function answerPayloadOfRequest(
   text: string,
   thinking: string,
@@ -1156,6 +1357,39 @@ function answerPayloadOfRequest(
   }
 }
 
+/** 已存在 attempt 的归属校验：answer 要挂同一问，continuation 要在同一 answer 链下。 */
+type AttemptParent =
+  | { kind: 'answer'; questionId: string }
+  | { kind: 'continuation'; answerId: string }
+
+/**
+ * 同一 attempt 已经落库时的只读结果；没有 attempt 返回 null。
+ * 冲突只报告，绝不改写已有条目。
+ */
+function existingAttemptOutcome(
+  database: AppDatabase,
+  request: SaveAnswerRequest | SaveContinuationRequest,
+  attemptId: string,
+  parent: AttemptParent
+): SaveAnswerResult | null {
+  const existing = readAttemptEntry(database, attemptId)
+  if (!existing) return null
+  const parentMatches =
+    parent.kind === 'answer'
+      ? existing.kind === 'answer' && existing.parent_id === parent.questionId
+      : existing.kind === 'continuation' &&
+        continuationUnderAnswer(database, request.threadId, existing.parent_id, parent.answerId)
+  if (
+    existing.thread_id !== request.threadId ||
+    !parentMatches ||
+    !sameAttemptPayload(existing, request)
+  ) {
+    return { status: 'rejected', reason: 'conflict' }
+  }
+  const view = readThreadView(database, request.threadId)
+  return view ? { status: 'saved', thread: view } : { status: 'missing' }
+}
+
 export function saveAnswer(
   database: AppDatabase,
   request: SaveAnswerRequest,
@@ -1170,8 +1404,18 @@ export function saveAnswer(
     return { status: 'rejected', reason: 'question' }
   }
 
+  const attemptId = attemptIdOf(request)
+  if (attemptId !== null) {
+    const existing = existingAttemptOutcome(database, request, attemptId, {
+      kind: 'answer',
+      questionId: question.id
+    })
+    if (existing) return existing
+  }
+
   const now = nowOf(options)
   const id = insertEntry(database, {
+    ...(attemptId === null ? {} : { id: attemptEntryId(attemptId) }),
     threadId: request.threadId,
     parentId: question.id,
     kind: 'answer',
@@ -1242,9 +1486,19 @@ export function saveContinuation(
     return { status: 'rejected', reason: 'answer' }
   }
 
+  const attemptId = attemptIdOf(request)
+  if (attemptId !== null) {
+    const existing = existingAttemptOutcome(database, request, attemptId, {
+      kind: 'continuation',
+      answerId: answer.id
+    })
+    if (existing) return existing
+  }
+
   const now = nowOf(options)
   const parentId = descendToLatestChild(database, request.threadId, answer.id, 'continuation')
   const id = insertEntry(database, {
+    ...(attemptId === null ? {} : { id: attemptEntryId(attemptId) }),
     threadId: request.threadId,
     parentId,
     kind: 'continuation',

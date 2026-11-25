@@ -8,6 +8,7 @@ import {
   deleteModelProvider,
   setDefaultProviderModel
 } from './provider-writes'
+import { createCustomProvider } from './provider-editing'
 import {
   isProviderSelectionCleared,
   listModelProviders,
@@ -213,10 +214,11 @@ describe('addBuiltinProvider', () => {
       true
     )
     expect(first).not.toBe(second)
-    expect(readActiveChatProvider(database, { secrets, env: {} })).toBeNull()
-    expect(
-      readActiveChatProvider(database, { secrets, env: {} })?.apiKey
-    ).toBeUndefined()
+    // 第一套保存时库里还没有使用中的提供商，按本票要求直接接上；第二套不抢。
+    expect(readActiveChatProvider(database, { secrets, env: {} })).toMatchObject({
+      provider: { id: first },
+      apiKey: 'sk-one-1111'
+    })
 
     activateModelProvider(database, first)
     expect(readActiveChatProvider(database, { secrets, env: {} })?.apiKey).toBe('sk-one-1111')
@@ -404,6 +406,96 @@ describe('addBuiltinProvider', () => {
       activeCleared: true
     })
     expect(readActiveProviderId(database)).toBeNull()
+  })
+})
+
+describe('保存新提供商后的使用中状态', () => {
+  function addKimi(): string {
+    const result = addBuiltinProvider(database, secrets, {
+      catalogProviderId: 'kimi',
+      apiKey: 'sk-kimi-first'
+    })
+    if (result.status !== 'saved') throw new Error('Kimi 没存上')
+    return result.providerId
+  }
+
+  function customProvider(providerKey: string): string {
+    const result = createCustomProvider(database, secrets, {
+      providerKey,
+      displayName: providerKey,
+      protocol: 'openai-completions',
+      baseUrl: 'https://custom.example.com/v1',
+      authMode: 'stored',
+      apiKey: 'sk-custom-first',
+      model: { modelId: `${providerKey}-model` }
+    })
+    if (result.status !== 'saved') throw new Error('自定义提供商没存上')
+    return result.providerId
+  }
+
+  it('库里还没有任何提供商：第一套保存后直接是使用中', () => {
+    const providerId = addDeepSeek()
+
+    expect(readActiveProviderId(database)).toBe(providerId)
+    expect(listModelProviders(database, { secrets, env: {} })[0]).toMatchObject({
+      id: providerId,
+      active: true
+    })
+    expect(isProviderSelectionCleared(database)).toBe(false)
+    expect(readActiveChatProvider(database, { secrets, env: {} })?.apiKey).toBe(
+      'sk-deepseek-0001'
+    )
+  })
+
+  it('已有提供商但一套都没使用：新保存的那套自动使用中，不只认第一条记录', () => {
+    const existing = addDeepSeek()
+    // 老资料库或恢复的备份可能只有 provider 行，没有使用中的选择。
+    database.prepare(`DELETE FROM setting WHERE key = 'chat.activeProviderId'`).run()
+    expect(readActiveProviderId(database)).toBeNull()
+
+    const saved = addKimi()
+
+    expect(readActiveProviderId(database)).toBe(saved)
+    const providers = listModelProviders(database, { secrets, env: {} })
+    expect(providers.find((provider) => provider.id === saved)?.active).toBe(true)
+    expect(providers.find((provider) => provider.id === existing)?.active).toBe(false)
+  })
+
+  it('已有使用中的提供商：新保存的那套不抢当前选择', () => {
+    const first = addDeepSeek()
+    const second = addKimi()
+
+    expect(first).not.toBe(second)
+    expect(readActiveProviderId(database)).toBe(first)
+    expect(
+      listModelProviders(database, { secrets, env: {} }).find(
+        (provider) => provider.id === second
+      )?.active
+    ).toBe(false)
+  })
+
+  it('用户明确删掉使用中的提供商后，新保存一套会重新成为使用中并清掉「已清空」标记', () => {
+    const deleted = addDeepSeek()
+    expect(deleteModelProvider(database, deleted)).toEqual({
+      status: 'deleted',
+      activeCleared: true
+    })
+    expect(isProviderSelectionCleared(database)).toBe(true)
+
+    const saved = addKimi()
+
+    expect(readActiveProviderId(database)).toBe(saved)
+    expect(isProviderSelectionCleared(database)).toBe(false)
+    expect(readActiveChatProvider(database, { secrets, env: {} })?.provider.id).toBe(saved)
+  })
+
+  it('自定义 API 同样适用：第一套保存后自动使用中，已有使用中时不覆盖', () => {
+    const first = customProvider('first-relay')
+    expect(readActiveProviderId(database)).toBe(first)
+
+    const second = customProvider('second-relay')
+    expect(readActiveProviderId(database)).toBe(first)
+    expect(readActiveProviderId(database)).not.toBe(second)
   })
 })
 

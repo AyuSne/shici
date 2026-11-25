@@ -23,6 +23,8 @@ import { readSetting, writeSetting } from '../db/settings'
 import { paragraphLetter } from '../corpus/letter'
 import { readArticleCollections } from '../entries/queries'
 import { openArticle, readArticleDetail, readReadingPoint } from '../library/queries'
+import { readReadingGlobalPreferences } from './global-preferences'
+import { readArticlePreviouslyCollectedCount } from './known-words'
 
 /**
  * 阅读设置的键。全局默认存在 setting 表；本篇覆盖存在 article_reading_setting。
@@ -331,6 +333,8 @@ export function readReadingView(database: AppDatabase, articleId: string): Readi
     article,
     paragraphs,
     settings: effectiveReadingSettings(database, articleId),
+    globalPreferences: readReadingGlobalPreferences(database),
+    knownWordCount: readArticlePreviouslyCollectedCount(database, articleId),
     readingPoint: readReadingPoint(database, articleId),
     collected: readArticleCollections(database, articleId)
   }

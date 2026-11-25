@@ -112,9 +112,11 @@ test.describe('内置词典', () => {
     await openArticle(page, articleTitle)
 
     const panel = await selectInReading(page, 0, 'approach')
+    // 卡头已把词形与音标并排展示，词典块不再重复印一遍词头。
+    await expect(panel.locator('.reading-panel-word')).toHaveText('approach')
+    await expect(panel.locator('.reading-panel-phonetic')).toHaveText('/əˈprəutʃ/')
+    await expect(panel.locator('.dictionary-word')).toHaveCount(0)
     const block = panel.locator('.dictionary')
-    await expect(block.locator('.dictionary-word')).toHaveText('approach')
-    await expect(block.locator('.dictionary-phonetic')).toHaveText('/əˈprəutʃ/')
     await expect(block.locator('.dictionary-sense')).toHaveCount(3)
     await expect(block.locator('.dictionary-pos')).toHaveText(['n.', 'vt.', 'vi.'])
     await expect(block.getByRole('button', { name: '展开其余 2 条' })).toBeVisible()
@@ -126,8 +128,9 @@ test.describe('内置词典', () => {
     // 词形变化回退到原形，音标与释义来自原形。
     await clickAway(page)
     const second = await selectInReading(page, 0, 'hiring')
+    await expect(second.locator('.reading-panel-word')).toHaveText('hiring')
+    await expect(second.locator('.reading-panel-phonetic')).toHaveText('/ˈhaiə/')
     const hire = second.locator('.dictionary')
-    await expect(hire.locator('.dictionary-word')).toHaveText('hire')
     await expect(hire.locator('.dictionary-lemma')).toHaveText('由 hiring 归到原形')
     await expect(hire.locator('.dictionary-sense-text').first()).toContainText('雇请')
 
@@ -177,7 +180,7 @@ test.describe('内置词典', () => {
     await expect(rail.locator('.entry-note-body')).toContainText('方法, 途径')
   })
 
-  test('对话里选中词时浮卡多一个「释义」，查到同一个离线词典', async ({ launch }) => {
+  test('对话里选中片段只浮出钉住/追问/复制三项，不带词典释义', async ({ launch }) => {
     const stub = await startSseStub({ kind: 'stream', text: ['Approach matters here.'] })
     stubs.push(stub)
     const { page } = await launch({
@@ -197,25 +200,19 @@ test.describe('内置词典', () => {
     await page.getByRole('button', { name: '发送' }).click()
     await expect(page.locator('.assistant-text')).toContainText('Approach matters here.')
 
-    // 选一个单词：浮卡出现「释义」，点开是同一份离线释义。
+    // 选中单词或短语都只有统一的三个动作；离线词典只在词条右栏查。
     await selectAnswerWord(page, 'Approach')
-    const card = page.locator('.pin-selection-card')
-    await card.getByRole('button', { name: '释义' }).click()
-    const block = card.getByRole('group', { name: '词典' })
-    await expect(block.locator('.dictionary-word')).toHaveText('approach')
-    await expect(block.locator('.dictionary-phonetic')).toHaveText('/əˈprəutʃ/')
-    await expect(block.locator('.dictionary-sense-text').first()).toContainText('方法')
+    const capsule = page.locator('.selection-capsule')
+    await expect(capsule.getByRole('button')).toHaveText(['钉住', '追问', '复制'])
+    await expect(capsule.getByRole('button', { name: '释义' })).toHaveCount(0)
 
-    // 选一句短语不给「释义」，免得把整句送进词典换回一句没收录。
     await selectAnswerWord(page, 'Approach matters')
-    await expect(
-      page.locator('.pin-selection-card').getByRole('button', { name: '释义' })
-    ).toHaveCount(0)
+    await expect(capsule.getByRole('button')).toHaveText(['钉住', '追问', '复制'])
   })
 })
 
-/** 在第一条回答里选中一小段文字，模拟鼠标松开后浮出划词卡。 */
+/** 在第一条回答里选中一小段文字，模拟鼠标松开后浮出划词胶囊。 */
 async function selectAnswerWord(page: Page, needle: string): Promise<void> {
   await selectAnswerText(page, needle)
-  await expect(page.locator('.pin-selection-card')).toBeVisible()
+  await expect(page.locator('.selection-capsule')).toBeVisible()
 }

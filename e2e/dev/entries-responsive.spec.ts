@@ -8,7 +8,7 @@ import { seedWordEntries, type SeedPick } from '../fixtures/entries'
 
 /**
  * 词条页的栏宽由真实可用容器宽度决定，不是窗口断点：
- * 全局栏 238、页面左右各 32 与栏间距都要算进去。1101–1280 的窗口里容器不够
+ * 全局栏 224、页面左右各 32 与栏间距都要算进去。1101–1280 的窗口里容器不够
  * 240 + 420 + 320 + 两处 24 的间距，右栏必须是覆盖抽屉；1440 的容器够了才内联。
  */
 const article = fixtureArticle({
@@ -143,7 +143,7 @@ async function containerState(
 }
 
 async function openRail(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /^学习内容/ }).click()
+  await page.getByRole('button', { name: /^展开学习内容/ }).click()
   await expect(page.locator('.entries-rail-open')).toBeVisible()
 }
 

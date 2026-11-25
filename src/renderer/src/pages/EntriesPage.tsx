@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EntryListResult, EntryPage, EntrySentence } from '../../../shared/entries'
-import { deleteEntrySentence, loadEntryList, loadEntryPage } from '../api'
+import {
+  deleteEntrySentence,
+  loadEntryList,
+  loadEntryPage,
+  restoreEntrySentence
+} from '../api'
 import { getChatStore, openGroupThread, openThreadForMain } from '../chat/store'
 import { ErrorBlock } from '../components/error-block'
+import { Icon } from '../components/icons'
+import { showToast } from '../components/toast-store'
 import { EntryList, type EntryFilter, type EntrySort } from '../entries/entry-list'
 import { deleteLastSentenceText, entryHeadlineText } from '../entries/format'
+import { nextEntryId } from '../entries/keyboard'
 import { entryLayoutForWidth, type EntryLayout } from '../entries/layout'
 import { NoteRail } from '../entries/note-rail'
 import {
@@ -230,9 +238,45 @@ export function EntriesPage({
 
   useEffect(() => {
     if (hint === null) return
-    const timer = window.setTimeout(() => setHint(null), 4000)
-    return () => window.clearTimeout(timer)
+    showToast({ message: hint })
+    setHint(null)
   }, [hint])
+
+  // 左栏 ↑/↓ 翻阅：最后一条/第一条停住；焦点在输入框、下拉或弹层里时不拦截。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+      if (
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      ) {
+        return
+      }
+      const target = event.target instanceof Element ? event.target : null
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]'
+        )
+      ) {
+        return
+      }
+      const ids = (listing?.entries ?? []).map((entry) => entry.id)
+      const next = nextEntryId(ids, selectedId, event.key === 'ArrowDown' ? 'down' : 'up')
+      if (next === null) return
+      event.preventDefault()
+      if (next !== selectedId) selectEntry(next)
+      window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>(`[data-entry-row-id="${next}"]`)
+          ?.scrollIntoView({ block: 'nearest' })
+      })
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [listing, selectedId])
 
   useEffect(() => {
     mountedRef.current = true
@@ -292,7 +336,7 @@ export function EntriesPage({
     // 取消、离开或后来的尝试已经接管了这次动作：旧回复连页面状态都不碰。
     if (groupRequest.current !== controller) return
     groupRequest.current = null
-    if (!controller.signal.aborted && opened === null) {
+    if (!controller.signal.aborted && opened === null && getChatStore().error !== null) {
       setSelectionHint(getChatStore().error ?? '没能用这些词开对话，再试一次。')
     }
     if (!controller.signal.aborted) setStartingGroup(false)
@@ -341,7 +385,28 @@ export function EntriesPage({
       }
       if (stillHere) {
         setConfirmDelete(null)
-        refresh('原句已删除。')
+        if (result.snapshot === undefined) {
+          refresh('原句已删除。')
+          return
+        }
+        const snapshot = result.snapshot
+        // 顶部 Toast 是唯一的 5 秒计时器：撤销成功才重读当前页，切走也不拉回。
+        showToast({
+          message: '原句已删除。',
+          action: {
+            label: '撤销',
+            run: async () => {
+              const restored = await restoreEntrySentence(snapshot)
+              if (restored.status !== 'restored') {
+                throw new Error('restore rejected')
+              }
+              // 只重读列表与当前选中的词条；用户已切走时不改地址、不拉回原词条。
+              refresh()
+            },
+            failureMessage: '撤销没有完成，原句可能已被改动，再试一次。'
+          }
+        })
+        refresh()
       } else if (mountedRef.current) {
         refresh()
       }
@@ -404,20 +469,25 @@ export function EntriesPage({
     )
   }
 
-  async function askAboutEntry(forceNew = false): Promise<void> {
+  async function askAboutEntry(): Promise<void> {
     if (page === null) return
     setActionError(null)
-    const opened = await openThreadForMain({ kind: 'entry', entryId: page.entry.id }, { forceNew })
-    if (opened === null) setActionError(getChatStore().error ?? '没能打开对话，请刷新词条后再试。')
+    const opened = await openThreadForMain({ kind: 'entry', entryId: page.entry.id })
+    // 被更新的对话意图接管时返回 null 但没有错误：安静让位，不弹假失败。
+    if (opened === null && getChatStore().error !== null) {
+      setActionError(getChatStore().error ?? '没能打开对话，请刷新词条后再试。')
+    }
   }
 
-  async function askAboutSentence(sentence: EntrySentence, forceNew = false): Promise<void> {
+  async function askAboutSentence(sentence: EntrySentence): Promise<void> {
     setActionError(null)
     const opened = await openThreadForMain({
       kind: 'sentence',
       entrySentenceId: sentence.id
-    }, { forceNew })
-    if (opened === null) setActionError(getChatStore().error ?? '没能打开对话，请刷新词条后再试。')
+    }, { ensureSentenceContext: true })
+    if (opened === null && getChatStore().error !== null) {
+      setActionError(getChatStore().error ?? '没能打开对话，请刷新词条后再试。')
+    }
   }
 
   const overlay = layout === 'drawer' && railOpen && page !== null
@@ -472,13 +542,11 @@ export function EntriesPage({
               <div className="entries-main-actions">
                 <button
                   type="button"
-                  className="button"
+                  className="button button-primary"
                   onClick={() => void askAboutEntry()}
                 >
-                  开始对话
-                </button>
-                <button type="button" className="button" onClick={() => void askAboutEntry(true)}>
-                  新开一条
+                  <Icon name="chat" size={14} />
+                  问模型
                 </button>
                 <button
                   type="button"
@@ -487,16 +555,8 @@ export function EntriesPage({
                   disabled={later.busyEntryId !== null}
                   onClick={toggleLater}
                 >
+                  <Icon name="eye" size={14} />
                   {laterToggleLabel(page.entry.laterMarkedAt !== null)}
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  aria-expanded={railOpen}
-                  aria-controls={LEARNING_RAIL_ID}
-                  onClick={() => setRailOpen(true)}
-                >
-                  学习内容 {page.entry.noteCount}
                 </button>
               </div>
             </header>
@@ -532,7 +592,6 @@ export function EntriesPage({
                         onBack={() => openReading(sentence, false)}
                         onReselect={() => openReading(sentence, true)}
                         onAsk={() => void askAboutSentence(sentence)}
-                        onAskNew={() => void askAboutSentence(sentence, true)}
                         onRequestDelete={() => requestDelete(sentence)}
                       />
                     ))}
@@ -608,12 +667,6 @@ export function EntriesPage({
           onChanged={(message) => refresh(message)}
           onEntryGone={entryGone}
         />
-      )}
-
-      {hint === null ? null : (
-        <p className="entries-toast" role="status">
-          {hint}
-        </p>
       )}
     </div>
   )

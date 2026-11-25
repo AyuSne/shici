@@ -5,6 +5,12 @@ import {
 } from '../../src/testing/anthropic-sse-stub'
 import { expect, test } from '../fixtures/app'
 import { ask, openChat, openSettings } from '../fixtures/chat'
+import {
+  openAddConnectionDetails,
+  openManageModels,
+  openProviderDetails,
+  openProviderEditor
+} from '../fixtures/settings-panel'
 
 /**
  * #65 真实 Electron E2E：Anthropic Messages 走真实窗口、真实 pi 请求与本地
@@ -52,11 +58,11 @@ test.describe('Anthropic Messages 内置入口', () => {
     const { page } = handle
     await openSettings(page)
 
-    // 1. 从内置目录添加 Anthropic：端点、环境变量与模型目录都由目录带出。
+    // 1. 从内置目录添加 Anthropic：端点与模型目录在折叠详情里带出。
     await page.getByLabel('内置提供商').selectOption('anthropic')
+    await openAddConnectionDetails(page)
     const preview = page.locator('.builtin-preview')
     await expect(preview).toContainText('https://api.anthropic.com')
-    await expect(preview).toContainText('ANTHROPIC_API_KEY')
     await expect(preview).toContainText('claude-fable-5')
 
     await page.getByLabel('API 密钥').fill('sk-ant-e2e-0001')
@@ -66,23 +72,25 @@ test.describe('Anthropic Messages 内置入口', () => {
 
     const card = page.locator('[data-provider-key="anthropic"]')
     await expect(card).toContainText('Anthropic')
-    await expect(card).toContainText('Anthropic Messages')
     await expect(card).toContainText('未验证')
+    await openProviderDetails(card)
+    await expect(card).toContainText('Anthropic Messages')
     await expect(card).toContainText('sk-·············0001')
+    await openManageModels(card)
     await expect(card).toContainText('上下文 1,000,000 · 输出 128,000 · 支持思考')
     await expect(
       card.locator('[data-model-row="claude-fable-5"] input[type="radio"]')
     ).toBeChecked()
 
     // 2. 用户可把内置入口的地址改成中转/本地；保存后状态回到未验证。
-    await card.getByRole('button', { name: '编辑提供商' }).click()
+    await openProviderEditor(card)
     await card.getByLabel('编辑接口地址').fill(stub.baseUrl)
     await card.getByRole('button', { name: '保存修改' }).click()
     await expect(page.getByRole('status')).toContainText('新地址')
+    await openProviderDetails(card)
     await expect(card).toContainText(stub.baseUrl)
 
-    // 3. 使用中 + 真实流式：思维链先到、正文后到，请求带 x-api-key。
-    await card.getByRole('button', { name: '设为当前' }).click()
+    // 3. 首套保存已自动使用中；真实流式：思维链先到、正文后到，请求带 x-api-key。
     await expect(card).toContainText('使用中')
 
     await openChat(page)
@@ -109,6 +117,7 @@ test.describe('Anthropic Messages 内置入口', () => {
     await expect(card).toContainText('已验证')
 
     // 4. 换默认模型：下一次才用新模型，旧回答保留。
+    await openManageModels(card)
     const sonnetRadio = card.locator('[data-model-row="claude-sonnet-5"] input[type="radio"]')
     // 受控单选：点击后等异步保存再重渲染；不要用 check() 的即时状态假设。
     await sonnetRadio.click()
@@ -140,8 +149,10 @@ test.describe('Anthropic Messages 内置入口', () => {
     const reopened = await launch({ userDataDirectory, env: noProviderEnv })
     await openSettings(reopened.page)
     const reopenedCard = reopened.page.locator('[data-provider-key="anthropic"]')
-    await expect(reopenedCard).toContainText('Anthropic Messages')
     await expect(reopenedCard).toContainText('已验证')
+    await openProviderDetails(reopenedCard)
+    await expect(reopenedCard).toContainText('Anthropic Messages')
+    await openManageModels(reopenedCard)
     await expect(
       reopenedCard.locator('[data-model-row="claude-sonnet-5"] input[type="radio"]')
     ).toBeChecked()
@@ -178,14 +189,15 @@ test.describe('自定义 Anthropic Messages 协议', () => {
 
     const card = page.locator('[data-provider-key="my-anthropic"]')
     await expect(card).toContainText('我的 Anthropic')
+    await expect(card).toContainText('使用中')
+    await openProviderDetails(card)
     await expect(card).toContainText('Anthropic Messages')
+    await openManageModels(card)
     await expect(card.locator('[data-model-row="relay-anthropic-model"]')).toContainText(
       '不在目录'
     )
 
     // 使用中后真实发请求：模型行按 anthropic-messages 派发，鉴权走 x-api-key。
-    await card.getByRole('button', { name: '设为当前' }).click()
-    await expect(card).toContainText('使用中')
     await openChat(page)
     await ask(page, '用自定义协议回答')
     await expect(page.getByText('自定义中转可用。')).toBeVisible()

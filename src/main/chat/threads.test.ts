@@ -759,6 +759,128 @@ describe('改口与分支', () => {
   })
 })
 
+describe('保存 attempt 身份', () => {
+  function setup(): { threadId: string; questionId: string } {
+    const thread = createThread(database, { main: { kind: 'none' } }, { now: T4 })
+    if (thread.status !== 'created') throw new Error('create failed')
+    const asked = askQuestion(
+      database,
+      { threadId: thread.thread.id, text: '同一问' },
+      { now: T4 }
+    )
+    if (asked.status !== 'asked') throw new Error('ask failed')
+    return { threadId: thread.thread.id, questionId: asked.questionId }
+  }
+
+  it('同 attempt 重试回答不重复 append；不同 attempt 即使正文相同也是新版本', () => {
+    const { threadId, questionId } = setup()
+    const request = {
+      threadId,
+      questionId,
+      text: '相同正文。',
+      thinking: '想一下。',
+      phase: 'done' as const,
+      model: 'm-1',
+      attemptId: 'g-1'
+    }
+    const first = saveAnswer(database, request, { now: T1 })
+    if (first.status !== 'saved') throw new Error('first save failed')
+    expect(first.thread.turns[0]?.answer?.versions).toHaveLength(1)
+
+    const retry = saveAnswer(database, request, { now: T2 })
+    if (retry.status !== 'saved') throw new Error('retry save failed')
+    expect(retry.thread.turns[0]?.answer?.versions).toHaveLength(1)
+    expect(retry.thread.turns[0]?.answer?.text).toBe('相同正文。')
+
+    const other = saveAnswer(
+      database,
+      { ...request, attemptId: 'g-2' },
+      { now: T3 }
+    )
+    if (other.status !== 'saved') throw new Error('second attempt failed')
+    expect(other.thread.turns[0]?.answer?.versions).toHaveLength(2)
+
+    const conflict = saveAnswer(
+      database,
+      { ...request, text: '冲突正文。' },
+      { now: T4 }
+    )
+    expect(conflict).toEqual({ status: 'rejected', reason: 'conflict' })
+    const view = readThreadView(database, threadId)
+    expect(view?.turns[0]?.answer?.versions).toHaveLength(2)
+    expect(view?.turns[0]?.answer?.text).toBe('相同正文。')
+  })
+
+  it('同 attempt 重试续写不重复 append；不同 attempt 即使正文相同也是新续写', () => {
+    const { threadId, questionId } = setup()
+    const answer = saveAnswer(
+      database,
+      {
+        threadId,
+        questionId,
+        text: '底稿。',
+        thinking: '',
+        phase: 'done',
+        model: 'm-1',
+        attemptId: 'a-1'
+      },
+      { now: T1 }
+    )
+    if (answer.status !== 'saved') throw new Error('answer failed')
+    const answerId = answer.thread.turns[0]?.answer?.id as string
+    const request = {
+      threadId,
+      answerId,
+      text: '续写。',
+      thinking: '',
+      phase: 'done' as const,
+      model: 'm-1',
+      attemptId: 'c-1'
+    }
+    const first = saveContinuation(database, request, { now: T2 })
+    if (first.status !== 'saved') throw new Error('continuation failed')
+    expect(first.thread.turns[0]?.answer?.continuationIds).toHaveLength(1)
+
+    const retry = saveContinuation(database, request, { now: T3 })
+    if (retry.status !== 'saved') throw new Error('continuation retry failed')
+    expect(retry.thread.turns[0]?.answer?.continuationIds).toHaveLength(1)
+    expect(retry.thread.turns[0]?.answer?.text).toBe('底稿。续写。')
+
+    const other = saveContinuation(
+      database,
+      { ...request, attemptId: 'c-2' },
+      { now: T3 }
+    )
+    if (other.status !== 'saved') throw new Error('second continuation failed')
+    expect(other.thread.turns[0]?.answer?.continuationIds).toHaveLength(2)
+
+    const conflict = saveContinuation(
+      database,
+      { ...request, text: '冲突续写。' },
+      { now: T4 }
+    )
+    expect(conflict).toEqual({ status: 'rejected', reason: 'conflict' })
+    const view = readThreadView(database, threadId)
+    expect(view?.turns[0]?.answer?.continuationIds).toHaveLength(2)
+  })
+
+  it('旧调用方不传 attempt 时仍按每次新条目处理', () => {
+    const { threadId, questionId } = setup()
+    const first = saveAnswer(
+      database,
+      { threadId, questionId, text: '同文。', thinking: '', phase: 'done' },
+      { now: T1 }
+    )
+    const second = saveAnswer(
+      database,
+      { threadId, questionId, text: '同文。', thinking: '', phase: 'done' },
+      { now: T2 }
+    )
+    if (first.status !== 'saved' || second.status !== 'saved') throw new Error('save failed')
+    expect(second.thread.turns[0]?.answer?.versions).toHaveLength(2)
+  })
+})
+
 describe('继续生成', () => {
   it('接在同一回答后面，不产生新版本；之后的新提问跟在它后面', () => {
     const thread = createThread(database, { main: { kind: 'none' } }, { now: T4 })
@@ -1132,6 +1254,13 @@ describe('线程列表', () => {
       mainKind: 'article',
       turnCount: 0
     })
+  })
+
+  it('空白学习在列表里用自己的说法，不露出「未挂对象」这类内部词', () => {
+    const blank = createThread(database, { main: { kind: 'none' } }, { now: T0 })
+    if (blank.status !== 'created') throw new Error('create failed')
+
+    expect(listThreads(database).threads[0]?.mainLabel).toBe('空白学习')
   })
 
   it('轮数按当前分支算，改口留下的旧提问不算一轮', () => {

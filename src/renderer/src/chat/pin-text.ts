@@ -1,4 +1,5 @@
 import type { Pin, PinSourceStatus, PinTarget, PinTargetView } from '../../../shared/pins'
+import { excerptText } from '../../../shared/excerpt'
 import type { ThreadMain } from '../../../shared/threads'
 
 /** 线程主对象决定默认落点：挂词条 / 原句 → 词条，挂文章 → 文章，空白 → 未归档。 */
@@ -20,6 +21,14 @@ export function targetLabel(target: PinTargetView): string {
     return '未归档'
   }
   return target.label
+}
+
+/** 「已钉到词条 lament」/「已放进未归档」；对话页与轻问抽屉共用同一句回执。 */
+export function pinnedLabel(pin: Pick<Pin, 'target'>): string {
+  if (pin.target.kind === 'unfiled') {
+    return '已放进未归档'
+  }
+  return `已钉到${pin.target.kind === 'entry' ? '词条' : '文章'} ${pin.target.label}`
 }
 
 /** 移动时只把落点的种类与 id 发回主进程，标签留在本地显示。 */
@@ -82,9 +91,5 @@ export function pinSourceIssueText(status: PinSourceStatus): string | null {
 
 /** 卡片摘录：压掉换行，太长截断；完整的正文留在快照里。 */
 export function pinExcerpt(text: string, limit = 160): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  const characters = Array.from(flat)
-  return characters.length <= limit
-    ? flat
-    : `${characters.slice(0, limit).join('')}…`
+  return excerptText(text, limit)
 }

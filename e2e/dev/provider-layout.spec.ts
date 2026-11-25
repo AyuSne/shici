@@ -3,6 +3,7 @@ import { expect, test } from '../fixtures/app'
 import { openSettings } from '../fixtures/chat'
 import { databasePath, seedBuiltinProvider } from '../fixtures/database'
 import { seedOpenCodeGoProvider } from '../fixtures/opencode-go'
+import { openManageModels, openProviderEditor } from '../fixtures/settings-panel'
 
 /** #59 收口：有实际目录与编辑控件时检查布局，不只测空设置页。 */
 async function expectContained(page: Page, locator: Locator): Promise<void> {
@@ -52,7 +53,9 @@ for (const width of [1100, 1280, 1440]) {
     await openSettings(page)
     const deepseek = page.locator('[data-provider-key="deepseek"]')
     const go = page.locator('[data-provider-key="opencode-go"]')
+    await openManageModels(go)
     await expect(go.locator('[data-model-row]')).toHaveCount(32)
+    await openManageModels(deepseek)
     await expectContained(page, page.locator('.settings, .settings-main, .profile-card, .model-editor, .model-row-main'))
 
     // 长 ID、编辑容量与操作按钮均在目录里；不靠 overflow:hidden 掩盖整个目录溢出。
@@ -67,9 +70,10 @@ for (const width of [1100, 1280, 1440]) {
     await row.getByRole('button', { name: '取消', exact: true }).click()
 
     // 提供商编辑器与聚合搜索状态同样检查；新增按钮会在第4批出现。
-    await deepseek.getByRole('button', { name: '编辑提供商' }).click()
+    await openProviderEditor(deepseek)
     await expect(deepseek.getByLabel('编辑显示名')).toBeVisible()
     await expectContained(page, deepseek.locator('.profile-edit-form, .settings-actions'))
+    await openManageModels(go)
     await go.getByLabel('搜索模型').fill('Claude')
     await expect(go.locator('[data-model-row]')).not.toHaveCount(0)
     await expectContained(page, page.locator('.settings, .profile-card, .model-row-main, .profile-actions'))

@@ -19,6 +19,7 @@ import {
   combineCustomProviderModels
 } from './model-discovery'
 import { ModelDiscoveryPanel } from './model-discovery-panel'
+import { showProviderSavedToast } from './provider-saved-toast'
 import { credentialRejectionText } from './messages'
 import {
   baseUrlError,
@@ -46,7 +47,6 @@ const NO_ERRORS: FieldErrors = {
 type CustomProviderFormProps = {
   existingProviderKeys: readonly string[]
   refresh: () => Promise<void>
-  notify: (message: string) => void
 }
 
 /**
@@ -58,8 +58,7 @@ type CustomProviderFormProps = {
  */
 export function CustomProviderForm({
   existingProviderKeys,
-  refresh,
-  notify
+  refresh
 }: CustomProviderFormProps) {
   const [providerId, setProviderId] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -157,7 +156,11 @@ export function CustomProviderForm({
       setDiscoveryReset((current) => current + 1)
       setErrors(NO_ERRORS)
       await refresh()
-      notify(`已保存自定义提供商「${savedName}」`)
+      showProviderSavedToast({
+        message: `已保存自定义提供商「${savedName}」`,
+        providerId: result.providerId,
+        displayName: savedName
+      })
     } catch (error) {
       setFormError(failureText(error, '自定义提供商没有保存成功，再试一次。'))
     } finally {

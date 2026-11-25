@@ -12,6 +12,7 @@ import type {
   MergeEntriesResult,
   MoveEntrySentenceResult,
   ReselectEntrySentenceResult,
+  RestoreEntrySentenceResult,
   SetEntryLaterResult,
   WordEntryCard
 } from '../../shared/entries'
@@ -25,6 +26,7 @@ import type {
   LibraryListing,
   LibrarySearchResults,
   MarkArticleCompletedResult,
+  MarkArticleUncompletedResult,
   RenameArticleResult,
   SaveGeneratedArticleResult
 } from '../../shared/library'
@@ -42,6 +44,8 @@ import type {
   RestorePinsResult
 } from '../../shared/pins'
 import type {
+  ReadingGlobalPreferences,
+  ReadingGlobalPreferencesResult,
   ReadingProgressResult,
   ReadingSettingsResult,
   ReadingView
@@ -52,6 +56,7 @@ import type {
   CreateGroupThreadResult,
   CreateThreadResult,
   ExportThreadResult,
+  PackArticleWordsResult,
   QuestionResult,
   SaveAnswerResult,
   SwitchThreadResult,
@@ -75,6 +80,7 @@ const bootstrap: AppBootstrap = {
   isPackaged: false,
   schemaVersion: 3,
   theme: 'light',
+  sidebarCollapsed: false,
   chatModel: 'deepseek-flash',
   corpusImport: { total: 0, imported: 0, updated: 0, skipped: 0, failed: [] }
 }
@@ -104,6 +110,7 @@ function chatHandlers() {
       status: 'rejected',
       reason: 'empty'
     }),
+    'chat:pack-article': (): PackArticleWordsResult => ({ status: 'missing' }),
     'chat:delete': () => ({ status: 'missing' as const }),
     'chat:find-for-main': (): ChatThreadView | null => null,
     'chat:open-for-main': (): CreateThreadResult => ({ status: 'rejected', reason: 'missing-main' }),
@@ -164,7 +171,8 @@ function searchHandlers() {
       query: payload.query,
       entries: [],
       articles: []
-    })
+    }),
+    'search:shortcuts': () => ({ recentArticles: [], recentEntries: [] })
   }
 }
 
@@ -173,8 +181,20 @@ function readingHandlers() {
     'reading:open': (): ReadingView | null => null,
     'reading:words': (): ArticleWordsView | null => null,
     'reading:complete': (): MarkArticleCompletedResult => ({ status: 'missing' }),
+    'reading:uncomplete': (): MarkArticleUncompletedResult => ({ status: 'missing' }),
     'reading:progress': (): ReadingProgressResult => ({ saved: false }),
     'reading:settings': (): ReadingSettingsResult | null => null,
+    'reading:global-preferences': (): ReadingGlobalPreferences => ({
+      silentCollection: false,
+      marginNoteMode: 'all',
+      lightMask: false
+    }),
+    'reading:global-preferences-save': (payload: {
+      preferences: ReadingGlobalPreferences
+    }): ReadingGlobalPreferencesResult => ({
+      saved: true,
+      preferences: payload.preferences
+    }),
     'reading:collect': (): CollectSelectionResult => ({
       status: 'rejected',
       reason: 'article'
@@ -187,6 +207,7 @@ function entriesHandlers() {
   return {
     'entries:card': (): WordEntryCard | null => null,
     'entries:delete-sentence': (): DeleteEntrySentenceResult => ({ status: 'missing' }),
+    'entries:restore-sentence': (): RestoreEntrySentenceResult => ({ status: 'missing' }),
     'entries:list': (): EntryListResult => ({ total: 0, entries: [] }),
     'entries:page': (): EntryPage | null => null,
     'entries:sentence': (): EntrySentenceTarget | null => null,
@@ -253,6 +274,11 @@ const settingsOverview: SettingsOverview = {
     annotationsVisible: true,
     weakHighlight: true
   },
+  readingGlobal: {
+    silentCollection: false,
+    marginNoteMode: 'all',
+    lightMask: false
+  },
   theme: 'light',
   appVersion: '0.1.0',
   electronVersion: '45.0.0',
@@ -261,6 +287,16 @@ const settingsOverview: SettingsOverview = {
   lastSnapshot: null,
   backupDirectory: 'C:/data/backups',
   snapshotDirectory: 'C:/data/snapshots'
+}
+
+function uiHandlers() {
+  return {
+    'ui:preferences': () => ({ sidebarCollapsed: false }),
+    'ui:sidebar': (payload: { collapsed: boolean }) => ({
+      saved: true,
+      collapsed: payload.collapsed
+    })
+  }
 }
 
 function settingsHandlers() {
@@ -342,6 +378,7 @@ describe('registerIpcHandlers', () => {
       ...pinsHandlers(),
       ...dictionaryHandlers(),
       ...settingsHandlers(),
+      ...uiHandlers(),
       'app:bootstrap': (payload, event) => {
         received.push(payload)
         events.push(event)
@@ -383,6 +420,95 @@ describe('registerIpcHandlers', () => {
     ).toEqual([])
   })
 
+  it('界面偏好读写进入契约，启动值带侧栏折叠状态', () => {
+    expect(IPC_CHANNELS).toEqual(
+      expect.arrayContaining(['ui:preferences', 'ui:sidebar', 'search:shortcuts'])
+    )
+    expect(bootstrap.sidebarCollapsed).toBe(false)
+  })
+
+  it('收回已读完进入契约，处理函数把清完成标记的结果带回', () => {
+    expect(IPC_CHANNELS).toEqual(expect.arrayContaining(['reading:uncomplete']))
+
+    const { ipc, registered } = fakeIpcMain()
+    registerIpcHandlers(ipc, {
+      ...chatHandlers(),
+      ...libraryHandlers(),
+      ...searchHandlers(),
+      ...readingHandlers(),
+      ...entriesHandlers(),
+      ...instructionsHandlers(),
+      ...pinsHandlers(),
+      ...dictionaryHandlers(),
+      ...settingsHandlers(),
+      ...uiHandlers(),
+      'app:bootstrap': () => bootstrap,
+      'counts:summary': (): NavCounts => ({ entries: 0, articles: 0, unfiled: 0 })
+    })
+    expect(
+      registered.get('reading:uncomplete')?.(undefined, { sender: { send() {} } })
+    ).toEqual({ status: 'missing' })
+  })
+
+  it('本篇未整理词打包进入契约，处理函数带回空结果', () => {
+    expect(IPC_CHANNELS).toEqual(expect.arrayContaining(['chat:pack-article']))
+
+    const { ipc, registered } = fakeIpcMain()
+    registerIpcHandlers(ipc, {
+      ...chatHandlers(),
+      ...libraryHandlers(),
+      ...searchHandlers(),
+      ...readingHandlers(),
+      ...entriesHandlers(),
+      ...instructionsHandlers(),
+      ...pinsHandlers(),
+      ...dictionaryHandlers(),
+      ...settingsHandlers(),
+      ...uiHandlers(),
+      'app:bootstrap': () => bootstrap,
+      'counts:summary': (): NavCounts => ({ entries: 0, articles: 0, unfiled: 0 })
+    })
+    expect(
+      registered.get('chat:pack-article')?.(
+        { articleId: 'article-1' },
+        { sender: { send() {} } }
+      )
+    ).toEqual({ status: 'missing' })
+  })
+
+  it('阅读全局偏好读写进入契约，处理函数带回静默 / 眉批 / 轻遮三态', () => {
+    expect(IPC_CHANNELS).toEqual(
+      expect.arrayContaining(['reading:global-preferences', 'reading:global-preferences-save'])
+    )
+    const { ipc, registered } = fakeIpcMain()
+    registerIpcHandlers(ipc, {
+      ...chatHandlers(),
+      ...libraryHandlers(),
+      ...searchHandlers(),
+      ...readingHandlers(),
+      ...entriesHandlers(),
+      ...instructionsHandlers(),
+      ...pinsHandlers(),
+      ...dictionaryHandlers(),
+      ...settingsHandlers(),
+      ...uiHandlers(),
+      'app:bootstrap': () => bootstrap,
+      'counts:summary': (): NavCounts => ({ entries: 0, articles: 0, unfiled: 0 })
+    })
+    expect(
+      registered.get('reading:global-preferences')?.(undefined, { sender: { send() {} } })
+    ).toEqual({ silentCollection: false, marginNoteMode: 'all', lightMask: false })
+    expect(
+      registered.get('reading:global-preferences-save')?.(
+        undefined,
+        { preferences: { silentCollection: true, marginNoteMode: 'mine', lightMask: true } }
+      )
+    ).toEqual({
+      saved: true,
+      preferences: { silentCollection: true, marginNoteMode: 'mine', lightMask: true }
+    })
+  })
+
   it('契约里的 channel 没有处理函数时启动即报错', () => {    const { ipc } = fakeIpcMain()
 
     expect(() =>
@@ -402,6 +528,7 @@ describe('registerIpcHandlers', () => {
       ...pinsHandlers(),
       ...dictionaryHandlers(),
       ...settingsHandlers(),
+      ...uiHandlers(),
       'app:bootstrap': () => bootstrap,
       'counts:summary': (): NavCounts => ({ entries: 0, articles: 0, unfiled: 0 }),
       'app:not-in-contract': () => bootstrap

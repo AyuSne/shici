@@ -7,6 +7,26 @@ import type { SearchSnippet } from './search'
  */
 
 /**
+ * 跨篇「故人重逢」：同一个词条在别的文章里收过的一条原句。
+ * 阅读视图排除当前篇，词条卡与选词结果同样只给非本篇的一条。
+ */
+export type ReadingEncounter = {
+  entrySentenceId: string
+  articleId: string
+  articleTitle: string
+  /** 段序，1 起，和原句出处同一种写法。 */
+  paragraphOrdinal: number
+  sentenceText: string
+  surface: string
+}
+
+/** 阅读里随手可看的两样：置顶学习内容摘要与一条跨篇故人重逢原句。 */
+export type EntryLearningGlance = {
+  pinnedNote: { id: string; excerpt: string } | null
+  encounter: ReadingEncounter | null
+}
+
+/**
  * 正文里的一处已收集标记。`start` / `end` 是段内字符区间，和句子的区间同一套坐标，
  * 渲染层据此把琥珀色标回正文。
  */
@@ -23,6 +43,8 @@ export type ReadingCollectionMark = {
   sentenceOrdinal: number
   start: number
   end: number
+  /** 置顶学习内容摘要与跨篇故人重逢；阅读页与悬停一瞥直接用。 */
+  glance: EntryLearningGlance
 }
 
 /** 词条的规模与词形，词条卡顶部与删除提示用。 */
@@ -74,6 +96,8 @@ export type WordEntryCard = {
   entry: EntrySummary
   /** 按最近收集在前。 */
   sentences: EntrySentence[]
+  /** 阅读卡首屏要先摆出来的置顶学习内容与故人重逢。 */
+  glance: EntryLearningGlance
 }
 
 export type CollectSelectionRequest = {
@@ -95,6 +119,10 @@ export type CollectSelectionResult =
       sentence: EntrySentence
       /** 这一篇最新的已收集标记，渲染层直接换上。 */
       marks: ReadingCollectionMark[]
+      /** 词条的置顶学习内容与跨篇故人重逢，选词卡首屏直接用。 */
+      glance: EntryLearningGlance
+      /** 这次写之后本篇含多少个「曾在任何一篇收过、正文里也出现」的词。 */
+      knownWordCount: number
     }
   | {
       /** 同篇同句同一个词条已经收过，不新增关联。 */
@@ -102,11 +130,32 @@ export type CollectSelectionResult =
       entry: EntrySummary
       sentence: EntrySentence
       marks: ReadingCollectionMark[]
+      glance: EntryLearningGlance
+      knownWordCount: number
     }
   | {
       status: 'rejected'
       reason: CollectRejection
     }
+
+/**
+ * 一条被删原句的不可变快照。只用于非最后一条原句的 5 秒撤销：
+ * 恢复时原样写回 id、句锚点、词形与收集时间，不重新解析选区，也不新建词条。
+ */
+export type EntrySentenceSnapshot = {
+  id: string
+  entryId: string
+  articleId: string
+  paragraphId: string
+  /** 段内句序，0 起。 */
+  sentenceOrdinal: number
+  surface: string
+  /** 段内字符区间，与原句在原文里的位置一致。 */
+  start: number
+  end: number
+  /** ISO 8601 UTC；恢复后仍是这个时间。 */
+  collectedAt: string
+}
 
 export type DeleteEntrySentenceResult =
   | {
@@ -117,15 +166,37 @@ export type DeleteEntrySentenceResult =
       /** 被删原句所在的那一篇；`marks` 只属于这一篇。 */
       articleId: string
       marks: ReadingCollectionMark[]
+      /** 删除后这一篇含多少个曾收词；界面用它即时刷新顶栏。 */
+      knownWordCount: number
+      /**
+       * 非最后一条原句才给撤销快照；最后一条会连词条与学习内容一起删，
+       * 走显式危险确认，不提供恢复。旧记录没有这个字段。
+       */
+      snapshot?: EntrySentenceSnapshot
     }
   | {
       status: 'missing'
     }
 
+/** 撤销删除：只按快照恢复，不复活已删的文章 / 原句 / 词条，也不覆盖后来改动。 */
+export type RestoreEntrySentenceResult =
+  | {
+      status: 'restored'
+      entry: EntrySummary
+      sentence: EntrySentence
+      articleId: string
+      marks: ReadingCollectionMark[]
+      knownWordCount: number
+    }
+  | { status: 'missing' }
+  | { status: 'rejected'; reason: 'source' | 'entry' | 'conflict' }
+
 /** 词条页左栏的一行。 */
 export type EntryListItem = {
   id: string
   mainForm: string
+  /** 已收集到的其他词形，按首次收集时间排；不含主词形。 */
+  variants: string[]
   sentenceCount: number
   articleCount: number
   noteCount: number

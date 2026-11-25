@@ -91,8 +91,8 @@ test.describe('收官验收 · 整条学习链路', () => {
     const collectedPanel = page.getByRole('complementary', { name: '选词结果' })
     await expect(collectedPanel).toBeVisible()
     await expect(collectedPanel.getByText('已收下')).toBeVisible()
-    const entryText = (await collectedPanel.locator('.reading-panel-entry').textContent()) ?? ''
-    const entryName = entryText.replace(/^词条\s*/, '').trim()
+    // 词头只印一次词形；主词形与新收词形相同时就是它自己。
+    const entryName = ((await collectedPanel.locator('.reading-panel-word').textContent()) ?? '').trim()
     expect(entryName).not.toBe('')
 
     await clickAway(page)
@@ -141,7 +141,7 @@ test.describe('收官验收 · 整条学习链路', () => {
     await expect(sentenceGroup.locator('.entry-sentence-text').first()).toContainText(word)
 
     // 6. 对话：从词条开线程，问题带上这个词条作上下文，回答流式抵达。
-    await page.getByRole('button', { name: '开始对话' }).click()
+    await page.locator('.entries-main-actions').getByRole('button', { name: '问模型' }).click()
     await expect(page.getByRole('heading', { name: entryName, level: 1 })).toBeVisible()
     await expect(page.locator('.context-panel')).toContainText(entryName)
     await ask(page, '这个词在这句话里怎么理解？')
@@ -151,7 +151,7 @@ test.describe('收官验收 · 整条学习链路', () => {
     // 7. 钉住：选中一段，先放进未归档。
     await selectAnswerText(page, PINNED)
     await page
-      .locator('.pin-selection-card')
+      .locator('.selection-capsule')
       .getByRole('button', { name: '钉住', exact: true })
       .click()
     const pinDialog = page.getByRole('dialog', { name: '钉到哪儿' })
@@ -163,7 +163,7 @@ test.describe('收官验收 · 整条学习链路', () => {
     await pinDialog.getByRole('button', { name: '钉住', exact: true }).click()
     await expect(page.getByRole('status')).toContainText('已放进未归档')
     const pinBoard = page.getByRole('complementary', { name: '钉板' })
-    const pinBoardHandle = pinBoard.getByRole('button', { name: '未归档 1', exact: true })
+    const pinBoardHandle = pinBoard.getByRole('button', { name: /未归档 1/ })
     await expect(pinBoardHandle).toBeVisible()
 
     // 8. 钉板归位：从钉板把这条未归档归到词条。
@@ -191,7 +191,7 @@ test.describe('收官验收 · 整条学习链路', () => {
         })
       })
       .click()
-    await page.getByRole('button', { name: /^学习内容/ }).click()
+    await page.getByRole('button', { name: /^展开学习内容/ }).click()
     await expect(page.locator('.entry-note-body')).toContainText(PINNED)
     await expect(page.locator('.entry-note-source')).toContainText(
       `来自 ${entryName} · 第 1 轮`

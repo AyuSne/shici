@@ -31,6 +31,8 @@ export type LiveGeneration = {
   /** live 表示还在流；finishing 表示已结束、等落库。 */
   status: 'live' | 'finishing'
   startedAt: number
+  /** 生成这一条时使用的模型；落库与重试保存都用这份快照，不跟之后改的默认。 */
+  model: string
 }
 
 export type ChatSessionState = {
@@ -53,6 +55,7 @@ export type ChatSessionAction =
       baseThinking: string
       baseThinkingMs: number
       now: number
+      model?: string
     }
   | { type: 'stream'; streamId: string; event: ChatStreamEvent; now: number }
   | { type: 'stop'; now: number }
@@ -83,7 +86,8 @@ export function chatSessionReducer(
           error: null,
           terminal: null,
           status: 'live',
-          startedAt: action.now
+          startedAt: action.now,
+          model: action.model ?? ''
         }
       }
 

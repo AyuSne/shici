@@ -191,6 +191,7 @@ export function EntryList({
                 <button
                   type="button"
                   className="entries-row"
+                  data-entry-row-id={entry.id}
                   aria-current={entry.id === selectedId ? 'true' : undefined}
                   onClick={() => onSelect(entry.id)}
                 >

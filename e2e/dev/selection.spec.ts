@@ -38,6 +38,13 @@ async function openTestArticle(page: Page): Promise<void> {
   await openArticle(page, articleTitle)
 }
 
+/** 阅读页问模型先在右侧轻问抽屉就地打开；要看完整对话页时显式展开。 */
+async function expandDrawer(page: Page): Promise<void> {
+  const drawer = page.locator('[data-question-drawer="true"]')
+  await expect(drawer).toBeVisible()
+  await drawer.getByRole('button', { name: '在对话页展开' }).click()
+}
+
 test.describe('选词与原句', () => {
   test('跨句摘录带进文章对话，发送给模型且不收词', async ({ launch }) => {
     const stub = await startSseStub({ kind: 'stream', text: ['收到'] })
@@ -46,9 +53,11 @@ test.describe('选词与原句', () => {
       await openTestArticle(page)
       const excerpt = 'hiring differently. Approaching a new desk'
       await selectText(page, 0, excerpt)
-      await expect(page.getByRole('button', { name: '带这段去对话' })).toBeVisible()
+      const excerptToolbar = page.getByRole('toolbar', { name: '摘录操作' })
+      await expect(excerptToolbar.getByRole('button', { name: '问模型' })).toBeVisible()
       await expect(page.locator('.reading-selected')).toHaveCount(0)
-      await page.getByRole('button', { name: '带这段去对话' }).click()
+      await excerptToolbar.getByRole('button', { name: '问模型' }).click()
+      await expandDrawer(page)
       await expect(page.getByTestId('context-summary')).toContainText('1 条摘录')
       const chip = page.locator('.context-chip').filter({ hasText: '摘录' })
       await expect(chip).toContainText('摘录')
@@ -66,7 +75,8 @@ test.describe('选词与原句', () => {
   test('跨段摘录复用文章对话并保留两段正文与出处', async ({ launch }) => {
     const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openTestArticle(page)
-    await page.getByRole('button', { name: '与这篇文章对话' }).click()
+    await page.getByRole('button', { name: '问模型' }).click()
+    await expandDrawer(page)
     await expect(page.getByTestId('context-summary')).toBeVisible()
     const threadHash = await page.evaluate(() => window.location.hash)
     await openTestArticle(page)
@@ -83,7 +93,11 @@ test.describe('选词与原句', () => {
       selection.addRange(range)
       document.querySelector('.reading-body')?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
     })
-    await page.getByRole('button', { name: '带这段去对话' }).click()
+    await page
+      .getByRole('toolbar', { name: '摘录操作' })
+      .getByRole('button', { name: '问模型' })
+      .click()
+    await expandDrawer(page)
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(threadHash)
     const chip = page.locator('.context-chip').filter({ hasText: '摘录' })
     await expect(chip.locator('.context-chip-label')).toHaveAttribute('title', /段 1、段 2/)
@@ -101,7 +115,7 @@ test.describe('选词与原句', () => {
     await expect(panel).toBeVisible()
     await expect(panel.getByText('已收下')).toBeVisible()
     await expect(panel.locator('.reading-panel-word')).toHaveText('hiring')
-    await expect(panel.getByText('词条 hiring')).toBeVisible()
+    await expect(panel.locator('.reading-panel-entry')).toHaveText('已收进词条')
     await expect(panel.locator('.reading-panel-sentence')).toHaveText(
       'Employers approach hiring differently.'
     )
@@ -190,17 +204,24 @@ test.describe('选词与原句', () => {
     const card = page.getByRole('complementary', { name: '词条' })
     await expect(card.getByText('已收集 2 条原句 · 来自 1 篇文章')).toBeVisible()
 
-    // 还剩一条时直接删，不弹确认。
-    await card.getByRole('button', { name: '删除这条原句' }).first().click()
+    // 删除收进每行的 ··· 菜单：先把菜单点开，再点删除。
+    const deleteFirst = async (): Promise<void> => {
+      await card.getByRole('button', { name: '原句操作' }).first().click()
+      await card.getByRole('menuitem', { name: '删除这条原句' }).click()
+    }
+
+    // 还剩一条时直接删，不弹确认；顶部给出 5 秒撤销。
+    await deleteFirst()
     await expect(card.getByText('已收集 1 条原句 · 来自 1 篇文章')).toBeVisible()
+    await expect(page.locator('.toast')).toContainText('原句已删除。')
 
     // 最后一条先给提示，取消后不动。
-    await card.getByRole('button', { name: '删除这条原句' }).click()
+    await deleteFirst()
     await expect(card.getByText('这是最后一条原句')).toBeVisible()
     await card.getByRole('button', { name: '取消' }).click()
     await expect(card.getByText('已收集 1 条原句 · 来自 1 篇文章')).toBeVisible()
 
-    await card.getByRole('button', { name: '删除这条原句' }).click()
+    await deleteFirst()
     await card.getByRole('button', { name: '删除词条与原句' }).click()
 
     await expect(page.getByRole('complementary', { name: '词条' })).toHaveCount(0)

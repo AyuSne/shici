@@ -1,6 +1,12 @@
 import { useId, type RefObject } from 'react'
-import type { ReadingPreferences, ReadingSettings } from '../../../shared/reading'
+import type {
+  ReadingGlobalPreferences,
+  ReadingPreferences,
+  ReadingSettings
+} from '../../../shared/reading'
 import {
+  MARGIN_NOTE_LABELS,
+  MARGIN_NOTE_MODES,
   READING_FONT_SIZES,
   READING_LINE_HEIGHTS
 } from '../../../shared/reading'
@@ -9,14 +15,18 @@ import { settingsLabel, settingsSourceLabel } from './settings-text'
 /** 阅读设置面板：字号、行距、注释与弱高亮，附带当前值来自本篇还是全局。 */
 export function ReadingSettingsPanel({
   settings,
+  globals,
   error,
   onChange,
+  onGlobalsChange,
   onRetry,
   panelRef
 }: {
   settings: ReadingSettings
+  globals: ReadingGlobalPreferences
   error: string | null
   onChange: (patch: Partial<ReadingPreferences>) => void
+  onGlobalsChange: (patch: Partial<ReadingGlobalPreferences>) => void
   onRetry: () => void
   panelRef: RefObject<HTMLElement | null>
 }) {
@@ -54,6 +64,49 @@ export function ReadingSettingsPanel({
           onChange={(event) => onChange({ weakHighlight: event.target.checked })}
         />
         已收集的词弱高亮
+      </label>
+
+      <p className="reading-settings-eyebrow reading-settings-global-head">全局阅读偏好</p>
+
+      <label className="reading-toggle">
+        <input
+          type="checkbox"
+          checked={globals.silentCollection}
+          onChange={(event) => onGlobalsChange({ silentCollection: event.target.checked })}
+        />
+        静默圈词
+      </label>
+
+      <div className="reading-setting">
+        <span className="reading-setting-label" id="reading-margin-mode-label">
+          页边眉批
+        </span>
+        <div
+          className="reading-segments"
+          role="group"
+          aria-labelledby="reading-margin-mode-label"
+        >
+          {MARGIN_NOTE_MODES.map((mode) => (
+            <button
+              type="button"
+              key={mode}
+              className="reading-segment"
+              aria-pressed={globals.marginNoteMode === mode}
+              onClick={() => onGlobalsChange({ marginNoteMode: mode })}
+            >
+              {MARGIN_NOTE_LABELS[mode]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="reading-toggle">
+        <input
+          type="checkbox"
+          checked={globals.lightMask}
+          onChange={(event) => onGlobalsChange({ lightMask: event.target.checked })}
+        />
+        轻遮重读
       </label>
 
       <p className="reading-settings-note">

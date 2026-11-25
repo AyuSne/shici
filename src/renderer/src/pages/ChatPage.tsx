@@ -34,17 +34,17 @@ import { describeChatError, suggestsSettings } from '../chat/errors'
 import { ContextPanel } from '../chat/context-panel'
 import { DeleteThreadDialog } from '../chat/delete-thread-dialog'
 import { PinBoardPanel, type PinTab } from '../chat/pin-board'
+import { SelectionCapsule } from '../chat/selection-capsule'
+import { answerStatusLabel } from '../chat/answer-status'
+import { FOLLOW_UP_SENT_TEXT, followUpContextItem } from '../chat/follow-up'
+import { clearPinTargetPreference, usePinTargetPolicy } from '../chat/use-pin-target-policy'
 import {
-  defaultPinTarget,
   pinSourceIssueText,
-  samePinTarget,
+  pinnedLabel,
   targetFromView,
   targetLabel
 } from '../chat/pin-text'
 import { PinTargetDialog } from '../chat/pin-target-dialog'
-import { DictionaryView } from '../dictionary/dictionary-view'
-import { useDictionaryLookup } from '../dictionary/lookup'
-import { singleWordOf } from '../dictionary/presentation'
 import { LearningInstructionPanel } from '../instructions/learning-instructions'
 import { ErrorBlock } from '../components/error-block'
 import {
@@ -70,19 +70,23 @@ import {
   regenerateLastAnswer,
   removeContextItem,
   retryChat,
+  retryPendingSave,
   sendChatMessage,
   stopChat,
   submitEdit,
+  syncChatThread,
   switchAnswerVersion,
   switchQuestionVersion,
   useChatStore
 } from '../chat/store'
+import { PendingSaveNotice } from '../chat/pending-save'
 import {
   BLANK_THREAD_SUBTITLE,
   canSaveAnswerAsArticle,
   selectedVersionIndex,
   threadHeaderText
 } from '../chat/turns'
+import { dismissToast, showToast as showGlobalToast } from '../components/toast-store'
 import { failureText } from '../errors'
 import { navigate } from '../navigate'
 import { parseView } from '../routes'
@@ -90,11 +94,6 @@ import { searchUiOwns } from '../search/ownership'
 import { threadViewState, updateThreadViewState } from '../view-state'
 
 type PinSelection = AnswerSelection & { text: string }
-
-type ToastState = {
-  message: string
-  undo: (() => void | Promise<void>) | null
-}
 
 type PinDialogState = {
   action: 'create' | 'move' | 'file' | 'file-all'
@@ -112,14 +111,7 @@ const EMPTY_BOARD: PinBoard = {
   unfiledCount: 0
 }
 
-/** 「已钉到词条 lament」/「已放进未归档」。 */
-function pinnedLabel(pin: Pick<Pin, 'target'>): string {
-  if (pin.target.kind === 'unfiled') {
-    return '已放进未归档'
-  }
-  return `已钉到${pin.target.kind === 'entry' ? '词条' : '文章'} ${pin.target.label}`
-}
-
+/** 「已钉到词条 lament」/「已放进未归档」；与轻问抽屉共用同一句回执。 */
 function movedLabel(target: PinTargetView): string {
   return target.kind === 'unfiled' ? '已移回未归档' : `已换到${targetLabel(target)}`
 }
@@ -155,6 +147,7 @@ export function ChatPage({
   const store = useChatStore()
   // 空白学习的第一问会先生成对话，再以 replaceState 更新地址；此时路由 prop 仍为空。
   const viewThreadId = threadId ?? store.current?.id ?? null
+  const pendingSave = viewThreadId === null ? null : store.pendingSaves[viewThreadId] ?? null
   const [draft, setDraftState] = useState(() => threadViewState(viewThreadId).draft)
   const [thinkingOpen, setThinkingOpenState] = useState(
     () => threadViewState(viewThreadId).thinkingOpen
@@ -162,17 +155,15 @@ export function ChatPage({
   const [now, setNow] = useState(() => Date.now())
   const [pickerOpen, setPickerOpen] = useState(false)
   const [railOpen, setRailOpen] = useState(false)
+  /** 宽屏时把左侧对话列表折叠成 0 宽，给 1280 下打开钉板后的正文腾空间。 */
+  const [railCollapsed, setRailCollapsed] = useState(false)
   const [deleteCandidate, setDeleteCandidate] = useState<ThreadListItem | null>(null)
   const [candidates, setCandidates] = useState<ThreadContextCandidates | null>(null)
   const [board, setBoard] = useState<PinBoard>(EMPTY_BOARD)
   const [boardOpen, setBoardOpen] = useState(false)
   const [boardTab, setBoardTab] = useState<PinTab>('thread')
   const [freshPinIds, setFreshPinIds] = useState<readonly string[]>([])
-  const [toast, setToast] = useState<ToastState | null>(null)
   const [selection, setSelection] = useState<PinSelection | null>(null)
-  const [dictionaryWord, setDictionaryWord] = useState<string | null>(null)
-  const { lookup: selectionLookup, loading: selectionLookupLoading } =
-    useDictionaryLookup(dictionaryWord)
   const [pinDialog, setPinDialog] = useState<PinDialogState | null>(null)
   const [dialogBusy, setDialogBusy] = useState(false)
   const [busyPinId, setBusyPinId] = useState<string | null>(null)
@@ -187,11 +178,8 @@ export function ChatPage({
   const restoredScroll = useRef(false)
   const skipAutoScroll = useRef(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const selectionCardRef = useRef<HTMLDivElement>(null)
   const boardRequest = useRef(0)
   const sourceDone = useRef<string | null>(null)
-  /** 用户手动改过的落点，记到本次会话里的这条对话结束。 */
-  const targetOverrides = useRef(new Map<string, PinTargetView>())
 
   function setDraft(value: string): void {
     updateThreadViewState(viewThreadId, { draft: value })
@@ -249,7 +237,7 @@ export function ChatPage({
       },
       (error: unknown) => {
         if (sequence === boardRequest.current && isCurrent()) {
-          setToast({ message: failureText(error), undo: null })
+          showGlobalToast({ message: failureText(error), tone: 'error' })
         }
       }
     )
@@ -265,15 +253,16 @@ export function ChatPage({
   }, [viewThreadId])
 
   useEffect(() => {
-    openChatThread(threadId)
+    syncChatThread(threadId)
     setPickerOpen(false)
     setRailOpen(false)
+    setRailCollapsed(false)
     setCandidates(null)
     setBoard(EMPTY_BOARD)
     setBoardOpen(false)
     setBoardTab('thread')
     setFreshPinIds([])
-    setToast(null)
+    dismissToast()
     setSelection(null)
     setPinDialog(null)
     setSource(null)
@@ -291,14 +280,15 @@ export function ChatPage({
     return () => window.clearInterval(timer)
   }, [generatingHere])
 
+  // 「源对话已删」的快照要再点一次才丢弃；这个防误触窗口 5 秒后自己收回。
+  // 用户可见的提示与计时都在全局 Toast 里，这里不再养第二套计时器。
   useEffect(() => {
-    if (toast === null) {
-      setConfirmDiscardId(null)
+    if (confirmDiscardId === null) {
       return
     }
-    const timer = window.setTimeout(() => setToast(null), 5000)
+    const timer = window.setTimeout(() => setConfirmDiscardId(null), 5000)
     return () => window.clearTimeout(timer)
-  }, [toast])
+  }, [confirmDiscardId])
 
   useEffect(() => {
     if (freshPinIds.length === 0) {
@@ -315,11 +305,10 @@ export function ChatPage({
     const onMouseDown = (event: MouseEvent): void => {
       // 搜索覆盖层与它的入口不算点对话正文，别收掉选段卡。
       if (searchUiOwns(event.target)) return
-      if (selectionCardRef.current?.contains(event.target as Node)) {
+      if ((event.target as Element | null)?.closest('.selection-capsule')) {
         return
       }
       setSelection(null)
-      setDictionaryWord(null)
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
@@ -343,7 +332,7 @@ export function ChatPage({
       },
       (error: unknown) => {
         if (active) {
-          setToast({ message: failureText(error), undo: null })
+          showGlobalToast({ message: failureText(error), tone: 'error' })
         }
       }
     )
@@ -369,6 +358,11 @@ export function ChatPage({
     sourceAnswerId !== null &&
     current.turns.some((turn) => turn.answer !== null && turn.answer.id === sourceAnswerId)
   const pinMarks: PinMarks = { pins: textPins, freshPinIds, sourceHitPinId }
+  const pinTargets = usePinTargetPolicy({
+    threadId: viewThreadId ?? current?.id ?? null,
+    main: current?.main ?? null,
+    context: current?.context ?? []
+  })
 
   useEffect(() => {
     if (source === null || sourceAnswerId === null || !sourceOnBranch) {
@@ -538,29 +532,14 @@ export function ChatPage({
     message: string,
     undo: (() => void | Promise<void>) | null = null
   ): void => {
-    setToast({ message, undo })
+    // 全软件共用顶部 Toast：5 秒、单一动作；撤销失败由 store 捕获并换成可见错误。
+    showGlobalToast({
+      message,
+      ...(undo === null ? {} : { action: { label: '撤销', run: undo } })
+    })
   }
 
-  const defaultTargetForThread = (): PinTargetView => {
-    const view = store.current
-    if (view === null) {
-      return { kind: 'unfiled' }
-    }
-    return targetOverrides.current.get(view.id) ?? defaultPinTarget(view.main)
-  }
-
-  /** 手动改过的落点记到这条对话结束；改回默认值就不再记。 */
-  const rememberTarget = (target: PinTargetView): void => {
-    const view = store.current
-    if (view === null) {
-      return
-    }
-    if (samePinTarget(targetFromView(target), targetFromView(defaultPinTarget(view.main)))) {
-      targetOverrides.current.delete(view.id)
-    } else {
-      targetOverrides.current.set(view.id, target)
-    }
-  }
+  const defaultTargetForThread = (): PinTargetView => pinTargets.defaultTarget
 
   const captureAnswerSelection = (): void => {
     const node = scrollRef.current
@@ -573,7 +552,6 @@ export function ChatPage({
       const view = store.current
       if (read === null || view === null) {
         setSelection(null)
-        setDictionaryWord(null)
         return
       }
       const answer = view.turns
@@ -581,24 +559,30 @@ export function ChatPage({
         .find((candidate) => candidate.id === read.answerId)
       if (!answer) {
         setSelection(null)
-        setDictionaryWord(null)
         return
       }
-      // 换了一段选区，上一条词的释义不再跟着。
-      setDictionaryWord(null)
+      // 换了一段选区，上一条的浮卡位置自然作废。
       setSelection({ ...read, text: answer.text.slice(read.start, read.end) })
     }, 0)
   }
 
-  /** 划词浮卡里的「释义」：只查单词，查的是离线词典，不发模型请求。 */
-  const lookUpSelection = (): void => {
+  /**
+   * 这次钉住的默认落点：用户在本对话手动改过就以手动为准；否则在组词/多词上下文里
+   * 按选中文字唯一命中的主词形或变体预选该词条；再否则沿用主对象推导的默认落点。
+   */
+  const initialTargetForSelection = (text: string): PinTargetView =>
+    pinTargets.initialTargetForSelection(text)
+
+  /** 划词浮卡里的「追问」：把选段作为摘录上下文带进当前对话，并把焦点交给输入框。 */
+  const followUpSelection = (): void => {
     if (selection === null) {
       return
     }
-    const word = singleWordOf(selection.text)
-    if (word !== null) {
-      setDictionaryWord(word)
-    }
+    addContextItem(followUpContextItem(selection.text))
+    setSelection(null)
+    window.getSelection()?.removeAllRanges()
+    inputRef.current?.focus()
+    showToast(FOLLOW_UP_SENT_TEXT)
   }
 
   const openCreateDialog = (value: {
@@ -614,7 +598,7 @@ export function ChatPage({
       action: 'create',
       title: '钉到哪儿',
       confirmLabel: '钉住',
-      initial: defaultTargetForThread(),
+      initial: initialTargetForSelection(value.text),
       selection: { answerId: value.answerId, start: value.start, end: value.end },
       pin: null
     })
@@ -713,7 +697,7 @@ export function ChatPage({
           showToast('这条没能钉住，再试一次。')
           return
         }
-        rememberTarget(target)
+        pinTargets.rememberChoice(dialog.initial, target)
         setPinDialog(null)
         setFreshPinIds((ids) => [...ids, result.pin.id])
         showToast(pinnedLabel(result.pin), async () => {
@@ -940,28 +924,24 @@ export function ChatPage({
   /** 对话已经不在了：重试只会再失败，改成回到一条空白学习。 */
   const threadGone = store.error === '这条对话已经不在了。'
   const canSend = draft.trim() !== '' && !store.busy && generation === null &&
+    pendingSave === null &&
     (store.deletingThreadId === null || store.deletingThreadId !== store.currentId)
   /** 生成、提交或改口时，回答上的动作一律收起，避免存到半截或旧版本。 */
   const actionsDisabled =
-    generatingHere || generatingElsewhere || store.busy || editing !== null
+    generatingHere || generatingElsewhere || store.busy || editing !== null ||
+    pendingSave !== null
   const threadEntryId =
     current === null
       ? null
       : current.main.kind === 'entry' || current.main.kind === 'sentence'
         ? current.main.entryId
         : null
-  const threadPinCount = board.threadId === viewThreadId && viewThreadId !== null
-    ? new Set([
-        ...board.threadPins.map((pin) => pin.id),
-        ...board.unfiledPins.filter((pin) => pin.provenance.threadId === viewThreadId).map((pin) => pin.id)
-      ]).size
-    : 0
   const sourceEntryId =
     fromEntryId ??
     (source?.pin.target.kind === 'entry' ? source.pin.target.entryId : null)
 
   return (
-    <div className="chat-page">
+    <div className="chat-page" data-rail-collapsed={railCollapsed ? 'true' : 'false'}>
       <aside
         className="chat-rail"
         aria-label="对话列表"
@@ -973,6 +953,8 @@ export function ChatPage({
             className="button button-primary chat-new"
             onClick={() => {
               setRailOpen(false)
+              // 即使地址已经是空白对话，新的学习也必须是一次显式新意图。
+              openChatThread(null)
               navigate('chat')
             }}
           >
@@ -1030,7 +1012,7 @@ export function ChatPage({
             busy={store.deletingThreadId === deleteCandidate.id}
             onClose={() => setDeleteCandidate(null)}
             onDeleted={() => {
-              targetOverrides.current.delete(deleteCandidate.id)
+              clearPinTargetPreference(deleteCandidate.id)
               setDeleteCandidate(null)
               const route = parseView(window.location.hash)
               if (route.route === 'chat') refreshBoard(route.threadId)
@@ -1046,8 +1028,16 @@ export function ChatPage({
               type="button"
               className="chat-rail-toggle chat-action"
               aria-label="对话列表"
-              aria-expanded={railOpen}
-              onClick={() => setRailOpen((open) => !open)}
+              aria-expanded={
+                window.matchMedia('(max-width: 900px)').matches ? railOpen : !railCollapsed
+              }
+              onClick={() => {
+                if (window.matchMedia('(max-width: 900px)').matches) {
+                  setRailOpen((open) => !open)
+                  return
+                }
+                setRailCollapsed((collapsed) => !collapsed)
+              }}
             >
               对话
             </button>
@@ -1076,13 +1066,6 @@ export function ChatPage({
                   </p>
                 ) : null}
               </div>
-              <button
-                type="button"
-                className="button button-small chat-board-button"
-                onClick={() => openBoard('thread')}
-              >
-                钉板 {threadPinCount} · 本对话
-              </button>
             </div>
           </div>
         </header>
@@ -1231,6 +1214,16 @@ export function ChatPage({
         </div>
 
         <div className="chat-composer">
+          {pendingSave === null ? null : (
+            <div className="composer-inner">
+              <PendingSaveNotice
+                pending={pendingSave}
+                saving={store.savingPendingThread !== null}
+                savingThis={store.savingPendingThread === pendingSave.threadId}
+                onRetry={() => void retryPendingSave(pendingSave.threadId)}
+              />
+            </div>
+          )}
           {store.error === null ? null : (
             <div className="composer-inner">
               <ErrorBlock
@@ -1327,7 +1320,7 @@ export function ChatPage({
         threadEntryId={threadEntryId}
         busyPinId={busyPinId}
         freshPinIds={freshPinIds}
-        onOpenUnfiled={() => openBoard('unfiled')}
+        onOpen={() => openBoard(board.threadPins.length > 0 ? 'thread' : 'unfiled')}
         onClose={() => setBoardOpen(false)}
         onSelectTab={setBoardTab}
         onOpenSource={openPinSource}
@@ -1342,51 +1335,24 @@ export function ChatPage({
       />
 
       {selection === null ? null : (
-        <div
-          className="pin-selection-card"
-          ref={selectionCardRef}
-          style={{
-            left: selection.rect.left + selection.rect.width / 2,
-            top: selection.rect.bottom + 8
+        <SelectionCapsule
+          anchor={{
+            top: selection.rect.top,
+            left: selection.rect.left,
+            width: selection.rect.width,
+            height: selection.rect.height
           }}
-        >
-          <div className="pin-selection-actions">
-            <button
-              type="button"
-              className="button button-small button-primary"
-              onClick={() =>
-                openCreateDialog({
-                  answerId: selection.answerId,
-                  start: selection.start,
-                  end: selection.end,
-                  text: selection.text
-                })
-              }
-            >
-              钉住
-            </button>
-            <button
-              type="button"
-              className="button button-small"
-              onClick={() => copyText(selection.text)}
-            >
-              复制
-            </button>
-            {singleWordOf(selection.text) === null ? null : (
-              <button type="button" className="button button-small" onClick={lookUpSelection}>
-                释义
-              </button>
-            )}
-          </div>
-          {dictionaryWord === null ? null : (
-            <div className="pin-selection-dictionary">
-              <DictionaryView
-                lookup={selectionLookup}
-                loading={selectionLookupLoading}
-              />
-            </div>
-          )}
-        </div>
+          onPin={() =>
+            openCreateDialog({
+              answerId: selection.answerId,
+              start: selection.start,
+              end: selection.end,
+              text: selection.text
+            })
+          }
+          onFollowUp={followUpSelection}
+          onCopy={() => copyText(selection.text)}
+        />
       )}
 
       {pinDialog === null ? null : (
@@ -1407,29 +1373,6 @@ export function ChatPage({
             onCancel={() => setPinDialog(null)}
             onConfirm={(target) => void confirmPinDialog(target)}
           />
-        </div>
-      )}
-
-      {toast === null ? null : (
-        <div className="toast" role="status">
-          <span>{toast.message}</span>
-          {toast.undo === null ? null : (
-            <button
-              type="button"
-              className="toast-undo"
-              onClick={() => {
-                const undo = toast.undo
-                setToast(null)
-                if (undo !== null) {
-                  Promise.resolve(undo()).catch((error: unknown) => {
-                    showToast(failureText(error))
-                  })
-                }
-              }}
-            >
-              撤销
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -1647,7 +1590,7 @@ function AnswerCard({
     active: false
   })
   const presentation = answer.error ? describeChatError(answer.error) : null
-  const badge = statusLabel(answer)
+  const badge = answerStatusLabel(answer)
   const seconds = Math.floor(answer.thinkingMs / 1000)
 
   return (
@@ -1835,14 +1778,4 @@ function ThinkingSection({
       ) : null}
     </div>
   )
-}
-
-function statusLabel(answer: ThreadAnswer): string | null {
-  if (answer.phase === 'stopped') {
-    return '已停止 · 未完成'
-  }
-  if (answer.phase === 'error' && answer.text.trim() !== '') {
-    return '未完成'
-  }
-  return null
 }

@@ -18,10 +18,13 @@ import {
 export function DictionaryView({
   lookup,
   loading = false,
+  showHead = true,
   onDraft
 }: {
   lookup: DictionaryLookup | null
   loading?: boolean
+  /** 调用方已在卡头展示词形与音标时，词典块不再重复一遍。 */
+  showHead?: boolean
   onDraft?: (sense: DictionarySense) => void
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -50,10 +53,12 @@ export function DictionaryView({
 
   return (
     <div className="dictionary" role="group" aria-label="词典">
-      <div className="dictionary-head">
-        <span className="dictionary-word">{lookup.entry.word}</span>
-        {phonetic === '' ? null : <span className="dictionary-phonetic">{phonetic}</span>}
-      </div>
+      {showHead ? (
+        <div className="dictionary-head">
+          <span className="dictionary-word">{lookup.entry.word}</span>
+          {phonetic === '' ? null : <span className="dictionary-phonetic">{phonetic}</span>}
+        </div>
+      ) : null}
       {lemma === '' ? null : <p className="dictionary-lemma">{lemma}</p>}
 
       <ul className="dictionary-senses">

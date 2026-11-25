@@ -1,6 +1,7 @@
-import type { RefObject } from 'react'
-import type { WordEntryCard } from '../../../shared/entries'
+import { useRef, useState, type RefObject } from 'react'
+import type { EntryLearningGlance, WordEntryCard } from '../../../shared/entries'
 import { DictionaryView } from '../dictionary/dictionary-view'
+import { phoneticText } from '../dictionary/presentation'
 import type { DictionaryLookupState } from '../dictionary/lookup'
 import { laterToggleLabel } from '../later/format'
 
@@ -21,6 +22,8 @@ export type CollectedPanel = {
   duplicate: boolean
   /** 内置词典对圈下这个词形的查询状态。 */
   dictionary: DictionaryLookupState
+  /** 词条的置顶学习内容与跨篇故人重逢。 */
+  glance: EntryLearningGlance
 }
 
 export type EntryPanel = {
@@ -60,11 +63,25 @@ export function CollectedPanelView({
           ×
         </button>
       </header>
-      <p className="reading-panel-word">{panel.surface}</p>
-      <p className="reading-panel-entry">词条 {panel.entryMainForm}</p>
+      <div className="reading-panel-headline">
+        <p className="reading-panel-word">{panel.surface}</p>
+        {panel.dictionary.lookup?.status === 'found' &&
+        panel.dictionary.lookup.entry.phonetic !== '' ? (
+          <span className="reading-panel-phonetic">
+            {phoneticText(panel.dictionary.lookup.entry.phonetic)}
+          </span>
+        ) : null}
+      </div>
+      <p className="reading-panel-entry">
+        {panel.surface === panel.entryMainForm
+          ? '已收进词条'
+          : `归入词条 ${panel.entryMainForm}`}
+      </p>
+      <PanelGlance glance={panel.glance} />
       <DictionaryView
         lookup={panel.dictionary.lookup}
         loading={panel.dictionary.loading}
+        showHead={false}
       />
       <blockquote className="reading-panel-sentence">{panel.sentenceText}</blockquote>
       <p className="reading-panel-meta">
@@ -79,13 +96,114 @@ export function CollectedPanelView({
   )
 }
 
+/**
+ * 阅读卡首屏要先看到的置顶学习内容与故人重逢。两样都只读；
+ * 没有置顶内容或只在当前篇收过时，对应块整块不出现。
+ */
+function PanelGlance({ glance }: { glance: EntryLearningGlance }) {
+  return (
+    <>
+      {glance.pinnedNote === null ? null : (
+        <section className="reading-panel-pinned" aria-label="置顶学习内容">
+          <p className="reading-panel-glance-label">置顶学习内容</p>
+          <p className="reading-panel-pinned-body">{glance.pinnedNote.excerpt}</p>
+        </section>
+      )}
+      {glance.encounter === null ? null : (
+        <section className="reading-panel-encounter" aria-label="故人重逢">
+          <p className="reading-panel-glance-label">故人重逢</p>
+          <blockquote className="reading-panel-encounter-sentence">
+            {glance.encounter.sentenceText}
+          </blockquote>
+          <p className="reading-panel-source">
+            {glance.encounter.articleTitle} · 第 {glance.encounter.paragraphOrdinal} 段 ·{' '}
+            {glance.encounter.surface}
+          </p>
+        </section>
+      )}
+    </>
+  )
+}
+
+/**
+ * 阅读卡里的单条原句操作。删除是易误触动作，收进每行的 `···` 菜单；
+ * 高频的查看词条与问模型仍留在卡片动作区。
+ */
+function SentenceRow({
+  sentence,
+  deleting,
+  onDelete
+}: {
+  sentence: {
+    id: string
+    sentenceText: string
+    articleTitle: string
+    paragraphOrdinal: number
+    surface: string
+  }
+  deleting: boolean
+  onDelete: (entrySentenceId: string) => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  return (
+    <li className="reading-panel-sentence-row">
+      <blockquote className="reading-panel-sentence">{sentence.sentenceText}</blockquote>
+      <p className="reading-panel-source">
+        {sentence.articleTitle} · 第 {sentence.paragraphOrdinal} 段 · {sentence.surface}
+      </p>
+      <div
+        className="reading-panel-sentence-more"
+        onKeyDown={(event) => {
+          // Esc 的层级是：先收这一行的菜单，再轮到整张词条卡。
+          if (event.key !== 'Escape' || !menuOpen) return
+          event.preventDefault()
+          event.stopPropagation()
+          setMenuOpen(false)
+          toggleRef.current?.focus()
+        }}
+      >
+        <button
+          type="button"
+          ref={toggleRef}
+          className="reading-panel-more-toggle"
+          aria-label="原句操作"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          disabled={deleting}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          ···
+        </button>
+        {menuOpen ? (
+          <div className="reading-panel-sentence-menu" role="menu" aria-label="原句操作">
+            <button
+              type="button"
+              role="menuitem"
+              className="reading-panel-delete"
+              aria-label="删除这条原句"
+              disabled={deleting}
+              autoFocus
+              onClick={() => {
+                setMenuOpen(false)
+                onDelete(sentence.id)
+              }}
+            >
+              删除这条原句
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </li>
+  )
+}
+
 export function EntryPanelView({
   panel,
   panelRef,
   onClose,
   onOpenEntry,
   onAsk,
-  onAskNew,
   openingThread,
   laterBusy,
   onToggleLater,
@@ -98,7 +216,6 @@ export function EntryPanelView({
   onClose: () => void
   onOpenEntry: () => void
   onAsk: () => void
-  onAskNew: () => void
   openingThread: boolean
   laterBusy: boolean
   onToggleLater: () => void
@@ -138,26 +255,19 @@ export function EntryPanelView({
             </p>
           )}
 
+          <PanelGlance glance={panel.card.glance} />
+
           <div className="reading-panel-actions">
             <button type="button" className="button" onClick={onOpenEntry}>
               打开词条
             </button>
             <button
               type="button"
-              className="button"
+              className="button button-primary"
               disabled={openingThread || panel.entrySentenceId === null}
               onClick={onAsk}
             >
-              就这个词提问
-            </button>
-            <button
-              type="button"
-              className="button"
-              aria-label="为这句新建对话"
-              disabled={openingThread || panel.entrySentenceId === null}
-              onClick={onAskNew}
-            >
-              新建对话
+              问模型
             </button>
             <button
               type="button"
@@ -178,24 +288,12 @@ export function EntryPanelView({
 
           <ul className="reading-panel-sentences">
             {panel.card.sentences.map((sentence) => (
-              <li className="reading-panel-sentence-row" key={sentence.id}>
-                <blockquote className="reading-panel-sentence">
-                  {sentence.sentenceText}
-                </blockquote>
-                <p className="reading-panel-source">
-                  {sentence.articleTitle} · 第 {sentence.paragraphOrdinal} 段 ·{' '}
-                  {sentence.surface}
-                </p>
-                <button
-                  type="button"
-                  className="reading-panel-delete"
-                  aria-label="删除这条原句"
-                  disabled={panel.deleting}
-                  onClick={() => onDelete(sentence.id)}
-                >
-                  删除
-                </button>
-              </li>
+              <SentenceRow
+                key={sentence.id}
+                sentence={sentence}
+                deleting={panel.deleting}
+                onDelete={onDelete}
+              />
             ))}
           </ul>
 

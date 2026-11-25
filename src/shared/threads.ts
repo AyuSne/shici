@@ -172,7 +172,7 @@ export type ThreadListItem = {
   id: string
   title: string
   mainKind: ThreadMainKind
-  /** 「词条 lament」「文章 …」「未挂对象」一类的副标题。 */
+  /** 「词条 lament」「文章 …」「空白学习」一类的副标题。 */
   mainLabel: string
   turnCount: number
   createdAt: string
@@ -208,6 +208,33 @@ export type CreateGroupThreadResult =
   | { status: 'created'; thread: ChatThreadView }
   | { status: 'rejected'; reason: 'empty' | 'missing-word' | 'too-many-words' }
 
+/**
+ * 「把本篇未整理学习内容的词打包问模型」：只读这篇的已收词与原句，
+ * 取仍没有学习内容的词条，按它们在本文首次出现的段落 / 句序 / 字区间排序。
+ * 上下文只带这些词在本文对应的原句，不拿别篇最近收的句子充数。
+ */
+export type PackArticleWordsRequest = { articleId: string }
+
+export type PackArticleWordsResult =
+  | {
+      status: 'created'
+      thread: ChatThreadView
+      /** 实际带上的词条数，最多 `GROUP_WORD_LIMIT`。 */
+      packedCount: number
+      /** 本文还没整理学习内容的词条总数（去重后）。 */
+      totalCount: number
+      /** 因为上限没带上的词条数。 */
+      omittedCount: number
+    }
+  | {
+      /** 不创建空线程：这篇没收过词，或所有收词都已整理学习内容。 */
+      status: 'empty'
+      reason: 'no-words' | 'all-organized'
+      /** 待打包的词条数；empty 时恒为 0。 */
+      totalCount: number
+    }
+  | { status: 'missing' }
+
 export type OpenThreadForMainRequest = CreateThreadRequest & {
   forceNew?: boolean
   /** 阅读页主动就所点词提问时，复用线程也应带上该词及原句。 */
@@ -241,6 +268,11 @@ export type SaveAnswerRequest = {
   error?: ChatError | null
   /** 生成这一版时用的模型名，钉住出处要用。 */
   model?: string
+  /**
+   * 一次生成尝试的稳定身份。同一 attempt 重试只应得到同一条不可变条目；
+   * 缺省时保持旧调用方“每次新版本”的语义。
+   */
+  attemptId?: string
 }
 
 export type SaveContinuationRequest = {
@@ -253,12 +285,14 @@ export type SaveContinuationRequest = {
   phase: 'done' | 'stopped' | 'error'
   error?: ChatError | null
   model?: string
+  /** 继续生成这一次尝试的稳定身份；语义同 SaveAnswerRequest.attemptId。 */
+  attemptId?: string
 }
 
 export type SaveAnswerResult =
   | { status: 'saved'; thread: ChatThreadView }
   | { status: 'missing' }
-  | { status: 'rejected'; reason: 'question' | 'answer' }
+  | { status: 'rejected'; reason: 'question' | 'answer' | 'conflict' }
 
 export type UpdateThreadContextRequest = {
   threadId: string

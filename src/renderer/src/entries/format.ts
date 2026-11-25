@@ -6,6 +6,7 @@ import type {
   LearningNote,
   LearningNoteSourcePin
 } from '../../../shared/entries'
+import { excerptText } from '../../../shared/excerpt'
 import { pinSourceIssueText } from '../chat/pin-text'
 import { formatDay } from '../library/format'
 
@@ -71,8 +72,7 @@ export function noteSourceText(
 
 /** 选学习内容移动时的一行摘要：压掉换行，太长就截断。 */
 export function noteExcerpt(body: string, limit = 28): string {
-  const text = body.replace(/\s+/g, ' ').trim()
-  return text.length <= limit ? text : `${text.slice(0, limit)}…`
+  return excerptText(body, limit)
 }
 
 /** 词条标题下的一行：「已收集 6 条原句 · 来自 3 篇 · 最近 2026-11-15」。 */

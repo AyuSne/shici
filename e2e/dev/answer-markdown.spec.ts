@@ -63,7 +63,7 @@ test('活动流和停止后保留 Markdown 结构、段内换行与块间距', a
   await selectAnswerRange(page,
     { selector: '.assistant-text h3', childOffset: 0 },
     { selector: '.assistant-text h3', childOffset: 1 })
-  await expect(page.locator('.pin-selection-card')).toHaveCount(0)
+  await expect(page.locator('.selection-capsule')).toHaveCount(0)
 
   await page.keyboard.press('Escape')
   await expect(answer.getByText('已停止 · 未完成')).toBeVisible()
@@ -72,9 +72,9 @@ test('活动流和停止后保留 Markdown 结构、段内换行与块间距', a
 })
 
 async function pinSelection(page: Page, count: number) {
-  await page.locator('.pin-selection-card').getByRole('button', { name: '钉住', exact: true }).click()
+  await page.locator('.selection-capsule').getByRole('button', { name: '钉住', exact: true }).click()
   await page.getByRole('dialog', { name: '钉到哪儿' }).getByRole('button', { name: '钉住', exact: true }).click()
-  await expect(page.getByRole('complementary', { name: '钉板' }).getByRole('button', { name: `未归档 ${count}`, exact: true })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: '钉板' }).getByRole('button', { name: new RegExp(`未归档 ${count}`) })).toBeVisible()
 }
 
 test('跨段、跨列表和叶边界的选区以原文保存，只标命中块', async ({ launch }) => {
@@ -110,7 +110,7 @@ test('跨段、跨列表和叶边界的选区以原文保存，只标命中块',
   // A badge cannot be an endpoint even though it's inside a Markdown block.
   const listStart = { selector: list, childOffset: 0 }
   const listEnd = { selector: list, childOffset: 2 }
-  const card = page.locator('.pin-selection-card')
+  const card = page.locator('.selection-capsule')
   await selectAnswerRange(page, listStart, listEnd)
   await expect(card).toBeVisible()
   await selectAnswerRange(page, listStart, { selector: `${list} .pin-badge`, text: '已钉', edge: 'end' })
@@ -122,7 +122,7 @@ test('跨段、跨列表和叶边界的选区以原文保存，只标命中块',
   await selectAnswerRange(page, { selector: '.thinking-body', text: THINKING }, listEnd)
   await expect(card).toHaveCount(0)
 
-  await page.getByRole('complementary', { name: '钉板' }).getByRole('button', { name: '未归档 3', exact: true }).click()
+  await page.getByRole('complementary', { name: '钉板' }).getByRole('button', { name: /未归档 3/ }).click()
   await expect.poll(async () => (await page.locator('.pin-card-excerpt').evaluateAll(
     (cards) => cards.map((card) => card.getAttribute('title'))
   )).sort()).toEqual([
@@ -151,7 +151,7 @@ test('旧纯文本钉住只标相交的段与列表项，错误部分仍可单�
   seedLegacyPin(userDataDirectory)
   stub = await startSseStub({ kind: 'truncate', text: ['**错误前的部分**'] })
   const { page } = await openChat(launch)
-  await page.getByRole('button', { name: /旧版对话 未挂对象/ }).click()
+  await page.getByRole('button', { name: /旧版对话 空白学习/ }).click()
   const firstAnswer = page.getByRole('article', { name: '学习助手' }).first()
   const body = firstAnswer.locator('.assistant-text')
   const bars = body.locator('.is-pinned')
@@ -167,7 +167,7 @@ test('旧纯文本钉住只标相交的段与列表项，错误部分仍可单�
 
   const start = { selector: '.assistant-text p strong', index: 1, text: '错误前的部分' }
   const end = { ...start, edge: 'end' } as const
-  const card = page.locator('.pin-selection-card')
+  const card = page.locator('.selection-capsule')
   await selectAnswerRange(page, start, end)
   await expect(card).toBeVisible()
   await selectAnswerRange(page, { selector: '.assistant-text h3', text: '用法' }, end)

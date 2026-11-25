@@ -143,7 +143,8 @@ describe('collectSelection', () => {
         paragraphId: paragraphAt(article, 0).id,
         sentenceOrdinal: 0,
         start: paragraphAt(article, 0).text.indexOf('approach'),
-        end: paragraphAt(article, 0).text.indexOf('approach') + 'approach'.length
+        end: paragraphAt(article, 0).text.indexOf('approach') + 'approach'.length,
+        glance: { pinnedNote: null, encounter: null }
       }
     ])
   })
@@ -471,7 +472,8 @@ describe('deleteEntrySentence', () => {
       entryDeleted: true,
       entry: null,
       articleId: article.id,
-      marks: []
+      marks: [],
+      knownWordCount: 0
     })
     expect(readWordEntryCard(database, collected.entry.id)).toBeNull()
     expect(readArticleCollections(database, article.id)).toEqual([])

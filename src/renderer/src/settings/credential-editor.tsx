@@ -172,6 +172,11 @@ export type ProviderCredentialEditorProps = {
   provider: ModelProviderSummary
   busy: boolean
   error: string | null
+  /**
+   * 打开时预选的密钥来源。默认沿用当前配置；从失败/凭据异常的
+   * 「更换密钥」「改用本机密钥」按钮进来时直接落在要改的那一档。
+   */
+  initialAuthMode?: ProviderAuthMode
   /** 提交给主进程；成功与否由调用方决定何时卸载本编辑器。 */
   onSubmit: (request: UpdateProviderCredentialRequest) => void
   /** 取消编辑：不写库，原配置保持不变。 */
@@ -195,12 +200,14 @@ export function ProviderCredentialEditor({
   provider,
   busy,
   error,
+  initialAuthMode,
   onSubmit,
   onCancel
 }: ProviderCredentialEditorProps) {
-  const [draft, setDraft] = useState<ProviderCredentialDraft>(
-    credentialDraftOfProvider(provider)
-  )
+  const [draft, setDraft] = useState<ProviderCredentialDraft>(() => ({
+    ...credentialDraftOfProvider(provider),
+    authMode: initialAuthMode ?? provider.authMode
+  }))
   const [pending, setPending] = useState<PendingConfirmation | null>(null)
 
   /** 任何字段/来源变化都让此前的确认失效，避免确认按钮用过期的草稿。 */
@@ -246,7 +253,7 @@ export function ProviderCredentialEditor({
   const idPrefix = `credential-${provider.id}`
 
   return (
-    <div className="credential-editor-panel">
+    <div className="credential-editor-panel" data-credential-editor-for={provider.providerKey}>
       <CredentialEditor
         idPrefix={idPrefix}
         value={draft}

@@ -14,7 +14,9 @@ import type { AppDatabase } from '../db/database'
 import type { Dictionary } from '../dictionary/dictionary'
 import { reassignPinsFromEntry } from '../pins/pins'
 import { paragraphLetter } from '../corpus/letter'
+import { readArticlePreviouslyCollectedCount } from '../reading/known-words'
 import { refreshLastCollected } from './entry-state'
+import { readEntryGlance, readEntryGlances } from './glance'
 import { resolveEntryKey } from './key'
 import { readEntrySelection } from './selection'
 
@@ -27,7 +29,17 @@ type ArticleRow = { id: string }
 type ParagraphRow = { text: string }
 type SentenceRangeRow = { char_start: number; char_end: number }
 type EntryRow = { id: string }
-type StoredSentenceRow = { id: string; entry_id: string; article_id: string }
+type StoredSentenceRow = {
+  id: string
+  entry_id: string
+  article_id: string
+  paragraph_id: string
+  sentence_ordinal: number
+  surface: string
+  char_start: number
+  char_end: number
+  collected_at: string
+}
 
 type EntrySummaryRow = {
   id: string
@@ -191,22 +203,34 @@ export function readArticleCollections(
     char_end: number
   }[]
 
-  return rows.map((row) => ({
-    id: row.id,
-    entryId: row.entry_id,
-    entryMainForm: row.main_form,
-    surface: row.surface,
-    paragraphId: row.paragraph_id,
-    sentenceOrdinal: row.sentence_ordinal,
-    start: row.char_start,
-    end: row.char_end
+  const marks = rows.map(
+    (row): Omit<ReadingCollectionMark, 'glance'> => ({
+      id: row.id,
+      entryId: row.entry_id,
+      entryMainForm: row.main_form,
+      surface: row.surface,
+      paragraphId: row.paragraph_id,
+      sentenceOrdinal: row.sentence_ordinal,
+      start: row.char_start,
+      end: row.char_end
+    })
+  )
+  const glances = readEntryGlances(
+    database,
+    marks.map((mark) => mark.entryId),
+    { excludeArticleId: articleId }
+  )
+  return marks.map((mark) => ({
+    ...mark,
+    glance: glances.get(mark.entryId) ?? { pinnedNote: null, encounter: null }
   }))
 }
 
 /** 点开一个已收集词时的词条卡；词条不存在时为 null。 */
 export function readWordEntryCard(
   database: AppDatabase,
-  entryId: string
+  entryId: string,
+  options: { articleId?: string } = {}
 ): WordEntryCard | null {
   const entry = readEntrySummary(database, entryId)
   if (!entry) {
@@ -223,7 +247,14 @@ export function readWordEntryCard(
     )
     .all(entryId) as EntrySentenceRow[]
 
-  return { entry, sentences: rows.map(toEntrySentence) }
+  return {
+    entry,
+    sentences: rows.map(toEntrySentence),
+    glance: readEntryGlance(database, entryId, { excludeArticleId: options.articleId }) ?? {
+      pinnedNote: null,
+      encounter: null
+    }
+  }
 }
 
 /**
@@ -346,7 +377,11 @@ export function collectSelection(
     status: stored.created ? 'collected' : 'duplicate',
     entry,
     sentence: entrySentence,
-    marks: readArticleCollections(database, request.articleId)
+    marks: readArticleCollections(database, request.articleId),
+    glance: readEntryGlance(database, stored.entryId, {
+      excludeArticleId: request.articleId
+    }) ?? { pinnedNote: null, encounter: null },
+    knownWordCount: readArticlePreviouslyCollectedCount(database, request.articleId)
   }
 }
 
@@ -359,7 +394,11 @@ export function deleteEntrySentence(
   entrySentenceId: string
 ): DeleteEntrySentenceResult {
   const stored = database
-    .prepare('SELECT id, entry_id, article_id FROM entry_sentence WHERE id = ?')
+    .prepare(
+      `SELECT id, entry_id, article_id, paragraph_id, sentence_ordinal,
+              surface, char_start, char_end, collected_at
+         FROM entry_sentence WHERE id = ?`
+    )
     .get(entrySentenceId) as StoredSentenceRow | undefined
   if (!stored) {
     return { status: 'missing' }
@@ -386,6 +425,23 @@ export function deleteEntrySentence(
     entryDeleted,
     entry: entryDeleted ? null : readEntrySummary(database, stored.entry_id),
     articleId: stored.article_id,
-    marks: readArticleCollections(database, stored.article_id)
+    marks: readArticleCollections(database, stored.article_id),
+    knownWordCount: readArticlePreviouslyCollectedCount(database, stored.article_id),
+    // 最后一条不提供撤销：词条、学习内容与钉住落点都一起收走了，只走危险确认。
+    ...(entryDeleted
+      ? {}
+      : {
+          snapshot: {
+            id: stored.id,
+            entryId: stored.entry_id,
+            articleId: stored.article_id,
+            paragraphId: stored.paragraph_id,
+            sentenceOrdinal: stored.sentence_ordinal,
+            surface: stored.surface,
+            start: stored.char_start,
+            end: stored.char_end,
+            collectedAt: stored.collected_at
+          }
+        })
   }
 }

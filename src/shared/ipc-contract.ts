@@ -19,6 +19,7 @@ import type {
   EntryListResult,
   EntryPage,
   EntrySentenceTarget,
+  EntrySentenceSnapshot,
   LearningNoteResult,
   MergeEntriesRequest,
   MergeEntriesResult,
@@ -28,12 +29,13 @@ import type {
   PinLearningNoteRequest,
   ReselectEntrySentenceRequest,
   ReselectEntrySentenceResult,
+  RestoreEntrySentenceResult,
   SetEntryLaterRequest,
   SetEntryLaterResult,
   UpdateLearningNoteRequest,
   WordEntryCard
 } from './entries'
-import type { GlobalSearchResults } from './global-search'
+import type { GlobalSearchResults, SearchShortcuts } from './global-search'
 import type {
   ArticleDeletionPreview,
   ArticleDetail,
@@ -44,6 +46,7 @@ import type {
   LibraryListing,
   LibrarySearchResults,
   MarkArticleCompletedResult,
+  MarkArticleUncompletedResult,
   RenameArticleRequest,
   RenameArticleResult,
   SaveGeneratedArticleRequest,
@@ -98,6 +101,8 @@ import type {
   FetchProviderModelsResult
 } from './model-discovery'
 import type {
+  ReadingGlobalPreferences,
+  ReadingGlobalPreferencesResult,
   ReadingPreferences,
   ReadingProgressRequest,
   ReadingProgressResult,
@@ -132,6 +137,8 @@ import type {
   ExportThreadResult,
   OpenThreadForMainRequest,
   OpenThreadForMainResult,
+  PackArticleWordsRequest,
+  PackArticleWordsResult,
   QuestionResult,
   SaveAnswerRequest,
   SaveAnswerResult,
@@ -146,6 +153,11 @@ import type {
   UpdateThreadContextResult
 } from './threads'
 import type { AppBootstrap } from './types'
+import type {
+  SaveSidebarPreferenceRequest,
+  SaveSidebarPreferenceResult,
+  UiPreferences
+} from './ui-preferences'
 
 /**
  * 渲染层与主进程之间唯一的调用契约。新增能力时先在这里加 channel，
@@ -153,6 +165,12 @@ import type { AppBootstrap } from './types'
  */
 export interface IpcContract {
   'app:bootstrap': { payload: undefined; result: AppBootstrap }
+  /** 界面偏好：侧栏折叠等只写 setting 的全局界面状态。 */
+  'ui:preferences': { payload: undefined; result: UiPreferences }
+  'ui:sidebar': {
+    payload: SaveSidebarPreferenceRequest
+    result: SaveSidebarPreferenceResult
+  }
   'counts:summary': { payload: undefined; result: NavCounts }
   'home:summary': { payload: undefined; result: HomeSummary }
   'library:list': { payload: undefined; result: LibraryListing }
@@ -161,6 +179,8 @@ export interface IpcContract {
   'library:search': { payload: { query: string }; result: LibrarySearchResults }
   /** 全局搜索（#55）：一次查询同时给出词条与文章两组命中。 */
   'search:global': { payload: { query: string }; result: GlobalSearchResults }
+  /** 搜索框为空时的最近文章 / 最近词条快捷项。 */
+  'search:shortcuts': { payload: undefined; result: SearchShortcuts }
   'library:rename': { payload: RenameArticleRequest; result: RenameArticleResult }
   'library:delete-preview': {
     payload: { articleId: string }
@@ -177,14 +197,35 @@ export interface IpcContract {
     payload: { articleId: string }
     result: MarkArticleCompletedResult
   }
+  /** 收回「已读完」：只清完成时间，阅读位置、本篇设置与已收原句都保留。 */
+  'reading:uncomplete': {
+    payload: { articleId: string }
+    result: MarkArticleUncompletedResult
+  }
   'reading:progress': { payload: ReadingProgressRequest; result: ReadingProgressResult }
   'reading:settings': { payload: ReadingSettingsRequest; result: ReadingSettingsResult | null }
+  /** 不分篇的静默圈词 / 页边眉批 / 轻遮重读；只写 setting 表。 */
+  'reading:global-preferences': {
+    payload: undefined
+    result: ReadingGlobalPreferences
+  }
+  'reading:global-preferences-save': {
+    payload: { preferences: ReadingGlobalPreferences }
+    result: ReadingGlobalPreferencesResult
+  }
   'reading:collect': { payload: CollectSelectionRequest; result: CollectSelectionResult }
   'dictionary:lookup': { payload: DictionaryLookupRequest; result: DictionaryLookup }
-  'entries:card': { payload: { entryId: string }; result: WordEntryCard | null }
+  'entries:card': {
+    payload: { entryId: string; articleId?: string }
+    result: WordEntryCard | null
+  }
   'entries:delete-sentence': {
     payload: { entrySentenceId: string }
     result: DeleteEntrySentenceResult
+  }
+  'entries:restore-sentence': {
+    payload: { snapshot: EntrySentenceSnapshot }
+    result: RestoreEntrySentenceResult
   }
   'entries:list': { payload: EntryListRequest; result: EntryListResult }
   'entries:page': { payload: { entryId: string }; result: EntryPage | null }
@@ -239,6 +280,11 @@ export interface IpcContract {
   'chat:create-group': {
     payload: CreateGroupThreadRequest
     result: CreateGroupThreadResult
+  }
+  /** 把本篇未整理学习内容的词连同本文原句打包成一条新对话。 */
+  'chat:pack-article': {
+    payload: PackArticleWordsRequest
+    result: PackArticleWordsResult
   }
   'chat:delete': { payload: DeleteThreadRequest; result: DeleteThreadResult }
   'chat:find-for-main': { payload: CreateThreadRequest; result: ChatThreadView | null }
@@ -351,6 +397,8 @@ export type IpcEventChannel = keyof IpcEventContract
 // 用 Record 而不是数组列 channel：契约里加了 channel 却忘了登记，这里会编译失败。
 const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'app:bootstrap': true,
+  'ui:preferences': true,
+  'ui:sidebar': true,
   'counts:summary': true,
   'home:summary': true,
   'library:list': true,
@@ -358,6 +406,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'library:detail': true,
   'library:search': true,
   'search:global': true,
+  'search:shortcuts': true,
   'library:rename': true,
   'library:delete-preview': true,
   'library:delete': true,
@@ -365,12 +414,16 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'reading:open': true,
   'reading:words': true,
   'reading:complete': true,
+  'reading:uncomplete': true,
   'reading:progress': true,
   'reading:settings': true,
+  'reading:global-preferences': true,
+  'reading:global-preferences-save': true,
   'reading:collect': true,
   'dictionary:lookup': true,
   'entries:card': true,
   'entries:delete-sentence': true,
+  'entries:restore-sentence': true,
   'entries:list': true,
   'entries:page': true,
   'entries:sentence': true,
@@ -395,6 +448,7 @@ const CHANNEL_TABLE: Record<IpcChannel, true> = {
   'chat:thread': true,
   'chat:create': true,
   'chat:create-group': true,
+  'chat:pack-article': true,
   'chat:delete': true,
   'chat:find-for-main': true,
   'chat:open-for-main': true,

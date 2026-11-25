@@ -28,6 +28,15 @@ export function rememberSearchSession(session: SearchSession): void {
   }
 }
 
+/** 从空态直接跳去最近文章时清掉旧查询，返回搜索时给一张空面板而不是旧结果。 */
+export function clearSearchSession(): void {
+  try {
+    window.localStorage.removeItem(SESSION_KEY)
+  } catch {
+    // 存储不可用时返回仍会打开空搜索；不阻止导航。
+  }
+}
+
 export function readSearchSession(): SearchSession | null {
   try {
     const raw = window.localStorage.getItem(SESSION_KEY)

@@ -400,10 +400,74 @@
 
 /* ---------- 首页：继续阅读 ---------- */
 
+/*
+ * 首页「继续阅读」书页卡：左侧 3px 琥珀书签竖线，原句用衬线体；
+ * 卡片底部速览本篇最近拾下的词条，点一下直达词条。
+ */
 .home-continue {
-  margin-bottom: 32px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--rule);
+  position: relative;
+  margin-bottom: 28px;
+  padding: 22px 24px 18px 28px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 2px 10px rgba(60, 48, 30, 0.03);
+  overflow: hidden;
+}
+
+.home-continue::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--amber);
+}
+
+[data-theme="dark"] .home-continue {
+  box-shadow: none;
+}
+
+.home-continue .home-actions {
+  margin-top: 16px;
+  margin-bottom: 0;
+}
+
+.home-picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.home-picked-label {
+  margin-right: 2px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.home-picked-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--line-pin);
+  border-radius: 999px;
+  background: var(--bed-pin);
+  color: var(--amber);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  line-height: 18px;
+  transition:
+    border-color var(--motion-hover) ease-out,
+    background var(--motion-hover) ease-out;
+}
+
+.home-picked-chip:hover {
+  border-color: var(--amber);
+  background: color-mix(in srgb, var(--bed-pin) 70%, var(--paper));
 }
 
 .home-meta,
@@ -428,6 +492,13 @@
   font-family: var(--font-serif);
   font-size: 16px;
   line-height: 24px;
+}
+
+/* 续读原句里真实收下的表达：沿用已收集的琥珀色与虚线下划线，不做整段底色。 */
+.home-sentence-collected {
+  border-bottom: 1px dashed var(--amber-underline);
+  background: transparent;
+  color: var(--amber);
 }
 
 .home-library {

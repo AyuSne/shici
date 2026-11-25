@@ -1,6 +1,6 @@
 import type { DictionaryLookup } from '../../shared/dictionary'
 import type { ArticleWordsView } from '../../shared/article-words'
-import type { GlobalSearchResults } from '../../shared/global-search'
+import type { GlobalSearchResults, SearchShortcuts } from '../../shared/global-search'
 import type {
   ArticleDeletionPreview,
   ArticleDetail,
@@ -11,6 +11,7 @@ import type {
   LibraryListing,
   LibrarySearchResults,
   MarkArticleCompletedResult,
+  MarkArticleUncompletedResult,
   RenameArticleRequest,
   RenameArticleResult,
   SaveGeneratedArticleRequest,
@@ -34,6 +35,7 @@ import type {
   EntryListRequest,
   EntryListResult,
   EntryPage,
+  EntrySentenceSnapshot,
   EntrySentenceTarget,
   LearningNoteResult,
   MergeEntriesRequest,
@@ -44,6 +46,7 @@ import type {
   PinLearningNoteRequest,
   ReselectEntrySentenceRequest,
   ReselectEntrySentenceResult,
+  RestoreEntrySentenceResult,
   SetEntryLaterRequest,
   SetEntryLaterResult,
   UpdateLearningNoteRequest,
@@ -63,6 +66,8 @@ import type {
   RestorePinsResult
 } from '../../shared/pins'
 import type {
+  ReadingGlobalPreferences,
+  ReadingGlobalPreferencesResult,
   ReadingPreferences,
   ReadingProgressRequest,
   ReadingProgressResult,
@@ -79,6 +84,10 @@ import type {
   SaveThemeResult,
   SettingsOverview
 } from '../../shared/settings'
+import type {
+  SaveSidebarPreferenceResult,
+  UiPreferences
+} from '../../shared/ui-preferences'
 import type {
   ActivateProviderRequest,
   ActivateProviderResult,
@@ -135,7 +144,9 @@ import type {
 } from '../../shared/threads'
 import type {
   CreateGroupThreadRequest,
-  CreateGroupThreadResult
+  CreateGroupThreadResult,
+  PackArticleWordsRequest,
+  PackArticleWordsResult
 } from '../../shared/threads'
 import type { AppBootstrap, ThemePreference } from '../../shared/types'
 import type { IpcChannel, IpcContract } from '../../shared/ipc-contract'
@@ -158,6 +169,18 @@ async function invoke<C extends IpcChannel>(
 
 export function loadBootstrap(): Promise<AppBootstrap> {
   return invoke('app:bootstrap')
+}
+
+/** 界面偏好：当前只有侧栏折叠；启动值在 bootstrap 里已带一份。 */
+export function loadUiPreferences(): Promise<UiPreferences> {
+  return invoke('ui:preferences')
+}
+
+/** 写侧栏折叠偏好；只落 setting 表，随整库备份 / 恢复往返。 */
+export function saveSidebarPreference(
+  collapsed: boolean
+): Promise<SaveSidebarPreferenceResult> {
+  return invoke('ui:sidebar', { collapsed })
 }
 
 /**
@@ -192,6 +215,11 @@ export function searchLibrary(query: string): Promise<LibrarySearchResults> {
 /** 全局搜索：一次查询同时给出词条与文章两组命中；只读，不触发全局栏计数失效。 */
 export function searchEverything(query: string): Promise<GlobalSearchResults> {
   return invoke('search:global', { query })
+}
+
+/** 搜索框为空时的最近文章与最近词条；只在覆盖层空态读一次。 */
+export function loadSearchShortcuts(): Promise<SearchShortcuts> {
+  return invoke('search:shortcuts')
 }
 
 /** 只改文章显示名；语料刷新后仍沿用这个名字。 */
@@ -232,13 +260,23 @@ export function loadArticleWords(articleId: string): Promise<ArticleWordsView | 
 }
 
 /**
- * 显式标记这一篇已读完：只写完成时间、只写一次。进入本篇选词的页面先发这条命令，
- * 再读视图；命令失败就报错重试，不拿乐观的 100% 冒充已读完。
+ * 显式标记这一篇已读完：只写完成时间、只写一次。由阅读页底部的显式手势发出，
+ * 成功后才进本篇选词；命令失败就原地报错，不拿乐观的 100% 冒充已读完。
  */
 export function completeArticleReading(
   articleId: string
 ): Promise<MarkArticleCompletedResult> {
   return invoke('reading:complete', { articleId })
+}
+
+/**
+ * 收回「已读完」：只清完成时间，保留阅读位置、本篇设置与已收原句。
+ * 幂等，重复收回返回 changed:false；结果带回清掉之后的真实进度。
+ */
+export function uncompleteArticleReading(
+  articleId: string
+): Promise<MarkArticleUncompletedResult> {
+  return invoke('reading:uncomplete', { articleId })
 }
 
 /** 记下读到哪一段、哪一句。 */
@@ -253,6 +291,18 @@ export function saveReadingSettings(
   return invoke('reading:settings', request)
 }
 
+/** 读不分篇的静默圈词 / 页边眉批 / 轻遮重读偏好。 */
+export function loadReadingGlobalPreferences(): Promise<ReadingGlobalPreferences> {
+  return invoke('reading:global-preferences')
+}
+
+/** 保存整份全局阅读偏好；只写 setting 表，不影响旧的本篇字号行距。 */
+export function saveReadingGlobalPreferences(
+  preferences: ReadingGlobalPreferences
+): Promise<ReadingGlobalPreferencesResult> {
+  return invoke('reading:global-preferences-save', { preferences })
+}
+
 /** 收下一次选词：当场建原句、归词条，并拿回这一篇最新的标记。 */
 export function collectSelection(
   request: CollectSelectionRequest
@@ -265,14 +315,24 @@ export function lookupDictionary(word: string): Promise<DictionaryLookup> {
   return invoke('dictionary:lookup', { word })
 }
 
-/** 点开一个已收集的词，读它的词条卡与原句。 */
-export function loadWordEntryCard(entryId: string): Promise<WordEntryCard | null> {
-  return invoke('entries:card', { entryId })
+/** 点开一个已收集的词，读它的词条卡与原句；带当前篇时故人重逢只取别篇。 */
+export function loadWordEntryCard(
+  entryId: string,
+  articleId?: string
+): Promise<WordEntryCard | null> {
+  return invoke('entries:card', articleId === undefined ? { entryId } : { entryId, articleId })
 }
 
 /** 删掉一条原句；词条只剩这一条时连词条一起删。 */
 export function deleteEntrySentence(entrySentenceId: string): Promise<DeleteEntrySentenceResult> {
   return invoke('entries:delete-sentence', { entrySentenceId })
+}
+
+/** 撤销删除非最后一条原句：按删除时返回的不可变快照原样恢复。 */
+export function restoreEntrySentence(
+  snapshot: EntrySentenceSnapshot
+): Promise<RestoreEntrySentenceResult> {
+  return invoke('entries:restore-sentence', { snapshot })
 }
 
 /** 词条页左栏：计数、搜索、排序与筛选。 */
@@ -406,6 +466,16 @@ export function createGroupThread(
   request: CreateGroupThreadRequest
 ): Promise<CreateGroupThreadResult> {
   return invoke('chat:create-group', request)
+}
+
+/**
+ * 把本篇未整理学习内容的词连同它们在本文的原句打包成一条新对话。
+ * 只读筛选与组线程；全部整理好时返回 empty，不创建空对话。
+ */
+export function packArticleWords(
+  request: PackArticleWordsRequest
+): Promise<PackArticleWordsResult> {
+  return invoke('chat:pack-article', request)
 }
 
 /** 按主对象复用最近线程，或明确新开一条。 */

@@ -7,6 +7,11 @@ import {
 } from '../../src/testing/responses-sse-stub'
 import { expect, test } from '../fixtures/app'
 import { ask, openChat, openSettings } from '../fixtures/chat'
+import {
+  openAddConnectionDetails,
+  openManageModels,
+  openProviderDetails
+} from '../fixtures/settings-panel'
 
 /**
  * #67 OpenAI Responses 的真实 Electron UI 用例。
@@ -61,11 +66,11 @@ test.describe('OpenAI Responses 协议', () => {
     await expect(responsesOption).not.toContainText('后续版本')
     await page.getByRole('button', { name: '内置提供商', exact: true }).click()
 
-    // 内置目录新增 OpenAI：自动带出官方地址、环境变量与 Responses 模型目录。
+    // 内置目录新增 OpenAI：折叠详情自动带出官方地址与 Responses 模型目录。
     await page.getByLabel('内置提供商').selectOption('openai')
+    await openAddConnectionDetails(page)
     const preview = page.locator('.builtin-preview')
     await expect(preview).toContainText('https://api.openai.com/v1')
-    await expect(preview).toContainText('OPENAI_API_KEY')
     await expect(preview).toContainText('chat-latest')
     await page.getByLabel('API 密钥').fill('sk-e2e-openai-0001')
     await page.getByRole('button', { name: '保存提供商' }).click()
@@ -73,9 +78,13 @@ test.describe('OpenAI Responses 协议', () => {
 
     const openai = page.locator('[data-provider-key="openai"]')
     await expect(openai).toContainText('OpenAI')
-    await expect(openai).toContainText('OpenAI Responses')
     await expect(openai).toContainText('未验证')
+    // 首套保存已自动使用中。
+    await expect(openai).toContainText('使用中')
+    await openProviderDetails(openai)
+    await expect(openai).toContainText('OpenAI Responses')
     await expect(openai).toContainText('内置目录 · openai')
+    await openManageModels(openai)
     await expect(openai.locator('[data-model-row="chat-latest"]')).toBeVisible()
     await expect(openai.locator('[data-model-row="gpt-5"]')).toBeVisible()
     await expect(
@@ -88,7 +97,6 @@ test.describe('OpenAI Responses 协议', () => {
     // 内置目录新增 xAI：同样是 OpenAI Responses，带自己的端点与模型。
     await page.getByLabel('内置提供商').selectOption('xai')
     await expect(preview).toContainText('https://api.x.ai/v1')
-    await expect(preview).toContainText('XAI_API_KEY')
     await expect(preview).toContainText('grok-4.3')
     await page.getByLabel('API 密钥').fill('sk-e2e-xai-0002')
     await page.getByRole('button', { name: '保存提供商' }).click()
@@ -96,19 +104,21 @@ test.describe('OpenAI Responses 协议', () => {
 
     const xai = page.locator('[data-provider-key="xai"]')
     await expect(xai).toContainText('xAI')
+    await openProviderDetails(xai)
     await expect(xai).toContainText('OpenAI Responses')
     await expect(xai).toContainText('XAI_API_KEY')
+    await openManageModels(xai)
     await expect(xai.locator('[data-model-row="grok-4.3"]')).toBeVisible()
     await expect(
       xai.locator('[data-model-row="grok-4.3"]').getByRole('radio')
     ).toBeChecked()
 
-    // 选默认模型 gpt-5，再设为使用中。受控单选由异步保存后的重渲染改选中态，
+    // 选默认模型 gpt-5（OpenAI 已是使用中）。受控单选由异步保存后的重渲染改选中态，
     // 所以用 click + web-first 断言，不依赖 check() 的即时状态假设。
+    await openManageModels(openai)
     const gpt5Radio = openai.locator('[data-model-row="gpt-5"]').getByRole('radio')
     await gpt5Radio.click()
     await expect(gpt5Radio).toBeChecked()
-    await openai.getByRole('button', { name: '设为当前' }).click()
     await expect(openai).toContainText('使用中')
 
     // 地址只在用例内改成本机 stub：不联网，但走真实的 pi Responses 请求。
@@ -172,6 +182,7 @@ test.describe('OpenAI Responses 协议', () => {
     const reopenedOpenai = reopened.page.locator('[data-provider-key="openai"]')
     await expect(reopenedOpenai).toContainText('使用中')
     await expect(reopenedOpenai).toContainText('已验证')
+    await openManageModels(reopenedOpenai)
     await expect(
       reopenedOpenai.locator('[data-model-row="gpt-5"]').getByRole('radio')
     ).toBeChecked()
@@ -202,11 +213,12 @@ test.describe('OpenAI Responses 协议', () => {
 
     const card = page.locator('[data-provider-key="responses-relay"]')
     await expect(card).toContainText('Responses 中转')
-    await expect(card).toContainText('OpenAI Responses')
-    await expect(card.locator('[data-model-row="gpt-5"]')).toBeVisible()
-    await expect(card).toContainText('未验证')
-    await card.getByRole('button', { name: '设为当前' }).click()
     await expect(card).toContainText('使用中')
+    await expect(card).toContainText('未验证')
+    await openProviderDetails(card)
+    await expect(card).toContainText('OpenAI Responses')
+    await openManageModels(card)
+    await expect(card.locator('[data-model-row="gpt-5"]')).toBeVisible()
 
     // 外部行为落库：协议与模型行的 api 都是 openai-responses，密钥只有密文。
     const stored = new Database(databaseFile(userDataDirectory), {

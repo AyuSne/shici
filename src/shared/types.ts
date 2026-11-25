@@ -32,6 +32,8 @@ export type AppBootstrap = {
   schemaVersion: number
   /** 主题偏好；跟随系统时由渲染层解析成实际配色。 */
   theme: ThemePreference
+  /** 全局侧栏是否收成 56px 图标轨道；阅读页仍整栏隐藏。 */
+  sidebarCollapsed: boolean
   /** 当前配置的模型名；保存回答与钉住出处都记它。 */
   chatModel: string
   /** 本次启动的语料导入结果；失败项要在文章库里提示出来。 */

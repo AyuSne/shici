@@ -54,6 +54,15 @@
   white-space: nowrap;
 }
 
+.reading-bar-meta {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .reading-bar-actions {
   display: flex;
   align-items: center;
@@ -62,6 +71,9 @@
 }
 
 .reading-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 10px;
   border: 1px solid var(--rule);
   border-radius: 8px;
@@ -70,9 +82,9 @@
   font-size: 12px;
   line-height: 16px;
   transition:
-    border-color 150ms ease-out,
-    background 150ms ease-out,
-    color 150ms ease-out;
+    border-color var(--motion-hover) ease-out,
+    background var(--motion-hover) ease-out,
+    color var(--motion-hover) ease-out;
 }
 
 .reading-tool:hover {
@@ -121,6 +133,12 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   line-height: 16px;
+}
+
+.reading-settings-global-head {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
 }
 
 .reading-setting {
@@ -295,15 +313,7 @@
   grid-template-columns: 32px minmax(0, 620px) 200px;
 }
 
-/* 关掉注释后让正文回到窗口正中。 */
-
-.reading[data-annotations="hidden"] .reading-body-with-notes {
-  grid-template-columns: minmax(0, 620px);
-}
-
-.reading[data-annotations="hidden"] .reading-body-letters.reading-body-with-notes {
-  grid-template-columns: 32px minmax(0, 620px);
-}
+/* 关掉注释且没有「我的拾词」眉批时，正文回到窗口正中；有眉批就保留页边栏。 */
 
 .reading-row {
   display: contents;
@@ -366,6 +376,7 @@
   line-height: 16px;
 }
 
+/* 页边眉批：原卷注释用细线；本段已拾词的置顶内容用琥珀竖线，二者排在同一页边栏。 */
 .reading-note-word {
   display: block;
   color: var(--ink);
@@ -373,6 +384,22 @@
   font-size: 13px;
   font-weight: 600;
   line-height: 18px;
+}
+
+.reading-note-pinned {
+  border-top: 0;
+  border-left: 3px solid var(--amber);
+  padding: 2px 0 4px 10px;
+}
+
+.reading-note-pinned .reading-note-word {
+  font-size: 12px;
+}
+
+.reading-note-pinned .reading-note-gloss {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .reading-annotated {
@@ -392,11 +419,62 @@
   outline-offset: 2px;
 }
 
+/* 轻遮重读：已收集词盖一层暖纸轻雾，只露首字母；悬停或揭开后回到词形。 */
+.reading-collected.reading-masked {
+  border-bottom: 1px solid var(--amber-underline);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--amber) 10%, var(--paper));
+  color: var(--amber);
+  transition: background var(--motion-hover) ease-out;
+}
+
+.reading-mask-hint {
+  color: var(--amber);
+}
+
+.reading-mask-rest {
+  color: transparent;
+  transition: color var(--motion-hover) ease-out;
+}
+
+.reading-masked:hover,
+.reading-masked:focus-visible,
+.reading-masked[data-revealed="true"] {
+  background: color-mix(in srgb, var(--amber) 15%, var(--paper));
+}
+
+.reading-masked:hover .reading-mask-rest,
+.reading-masked:focus-visible .reading-mask-rest,
+.reading-masked[data-revealed="true"] .reading-mask-rest {
+  color: var(--amber);
+}
+
 .reading-selected {
   border-bottom-color: transparent;
   border-radius: 4px;
-  background: var(--bed-select);
+  background-color: var(--bed-select);
   color: var(--ink);
+}
+
+/* 刚收下时落墨扫过：260ms 内从词首铺到词尾，只做一次，不改变排版。 */
+.reading-selected.reading-ink {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--amber) 32%, transparent),
+    transparent 88%
+  );
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  animation: reading-ink-sweep var(--motion-ink) ease-out forwards;
+}
+
+@keyframes reading-ink-sweep {
+  from {
+    background-size: 0% 100%;
+  }
+  to {
+    background-size: 100% 100%;
+  }
 }
 
 /* 词条卡：阅读页右侧浮层，点已收集的词打开。 */
@@ -420,6 +498,36 @@
 
 [data-theme="dark"] .reading-panel {
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+/*
+ * 宽屏且页边眉批可见时，卡只占页边剩下的那条缝，不压住眉批；
+ * 窗口不够宽时收起页边眉批，正文列仍保持 620，不被挤窄。
+ * 断点留一点余量，避开 125%/175% 缩放下 1279.5 这类分数视口宽度落在两条规则之间。
+ */
+@media (min-width: 1270px) {
+  .reading[data-panel="true"][data-margin-notes="true"] .reading-panel {
+    width: clamp(
+      150px,
+      calc((100vw - var(--reading-grid-width, 820px)) / 2 - 24px),
+      336px
+    );
+  }
+}
+
+@media (max-width: 1269.98px) {
+  .reading[data-panel="true"][data-margin-notes="true"] .reading-notes {
+    display: none;
+  }
+
+  .reading[data-panel="true"][data-margin-notes="true"] .reading-body-with-notes {
+    grid-template-columns: minmax(0, 620px);
+  }
+
+  .reading[data-panel="true"][data-margin-notes="true"]
+    .reading-body-letters.reading-body-with-notes {
+    grid-template-columns: 32px minmax(0, 620px);
+  }
 }
 
 .reading-panel-head {
@@ -455,13 +563,66 @@
   color: var(--ink);
 }
 
-.reading-panel-word {
+.reading-panel-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   margin-bottom: 4px;
+}
+
+.reading-panel-word {
+  margin-bottom: 0;
   color: var(--ink);
   font-family: var(--font-serif);
   font-size: 20px;
   font-weight: 600;
   line-height: 28px;
+}
+
+.reading-panel-phonetic {
+  margin-left: 0;
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+.reading-panel-pinned {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--amber);
+  border-radius: 0 8px 8px 0;
+  background: var(--sunken);
+}
+
+.reading-panel-glance-label {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 16px;
+}
+
+.reading-panel-pinned-body {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.reading-panel-encounter {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.reading-panel-encounter-sentence {
+  margin-top: 4px;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .reading-panel-entry,
@@ -499,6 +660,57 @@
 .reading-panel-sentence-row {
   padding: 12px 0;
   border-top: 1px solid var(--rule);
+}
+
+.reading-panel-sentence-more {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.reading-panel-more-toggle {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.reading-panel-more-toggle:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.reading-panel-sentence-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow-dialog);
+}
+
+.reading-panel-sentence-menu .reading-panel-delete {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.reading-panel-sentence-menu .reading-panel-delete:hover {
+  background: var(--danger-bed);
 }
 
 .reading-panel-sentence-row [role="button"],
@@ -577,12 +789,7 @@
   color: var(--danger);
 }
 
-/* 圈选提示的样式在 app.css 的提示条里；这里只补错误态。 */
-
-.reading-toast-error {
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--rule));
-  color: var(--danger);
-}
+/* 圈选提示统一由顶部 Toast 呈现（app.css），阅读页不再保留底部提示条。 */
 
 .reading[data-annotations="hidden"] .reading-annotated {
   border-bottom: none;
@@ -597,7 +804,8 @@
   border-bottom-color: transparent;
 }
 
-.reading[data-annotations="hidden"] .reading-notes {
+/* 关掉原文注释只收起原卷注释行；「我的拾词」的置顶眉批不受牵连。 */
+.reading[data-annotations="hidden"] .reading-note:not(.reading-note-pinned) {
   display: none;
 }
 
@@ -704,8 +912,378 @@
   }
 }
 
+/* ---------- 迷你轻问抽屉 ---------- */
+
+/*
+ * 右侧抽屉：窄屏是覆盖层（有明确关闭按钮、落在融合标题栏与阅读顶栏之下），
+ * 宽屏把正文区往左让出抽屉的宽度，正文仍保持 620；不够两栏的最小宽度从 1050
+ * 起算，避免把正文挤窄。抽屉自己滚动，不碰阅读正文的滚动位置。
+ */
+.reading-drawer {
+  position: fixed;
+  top: 96px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  width: 336px;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(60, 48, 30, 0.08);
+  animation: reading-drawer-in var(--motion-float) var(--ease-paper);
+}
+
+[data-theme="dark"] .reading-drawer {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes reading-drawer-in {
+  from {
+    opacity: 0.6;
+    transform: translateX(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (min-width: 1050px) {
+  .reading[data-drawer="true"] .reading-scroll {
+    padding-right: 352px;
+  }
+}
+
+@media (min-width: 1050px) and (max-width: 1269.98px) {
+  .reading[data-drawer="true"] .reading-notes {
+    display: none;
+  }
+
+  .reading[data-drawer="true"] .reading-body-with-notes {
+    grid-template-columns: minmax(0, 620px);
+  }
+
+  .reading[data-drawer="true"] .reading-body-letters.reading-body-with-notes {
+    grid-template-columns: 32px minmax(0, 620px);
+  }
+}
+
+@media (max-width: 1049.98px) {
+  .reading-drawer {
+    width: min(360px, calc(100vw - 32px));
+    box-shadow: 0 20px 50px rgba(40, 32, 20, 0.18);
+  }
+
+  [data-theme="dark"] .reading-drawer {
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  }
+}
+
+.reading-drawer-head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.reading-drawer-heading {
+  min-width: 0;
+}
+
+.reading-drawer-title {
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.reading-drawer-subtitle {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reading-drawer-head-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.reading-drawer-expand {
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  transition:
+    border-color var(--motion-hover) ease-out,
+    background var(--motion-hover) ease-out,
+    color var(--motion-hover) ease-out;
+}
+
+.reading-drawer-expand:hover:not(:disabled) {
+  border-color: var(--rule-hover);
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.reading-drawer-expand:disabled {
+  color: var(--ink-3);
+}
+
+.reading-drawer-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.reading-drawer-close:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.reading-drawer-error {
+  flex: none;
+  padding: 8px 12px 0;
+}
+
+.reading-drawer-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+.reading-drawer-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reading-drawer-question {
+  align-self: flex-end;
+  max-width: 92%;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--bed-select);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.reading-drawer-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.reading-drawer .assistant-text {
+  font-size: 13px;
+  line-height: 21px;
+}
+
+.reading-drawer-thinking {
+  padding-left: 8px;
+  border-left: 3px solid var(--rule);
+}
+
+.reading-drawer-thinking-toggle {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+}
+
+.reading-drawer-thinking-toggle:hover {
+  color: var(--ink);
+}
+
+.reading-drawer-thinking-body {
+  max-height: 96px;
+  margin-top: 4px;
+  overflow-y: auto;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+}
+
+.reading-drawer-waiting {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.reading-drawer-answer-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--danger-bed);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.reading-drawer-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 0;
+}
+
+.reading-drawer-empty-title {
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.reading-drawer-composer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.reading-drawer-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  max-height: 140px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--sunken);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 20px;
+  resize: vertical;
+}
+
+.reading-drawer-input:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.reading-drawer-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reading-drawer-hint {
+  flex: 1;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reading-drawer {
+    animation: none;
+  }
+}
+
+/* 悬停一瞥：固定定位的独立浮层，不参与正文布局，也不会推挤文字。 */
+.reading-glance {
+  position: fixed;
+  z-index: 50;
+  max-width: 280px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-pin);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(60, 48, 30, 0.12);
+  pointer-events: none;
+  animation: reading-glance-in var(--motion-hover) ease-out;
+}
+
+[data-theme="dark"] .reading-glance {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.reading-glance-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.reading-glance-word {
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.reading-glance-phonetic {
+  color: var(--ink-2);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.reading-glance-body {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+@keyframes reading-glance-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .reading-excerpt-toolbar {
   position: fixed; z-index: 60; display: flex; gap: 4px; padding: 5px;
   transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line-pin);
   border-radius: 10px; box-shadow: 0 6px 20px rgba(60, 48, 30, 0.12);
+}
+
+.reading-drawer-pending {
+  flex: none;
+  max-height: 45%;
+  padding: 8px 12px 0;
+  overflow-y: auto;
 }

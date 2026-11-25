@@ -8,6 +8,7 @@ const bootstrap: AppBootstrap = {
   isPackaged: false,
   schemaVersion: 3,
   theme: 'light',
+  sidebarCollapsed: false,
   chatModel: 'deepseek-flash',
   corpusImport: { total: 0, imported: 0, updated: 0, skipped: 0, failed: [] }
 }
@@ -81,6 +82,17 @@ describe('createBridge', () => {
     ])
   })
 
+  it('把本篇未整理词打包的请求穿过白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+
+    await bridge.invoke('chat:pack-article', { articleId: 'article-1' })
+
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      { channel: 'chat:pack-article', payload: { articleId: 'article-1' } }
+    ])
+  })
+
   it('删除线程的请求和结果穿过 preload 白名单', async () => {    const { ipc } = fakeRenderer()
     const calls: unknown[] = []
     const bridge = createBridge({
@@ -148,7 +160,7 @@ describe('createBridge', () => {
     ])
   })
 
-  it('文章重命名与删除的请求和结果穿过 preload 白名单', async () => {
+  it('文章重命名、删除与读完状态命令穿过 preload 白名单', async () => {
     const { ipc, invocations } = fakeRenderer()
     const bridge = createBridge(ipc)
     const confirmed = {
@@ -165,12 +177,14 @@ describe('createBridge', () => {
     await bridge.invoke('library:delete-preview', { articleId: 'article-1' })
     await bridge.invoke('library:delete', { articleId: 'article-1', confirmed })
     await bridge.invoke('reading:complete', { articleId: 'article-1' })
+    await bridge.invoke('reading:uncomplete', { articleId: 'article-1' })
 
     expect(JSON.parse(JSON.stringify(invocations))).toEqual([
       { channel: 'library:rename', payload: { articleId: 'article-1', title: '我的文章' } },
       { channel: 'library:delete-preview', payload: { articleId: 'article-1' } },
       { channel: 'library:delete', payload: { articleId: 'article-1', confirmed } },
-      { channel: 'reading:complete', payload: { articleId: 'article-1' } }
+      { channel: 'reading:complete', payload: { articleId: 'article-1' } },
+      { channel: 'reading:uncomplete', payload: { articleId: 'article-1' } }
     ])
   })
 
@@ -347,6 +361,58 @@ describe('createBridge', () => {
         payload: { providerId: 'provider-1', modelRowIds: ['model-2', 'model-1'] }
       }
     ])
+  })
+
+  it('界面偏好的读取与侧栏折叠写入穿过白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+
+    await bridge.invoke('ui:preferences')
+    await bridge.invoke('ui:sidebar', { collapsed: true })
+
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      { channel: 'ui:preferences', payload: undefined },
+      { channel: 'ui:sidebar', payload: { collapsed: true } }
+    ])
+  })
+
+  it('全局搜索空态快捷项走同一份白名单', async () => {
+    const { ipc, invocations } = fakeRenderer()
+    const bridge = createBridge(ipc)
+
+    await bridge.invoke('search:shortcuts')
+
+    expect(JSON.parse(JSON.stringify(invocations))).toEqual([
+      { channel: 'search:shortcuts', payload: undefined }
+    ])
+  })
+
+  it('撤销删除原句的快照穿过白名单', async () => {
+    const { ipc } = fakeRenderer()
+    const calls: unknown[] = []
+    const bridge = createBridge({
+      ...ipc,
+      async invoke(channel, payload) {
+        calls.push({ channel, payload })
+        return { status: 'restored' }
+      }
+    })
+    const snapshot = {
+      id: 'entry-sentence-1',
+      entryId: 'entry-1',
+      articleId: 'article-1',
+      paragraphId: 'paragraph-1',
+      sentenceOrdinal: 0,
+      surface: 'approach',
+      start: 10,
+      end: 18,
+      collectedAt: '2026-11-18T08:00:00.000Z'
+    }
+
+    await expect(
+      bridge.invoke('entries:restore-sentence', { snapshot })
+    ).resolves.toEqual({ status: 'restored' })
+    expect(calls).toEqual([{ channel: 'entries:restore-sentence', payload: { snapshot } }])
   })
 
   it('未知 channel 立即报错，且不发给主进程', async () => {

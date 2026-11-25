@@ -14,6 +14,7 @@ import {
   findRecentThreadForMain,
   listThreads,
   openThreadForMain,
+  packArticleUnorganizedWords,
   readContextCandidates,
   readArticleContextMaterials,
   readThreadView,
@@ -55,8 +56,10 @@ import {
   readEntrySentenceTarget,
   readWordEntryCard
 } from './entries/queries'
+import { restoreEntrySentence } from './entries/sentence-undo'
 import { registerIpcHandlers } from './ipc/register'
 import { searchEverything } from './search/global'
+import { readSearchShortcuts } from './search/shortcuts'
 import {
   copyLearningInstruction,
   createLearningInstruction,
@@ -76,7 +79,8 @@ import {
   readArticleDetail,
   readHomeSummary,
   readLibrary,
-  searchLibrary
+  searchLibrary,
+  unmarkArticleCompleted
 } from './library/queries'
 import {
   openReadingView,
@@ -84,6 +88,10 @@ import {
   saveReadingPreferences,
   saveReadingSettings
 } from './reading/queries'
+import {
+  readReadingGlobalPreferences,
+  saveReadingGlobalPreferences
+} from './reading/global-preferences'
 import {
   createPin,
   deletePin,
@@ -119,6 +127,7 @@ import {
   recordProviderFailure
 } from './settings/providers'
 import { saveThemePreference } from './settings/theme'
+import { readUiPreferences, saveSidebarPreference } from './settings/ui-preferences'
 import { applyThemePreference, createMainWindow } from './window'
 
 const DATABASE_FILE = 'english-learning.db'
@@ -245,6 +254,9 @@ function start(): void {
 
   registerIpcHandlers(ipcMain, {
     'app:bootstrap': () => createBootstrap(opened, corpusImport, configuredModel),
+    // 界面偏好与主题一样只落 setting 表；侧栏折叠随整库备份 / 恢复一起走。
+    'ui:preferences': () => readUiPreferences(opened),
+    'ui:sidebar': (payload) => saveSidebarPreference(opened, payload),
     // 左栏计数独立一条轻查询：首屏不跟它互相等，写成功后由渲染层发失效信号重查。
     'counts:summary': () => readNavCounts(opened),
     'home:summary': () => readHomeSummary(opened),
@@ -255,6 +267,7 @@ function start(): void {
     'library:search': (payload) => searchLibrary(opened, payload.query),
     // 全局搜索：词条与文章两组命中，词条复用词条页的命中契约，文章带回段落与句序。
     'search:global': (payload) => searchEverything(opened, payload.query),
+    'search:shortcuts': () => readSearchShortcuts(opened),
     'library:rename': (payload) => renameArticle(opened, payload),
     'library:delete-preview': (payload) =>
       readArticleDeletionPreview(opened, payload.articleId),
@@ -264,13 +277,20 @@ function start(): void {
     'reading:open': (payload) => openReadingView(opened, payload.articleId),
     'reading:words': (payload) => readArticleWords(opened, payload.articleId),
     'reading:complete': (payload) => markArticleCompleted(opened, payload.articleId),
+    'reading:uncomplete': (payload) => unmarkArticleCompleted(opened, payload.articleId),
     'reading:progress': (payload) => saveReadingPoint(opened, payload),
     'reading:settings': (payload) => saveReadingSettings(opened, payload),
+    // 静默圈词 / 页边眉批 / 轻遮重读都是不分篇的偏好，只落 setting 表。
+    'reading:global-preferences': () => readReadingGlobalPreferences(opened),
+    'reading:global-preferences-save': (payload) =>
+      saveReadingGlobalPreferences(opened, payload.preferences),
     'reading:collect': (payload) =>
       collectSelection(opened, payload, { dictionary: entryDictionary }),
     'dictionary:lookup': (payload) => lookupDictionary.lookup(payload.word),
-    'entries:card': (payload) => readWordEntryCard(opened, payload.entryId),
+    'entries:card': (payload) =>
+      readWordEntryCard(opened, payload.entryId, { articleId: payload.articleId }),
     'entries:delete-sentence': (payload) => deleteEntrySentence(opened, payload.entrySentenceId),
+    'entries:restore-sentence': (payload) => restoreEntrySentence(opened, payload.snapshot),
     'entries:list': (payload) => readEntryList(opened, payload),
     'entries:page': (payload) =>
       readEntryPage(opened, payload.entryId, { dictionary: entryDictionary }),
@@ -304,6 +324,7 @@ function start(): void {
     'chat:thread': (payload) => readThreadView(opened, payload.threadId),
     'chat:create': (payload) => createThread(opened, payload),
     'chat:create-group': (payload) => createGroupThread(opened, payload),
+    'chat:pack-article': (payload) => packArticleUnorganizedWords(opened, payload),
     'chat:delete': (payload) => {
       // 两个操作都在主进程同步判断，活跃流不得被删除，已删除的对话也不能开新流。
       return chat.hasActiveThread(payload.threadId) ? { status: 'busy' } : deleteThread(opened, payload)

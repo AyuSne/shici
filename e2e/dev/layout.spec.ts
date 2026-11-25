@@ -65,12 +65,14 @@ async function resizeTo(
         const window = BrowserWindow.getAllWindows()[0]
         if (window === undefined) throw new Error('没有主窗口')
         const minimum = window.getMinimumSize()
-        window.setContentSize(size.width, size.height)
+        // 融合标题栏在部分 DPI 下仍留 1px 非客户区：多要 1px，量到的内容宽才是目标断点。
+        window.setContentSize(size.width + 1, size.height)
         return minimum
       },
       { width, height: 820 }
     )
-    expect(minimum[0]).toBe(900)
+    // 融合标题栏后窗口没有系统边框：884 内容宽 ≈ 旧版 900 外框的可用正文宽。
+    expect(minimum[0]).toBe(884)
   } else {
     await page.setViewportSize({ width, height: 820 })
   }
@@ -149,7 +151,7 @@ async function walkPages(handle: AppHandle, breakpoint: number): Promise<void> {
   await expect(page.getByRole('heading', { name: '先读一篇' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
   const globalBar = await page.locator('.globals').boundingBox()
-  expect(Math.round(globalBar?.width ?? 0)).toBe(238)
+  expect(Math.round(globalBar?.width ?? 0)).toBe(224)
   await expectInsideViewport(page, '.home-actions .button-primary')
 
   // 文章库：管理页在 1100 以下收成两栏（详情落到列表下面），不横向溢出。
@@ -195,7 +197,7 @@ async function walkPages(handle: AppHandle, breakpoint: number): Promise<void> {
   expect(await gridTracks(page, '.entries-page')).toHaveLength(3)
   await expectInsideViewport(page, '.entries-main-head .entries-main-actions')
 
-  await page.getByRole('button', { name: /^学习内容/ }).click()
+  await page.getByRole('button', { name: /^展开学习内容/ }).click()
   await expect(page.locator('.entries-rail-open')).toBeVisible()
   expect(
     await page.locator('.entries-rail-open').evaluate((element) => getComputedStyle(element).position)
@@ -218,13 +220,13 @@ async function walkPages(handle: AppHandle, breakpoint: number): Promise<void> {
     await expect(page.locator('.entry-action-label').first()).toBeVisible()
   }
 
-  // 对话：900 以下线程栏改抽屉，顶栏出现「线程」开关。
+  // 对话：900 以下线程栏改抽屉；宽屏也能一键折叠左栏给正文腾空间。
   await nav(page, '对话')
   await expect(page.getByRole('heading', { name: '新的学习' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
   const toggle = page.getByRole('button', { name: '对话列表' })
+  await expect(toggle).toBeVisible()
   if (actualWidth <= 900) {
-    await expect(toggle).toBeVisible()
     await expect(page.locator('.chat-rail')).toBeHidden()
     await toggle.click()
     await expect(page.locator('.chat-rail')).toBeVisible()
@@ -235,7 +237,13 @@ async function walkPages(handle: AppHandle, breakpoint: number): Promise<void> {
     await expect(page.locator('.chat-rail')).toBeHidden()
   } else {
     await expect(page.locator('.chat-rail')).toBeVisible()
-    await expect(toggle).toBeHidden()
+    const firstTrack = (await gridTracks(page, '.chat-page'))[0]
+    expect(Math.round(Number.parseFloat(firstTrack ?? '0'))).toBe(236)
+    await toggle.click()
+    await expect(page.locator('.chat-page')).toHaveAttribute('data-rail-collapsed', 'true')
+    await expect(page.locator('.chat-rail')).toBeHidden()
+    await toggle.click()
+    await expect(page.locator('.chat-rail')).toBeVisible()
   }
   await expectInsideViewport(page, '.composer-box')
 
@@ -306,7 +314,7 @@ test.describe('收官验收 · 断点', () => {
     // 1101 的容器只有约 799：三栏预算不够，右栏收起仍留 44 入口，打开是覆盖抽屉。
     expect(await gridTracks(page, '.entries-page')).toHaveLength(3)
     await expect(page.locator('.entries-page')).toHaveAttribute('data-layout', 'drawer')
-    await page.getByRole('button', { name: /^学习内容/ }).click()
+    await page.getByRole('button', { name: /^展开学习内容/ }).click()
     const rail = await page.locator('.entries-rail-open').boundingBox()
     expect(Math.round(rail?.width ?? 0)).toBe(320)
     expect(
@@ -319,10 +327,14 @@ test.describe('收官验收 · 断点', () => {
 
     await nav(page, '对话')
     await expect(page.locator('.chat-rail')).toBeVisible()
-    await expect(page.getByRole('button', { name: '对话列表' })).toBeHidden()
+    await expect(page.getByRole('button', { name: '对话列表' })).toBeVisible()
     expect(Math.round(Number.parseFloat((await gridTracks(page, '.chat-page'))[0] ?? '0'))).toBe(
       236
     )
+    await page.getByRole('button', { name: '对话列表' }).click()
+    await expect(page.locator('.chat-rail')).toBeHidden()
+    await page.getByRole('button', { name: '对话列表' }).click()
+    await expect(page.locator('.chat-rail')).toBeVisible()
     await expectNoHorizontalOverflow(page)
 
     await nav(page, '设置')

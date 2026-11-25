@@ -14,7 +14,7 @@ import { migrate } from '../db/migrations'
 import { setEntryLater } from '../entries/later'
 import { readEntryList } from '../entries/page'
 import { collectSelection } from '../entries/queries'
-import { readHomeSummary } from './queries'
+import { openArticle, readHomeSummary } from './queries'
 
 /**
  * 首页「最近收集」只认真实的词条收集：按每个词条最近一次收词的时间倒序，
@@ -46,6 +46,17 @@ const secondArticle = fixtureArticle({
   kind: 'long_match',
   sentences: [
     ['Patience pays off in the long run.', 'Employers approach new desks patiently.']
+  ]
+})
+
+const thirdArticle = fixtureArticle({
+  id: 'fixture-2026-06-s3-c2',
+  year: 2026,
+  month: 6,
+  set: 3,
+  sentences: [
+    ['Reading keeps reading alive and reading well.'],
+    ['Another paragraph has reading too.']
   ]
 })
 
@@ -105,7 +116,7 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'english-learning-home-'))
   database = openDatabase(join(directory, 'test.db'))
   migrate(database)
-  writeCorpusDirectory(directory, [firstArticle, secondArticle])
+  writeCorpusDirectory(directory, [firstArticle, secondArticle, thirdArticle])
   importCorpus(database, { directory })
 })
 
@@ -239,6 +250,115 @@ describe('首页最近收集', () => {
     expect(after.recentEntries).toEqual(before)
     expect(after.laterEntries).toEqual([
       { entryId: recentId, mainForm: 'approach', markedAt: T3 }
+    ])
+  })
+})
+
+describe('首页继续阅读原句里的已拾区间', () => {
+  it('给出保存句里实际收下的词形与段内转句内区间，重复出现但未收的不混进来', () => {
+    openArticle(database, thirdArticle.id, { now: T0 })
+    const entryId = collect(thirdArticle, 0, 'Reading', T0)
+
+    const summary = readHomeSummary(database)
+    if (summary.continueReading === null) throw new Error('应该有续读篇目')
+    expect(summary.continueReading.lastReadPoint?.sentenceText).toBe(
+      'Reading keeps reading alive and reading well.'
+    )
+    // 只亮第一次出现的 Reading，后两处 reading 没被收，不能靠主词形猜亮。
+    expect(summary.continueReading.lastReadPointHighlights).toEqual([
+      {
+        entryId,
+        mainForm: 'Reading',
+        surface: 'Reading',
+        start: 0,
+        end: 7
+      }
+    ])
+  })
+
+  it('同句收下词与包含它的短语时，两条权威区间都会返回，交给渲染层做并集', () => {
+    openArticle(database, thirdArticle.id, { now: T0 })
+    const wordId = collect(thirdArticle, 0, 'Reading', T0)
+    const phraseId = collect(thirdArticle, 0, 'Reading keeps reading', T1)
+
+    const summary = readHomeSummary(database)
+    if (summary.continueReading === null) throw new Error('应该有续读篇目')
+    const highlights = summary.continueReading.lastReadPointHighlights
+    expect(highlights).toEqual([
+      expect.objectContaining({
+        entryId: wordId,
+        surface: 'Reading',
+        start: 0,
+        end: 7
+      }),
+      expect.objectContaining({
+        entryId: phraseId,
+        surface: 'Reading keeps reading',
+        start: 0,
+        end: 21
+      })
+    ])
+  })
+
+  it('只取保存句里的区间：同篇别的句子与别的文章都不混进来', () => {
+    openArticle(database, firstArticle.id, { now: T0 })
+    const approachId = collect(firstArticle, 0, 'approach', T0)
+    collect(firstArticle, 0, 'Context', T1)
+    collect(firstArticle, 1, 'habit', T2)
+    collect(secondArticle, 0, 'Patience', T3)
+
+    const summary = readHomeSummary(database)
+    if (summary.continueReading === null) throw new Error('应该有续读篇目')
+    expect(summary.continueReading.lastReadPoint?.sentenceText).toBe(
+      'Employers approach hiring differently.'
+    )
+    expect(summary.continueReading.lastReadPointHighlights).toEqual([
+      {
+        entryId: approachId,
+        mainForm: 'approach',
+        surface: 'approach',
+        start: 10,
+        end: 18
+      }
+    ])
+  })
+})
+
+describe('首页继续阅读的本篇拾词速览', () => {
+  it('只列当前续读篇目里收下的词条，按最近收词倒序', () => {
+    openArticle(database, firstArticle.id, { now: T0 })
+    const approachId = collect(firstArticle, 0, 'approach', T0)
+    const habitId = collect(firstArticle, 1, 'habit', T1)
+    collect(secondArticle, 0, 'Patience', T2)
+    const contextId = collect(firstArticle, 0, 'Context', T3)
+
+    const summary = readHomeSummary(database)
+    if (summary.continueReading === null) throw new Error('应该有续读篇目')
+
+    expect(summary.continueReading.article.id).toBe(firstArticle.id)
+    expect(summary.continueReading.articleEntries).toEqual([
+      { entryId: contextId, mainForm: 'Context' },
+      { entryId: habitId, mainForm: 'habit' },
+      { entryId: approachId, mainForm: 'approach' }
+    ])
+  })
+
+  it('最多 4 个词条，再多留给词条页；没有收词时为空列表', () => {
+    openArticle(database, firstArticle.id, { now: T0 })
+    expect(readHomeSummary(database).continueReading?.articleEntries).toEqual([])
+
+    const words = ['Employers', 'approach', 'hiring', 'differently', 'Context', 'keeps']
+    words.forEach((word, index) => {
+      collect(firstArticle, index < 5 ? 0 : 1, word, `2026-11-18T08:${10 + index}:00.000Z`)
+    })
+
+    const entries = readHomeSummary(database).continueReading?.articleEntries
+    expect(entries).toHaveLength(4)
+    expect(entries?.map((entry) => entry.mainForm)).toEqual([
+      'keeps',
+      'Context',
+      'differently',
+      'hiring'
     ])
   })
 })

@@ -27,6 +27,13 @@ test.afterAll(async () => {
   await rm(corpusDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
 })
 
+/** 阅读页的问模型现在先在右侧轻问抽屉就地打开；旧的全页断言前显式展开。 */
+async function expandDrawer(page: import('@playwright/test').Page): Promise<void> {
+  const drawer = page.locator('[data-question-drawer="true"]')
+  await expect(drawer).toBeVisible()
+  await drawer.getByRole('button', { name: '在对话页展开' }).click()
+}
+
 test('阅读页返回按钮标明来源，缺省时仍可返回', async ({ launch, userDataDirectory }) => {
   seedWordEntries(userDataDirectory, corpusDirectory, {
     picks: [{ entry: article, paragraphIndex: 0, needle: 'approach' }]
@@ -161,7 +168,8 @@ test('就正文里点中的词提问时带上该词与那条原句', async ({ la
       .getByRole('button', { name: '继续阅读' }).click()
     await page.locator('.reading-collected').filter({ hasText: 'approach' }).first().click()
     await page.getByRole('complementary', { name: '词条' })
-      .getByRole('button', { name: '就这个词提问' }).click()
+      .getByRole('button', { name: '问模型' }).click()
+    await expandDrawer(page)
 
     await expect(page.getByRole('heading', { name: 'approach · 原句', level: 1 })).toBeVisible()
     await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
@@ -188,7 +196,8 @@ test('就正文里点中的词提问时带上该词与那条原句', async ({ la
     await page.goBack()
     await page.locator('.reading-collected').filter({ hasText: 'approach' }).first().click()
     await page.getByRole('complementary', { name: '词条' })
-      .getByRole('button', { name: '就这个词提问' }).click()
+      .getByRole('button', { name: '问模型' }).click()
+    await expandDrawer(page)
     await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstThread)
     await expect(page.locator('.context-chip-label')).toHaveText(['Approaching a new desk takes patience.', 'approach', 'Employers approach hiring differently.'])
     await page.reload()
@@ -196,22 +205,16 @@ test('就正文里点中的词提问时带上该词与那条原句', async ({ la
     await page.goBack()
     await page.locator('.reading-collected').filter({ hasText: 'approach' }).first().click()
     await page.getByRole('complementary', { name: '词条' })
-      .getByRole('button', { name: '就这个词提问' }).click()
+      .getByRole('button', { name: '问模型' }).click()
+    await expandDrawer(page)
     await expect(page.locator('.context-chip-label')).toHaveText(['Approaching a new desk takes patience.', 'approach', 'Employers approach hiring differently.'])
 
     await page.goBack()
     await page.locator('.reading-collected').filter({ hasText: 'approach' }).first().click()
-    await page.getByRole('complementary', { name: '词条' })
-      .getByRole('button', { name: '为这句新建对话' }).click()
-    await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
-    expect(await page.evaluate(() => window.location.hash)).not.toBe(firstThread)
-    await expect(page.getByText('这句怎么理解？')).toHaveCount(0)
-    await page.getByRole('textbox', { name: '输入问题' }).fill('新线程的问题')
-    await page.getByRole('button', { name: '发送' }).click()
-    await expect.poll(() => stub.requests.length).toBe(2)
-    await expect(page.getByRole('button', { name: '重新生成' })).toBeVisible()
-    const newMessages = (stub.requests[1]?.body.messages ?? []) as { role: string; content: string }[]
-    expect(newMessages[0]?.content).toContain('[原句] Employers approach hiring differently.')
+    const panel = page.getByRole('complementary', { name: '词条' })
+    await expect(panel.getByRole('button', { name: '新建对话' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: '为这句新建对话' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: '问模型' })).toBeVisible()
   } finally {
     await stub.close()
   }
@@ -232,7 +235,8 @@ test('文章对话把完整正文和准确摘要带给模型', async ({ launch }
     await page.getByRole('complementary', { name: '文章详情' })
       .getByRole('button', { name: '继续阅读' }).click()
     const title = await page.locator('.reading-bar-title').innerText()
-    await page.getByRole('button', { name: '与这篇文章对话' }).click()
+    await page.getByRole('button', { name: '问模型' }).click()
+    await expandDrawer(page)
     await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible()
     const fullText = '1. Employers approach hiring differently.\n\n2. Approaching a new desk takes patience.'
     await expect(page.getByTestId('context-summary')).toHaveText(`1 篇全文 · 约 ${Array.from(fullText).length} 字`)
@@ -257,7 +261,8 @@ test('已有较多上下文时保留原内容并加入所选词句，也可以�
     .getByRole('button', { name: '继续阅读' }).click()
   await page.locator('.reading-collected').first().click()
   await page.getByRole('complementary', { name: '词条' })
-    .getByRole('button', { name: '就这个词提问' }).click()
+    .getByRole('button', { name: '问模型' }).click()
+  await expandDrawer(page)
   const firstHash = await page.evaluate(() => window.location.hash)
   const threadId = decodeURIComponent(firstHash.slice('#/chat/'.length))
   await page.evaluate(async (id) => {
@@ -270,7 +275,8 @@ test('已有较多上下文时保留原内容并加入所选词句，也可以�
   await page.goBack()
   await page.locator('.reading-collected').first().click()
   const panel = page.getByRole('complementary', { name: '词条' })
-  await panel.getByRole('button', { name: '就这个词提问' }).click()
+  await panel.getByRole('button', { name: '问模型' }).click()
+  await expandDrawer(page)
   await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstHash)
   await expect(page.locator('.context-chip-label').getByText('approach', { exact: true })).toBeVisible()
   const remaining = await page.evaluate(async (id) => {
@@ -283,9 +289,9 @@ test('已有较多上下文时保留原内容并加入所选词句，也可以�
   )
   await page.goBack()
   await page.locator('.reading-collected').first().click()
-  await page.getByRole('complementary', { name: '词条' }).getByRole('button', { name: '为这句新建对话' }).click()
-  await expect(page.locator('.context-chip-label')).toHaveText(['approach', 'Employers approach hiring differently.'])
-  expect(await page.evaluate(() => window.location.hash)).not.toBe(firstHash)
+  const reopenedPanel = page.getByRole('complementary', { name: '词条' })
+  await expect(reopenedPanel.getByRole('button', { name: '为这句新建对话' })).toHaveCount(0)
+  await expect(reopenedPanel.getByRole('button', { name: '问模型' })).toBeVisible()
 })
 
 test('注释开关显示当前状态，并与正文的注释一致', async ({ launch }) => {
@@ -309,24 +315,27 @@ test('注释开关显示当前状态，并与正文的注释一致', async ({ la
   await expect(page.locator('.reading-notes')).toBeVisible()
 })
 
-test('阅读页复用文章线程，也可以明确新开一条', async ({ launch }) => {
+test('阅读页复用文章最近线程，不再并排新开入口', async ({ launch }) => {
   const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
   await page.getByRole('navigation', { name: '全局导航' })
     .getByRole('button', { name: '文章库' }).click()
   await page.locator('.library-row').first().click()
   await page.getByRole('complementary', { name: '文章详情' })
     .getByRole('button', { name: '继续阅读' }).click()
-  await page.getByRole('button', { name: '与这篇文章对话' }).click()
+  await page.getByRole('button', { name: '问模型' }).click()
+  await expandDrawer(page)
   await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/chat\//)
   const firstThread = await page.evaluate(() => window.location.hash)
   await page.goBack()
-  await page.getByRole('button', { name: '与这篇文章对话' }).click()
+  await page.getByRole('button', { name: '问模型' }).click()
+  await expandDrawer(page)
   await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstThread)
   await page.goBack()
-  await expect(page.getByRole('button', { name: '新开一条文章对话' })).toBeVisible()
-  await page.getByRole('button', { name: '新开一条文章对话' }).click()
-  await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/chat\//)
-  expect(await page.evaluate(() => window.location.hash)).not.toBe(firstThread)
+  await expect(page.getByRole('button', { name: '新开一条文章对话' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '新开一条' })).toHaveCount(0)
+  await page.getByRole('button', { name: '问模型' }).click()
+  await expandDrawer(page)
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(firstThread)
 })
 
 test('打开文章线程失败时留在阅读页并提示', async ({ launch }) => {
@@ -338,9 +347,10 @@ test('打开文章线程失败时留在阅读页并提示', async ({ launch }) =
   await page.getByRole('complementary', { name: '文章详情' })
     .getByRole('button', { name: '继续阅读' }).click()
   await electronApp.evaluate(({ ipcMain }) => ipcMain.removeHandler('chat:open-for-main'))
-  const action = page.getByRole('button', { name: '与这篇文章对话' })
+  const action = page.getByRole('button', { name: '问模型' })
   await action.click()
-  await expect(page.getByRole('alert')).toContainText('没能开对话')
+  await expect(page.getByRole('alert')).toContainText(/没能开对话|没能就着原文打开轻问/)
+  await expect(page.locator('[data-question-drawer="true"]')).toHaveCount(0)
   await expect(page.locator('[data-reading-page="true"]')).toBeVisible()
   await expect(action).toBeEnabled()
 })
@@ -357,7 +367,8 @@ test('阅读顶栏在窄窗口仍可见且不横向溢出', async ({ launch }) =
     await electronApp.evaluate(({ BrowserWindow }, width) => {
       const window = BrowserWindow.getAllWindows()[0]
       if (!window) throw new Error('没有主窗口')
-      window.setContentSize(width, 820)
+      // 融合标题栏在部分 DPI 下留 1px 非客户区：多要 1px 才是目标内容宽。
+      window.setContentSize(width + 1, 820)
     }, requested)
     await expect.poll(() => page.evaluate(() => window.innerWidth)).toBeGreaterThanOrEqual(requested)
     const measurements = await page.evaluate(() => {

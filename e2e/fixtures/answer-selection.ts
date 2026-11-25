@@ -6,8 +6,13 @@ type Boundary = { selector: string; index?: number } & (
 )
 
 /** Place browser selection endpoints by visible text or by an element child boundary. */
-export async function selectAnswerRange(page: Page, anchor: Boundary, focus: Boundary) {
-  await page.evaluate(({ anchor, focus }) => {
+export async function selectAnswerRange(
+  page: Page,
+  anchor: Boundary,
+  focus: Boundary,
+  options: { container?: string } = {}
+) {
+  await page.evaluate(({ anchor, focus, container }) => {
     function point(boundary: Boundary): [Node, number] {
       const element = document.querySelectorAll(boundary.selector)[boundary.index ?? 0]
       if (!element) throw new Error(`没有匹配 ${boundary.selector} 的元素`)
@@ -25,8 +30,11 @@ export async function selectAnswerRange(page: Page, anchor: Boundary, focus: Bou
     const [anchorNode, anchorOffset] = point(anchor)
     const [focusNode, focusOffset] = point(focus)
     selection.setBaseAndExtent(anchorNode, anchorOffset, focusNode, focusOffset)
-    document.querySelector('.chat-scroll')?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
-  }, { anchor, focus })
+    // 对话页监听 .chat-scroll，轻问抽屉监听 .reading-drawer-body：两处都要真的冒泡。
+    document
+      .querySelector(container ?? '.chat-scroll')
+      ?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+  }, { anchor, focus, container: options.container })
 }
 
 export async function selectAnswerText(page: Page, text: string) {

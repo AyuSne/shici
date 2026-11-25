@@ -9,7 +9,7 @@ import type { CredentialRejectionReason } from '../../../shared/provider-credent
 
 /** 模型服务页顶部说明；内置名单由页面传入，组件只引用不重抄。 */
 export function modelSectionDescription(builtinNames: string): string {
-  return `添加 ${builtinNames} 等内置提供商，或配置自定义 API。保存后可测试连接。`
+  return `${builtinNames} 等内置服务填上密钥就能用；想接别处，也可以自定义。保存之后再测试连接。`
 }
 
 /** 只读目录的统一前缀：主进程拒绝与界面提示用同一句。 */

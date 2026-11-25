@@ -7,7 +7,7 @@ import type {
   EntrySentence,
   EntrySentenceGroup
 } from '../../shared/entries'
-import type { HomeEntryChip } from '../../shared/library'
+import type { HomeEntryChip, HomeArticleEntry } from '../../shared/library'
 import { buildSearchSnippet } from '../../shared/search'
 import type { AppDatabase } from '../db/database'
 import type { Dictionary } from '../dictionary/dictionary'
@@ -61,6 +61,7 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
   return {
     id: row.id,
     mainForm: row.main_form,
+    variants: [],
     sentenceCount: row.sentence_count,
     articleCount: row.article_count,
     noteCount: row.note_count,
@@ -70,6 +71,9 @@ function toEntryListItem(row: EntryListRow): EntryListItem {
 
 /** 首页最多摆几个词条 chip；再多就交给词条页。 */
 export const HOME_RECENT_ENTRY_LIMIT = 8
+
+/** 首页「继续阅读」卡片底部最多速览几个本篇词条。 */
+export const HOME_ARTICLE_ENTRY_LIMIT = 4
 
 /**
  * 首页「最近收集」：只数真实收下的词条（至少一条原句），排序与词条列表默认一致，
@@ -96,7 +100,30 @@ export function readRecentEntryChips(
 }
 
 /**
- * 每个词条只给一处最能说明问题的命中：主词形 > 最近收集的命中原句 > 置顶/最新的学习内容。
+ * 首页「继续阅读」的本篇速览：只看这一篇的 entry_sentence，按词条在本篇最近一次
+ * 收词时间倒序；同一词条在本篇收过多句也只出现一次。
+ */
+export function readArticleEntryChips(
+  database: AppDatabase,
+  articleId: string,
+  limit: number = HOME_ARTICLE_ENTRY_LIMIT
+): HomeArticleEntry[] {
+  const rows = database
+    .prepare(
+      `SELECT we.id AS entry_id, we.main_form AS main_form, MAX(es.collected_at) AS last_at
+         FROM word_entry we
+         JOIN entry_sentence es ON es.entry_id = we.id
+        WHERE es.article_id = ?
+        GROUP BY we.id
+        ORDER BY last_at DESC, we.id DESC
+        LIMIT ?`
+    )
+    .all(articleId, limit) as { entry_id: string; main_form: string }[]
+
+  return rows.map((row) => ({ entryId: row.entry_id, mainForm: row.main_form }))
+}
+
+/**
  * 一次批量读出，不按词条逐条查；片段与高亮区间都交给 shared/search.ts，界面只按区间切。
  */
 function readEntryHits(
@@ -173,6 +200,34 @@ function readEntryHits(
 }
 
 /**
+ * 一次批量读回列表行的已收集变体，给组词对话的钉住智能预选与左栏说明复用。
+ * 顺序与词条卡一致：按这个变体首次收集的时间，再按行号。
+ */
+function readEntryVariants(database: AppDatabase, entries: readonly EntryListItem[]): void {
+  if (entries.length === 0) return
+  const placeholders = entries.map(() => '?').join(', ')
+  const rows = database
+    .prepare(
+      `SELECT entry_id, surface
+         FROM entry_sentence
+        WHERE entry_id IN (${placeholders})
+        GROUP BY entry_id, surface
+        ORDER BY entry_id, MIN(collected_at), MIN(rowid)`
+    )
+    .all(...entries.map((entry) => entry.id)) as { entry_id: string; surface: string }[]
+  const byEntry = new Map<string, string[]>()
+  for (const row of rows) {
+    const list = byEntry.get(row.entry_id) ?? []
+    list.push(row.surface)
+    byEntry.set(row.entry_id, list)
+  }
+  for (const entry of entries) {
+    const surfaces = byEntry.get(entry.id) ?? []
+    entry.variants = surfaces.filter((surface) => surface !== entry.mainForm)
+  }
+}
+
+/**
  * 左栏列表。搜索匹配主词形、已收原句正文与学习内容正文；每条命中的词条带回
  * 命中类型、高亮片段与定位 id。`total` 始终是库里的词条总数，搜索与筛选只改 `entries`。
  */
@@ -220,6 +275,7 @@ export function readEntryList(
     return true
   })
   const entries: EntryListItem[] = matched.map(toEntryListItem)
+  readEntryVariants(database, entries)
   if (query !== '') {
     const hits = readEntryHits(database, matched, query)
     for (const entry of entries) {
