@@ -51,6 +51,24 @@ export function phoneticText(phonetic: string): string {
   return phonetic === '' ? '' : `/${phonetic}/`
 }
 
+export type DictionaryGlance = {
+  phonetic: string
+  firstSense: string
+}
+
+/** 词条抬头的只读词典速览：只露音标与第一条释义，查不到或未加载时返回 null。 */
+export function dictionaryGlanceOf(lookup: DictionaryLookup | null): DictionaryGlance | null {
+  if (lookup === null || lookup.status !== 'found') return null
+  const phonetic = phoneticText(lookup.entry.phonetic)
+  const sense = lookup.entry.senses[0]
+  const firstSense =
+    sense === undefined
+      ? ''
+      : [posLabel(sense.pos), sense.text].filter((part) => part !== '').join(' ')
+  if (phonetic === '' && firstSense === '') return null
+  return { phonetic, firstSense }
+}
+
 /**
  * 「用这条起草」的草稿：词形与音标一行，选中的那条释义一行。
  * 只填进编辑框，保存与否仍由学习者决定。

@@ -29,12 +29,20 @@ const article = fixtureArticle({
   ]
 })
 
-const picks: SeedPick[] = [0, 1, 2].map((paragraphIndex) => ({
-  entry: article,
-  paragraphIndex,
-  needle: 'approach',
-  at: new Date(Date.UTC(2026, 10, 18, 8, paragraphIndex * 5)).toISOString()
-}))
+const picks: SeedPick[] = [
+  {
+    entry: article,
+    paragraphIndex: 0,
+    needle: 'Readers',
+    at: new Date(Date.UTC(2026, 10, 18, 7, 50)).toISOString()
+  },
+  ...[0, 1, 2].map((paragraphIndex) => ({
+    entry: article,
+    paragraphIndex,
+    needle: 'approach',
+    at: new Date(Date.UTC(2026, 10, 18, 8, paragraphIndex * 5)).toISOString()
+  }))
+]
 
 let corpusDirectory: string
 
@@ -106,13 +114,17 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 /** 中栏可读：够宽、标题一行不竖排、原句不是一字一行。 */
-async function expectReadableMiddle(page: Page, label: string): Promise<number> {
+async function expectReadableMiddle(
+  page: Page,
+  label: string,
+  headingName = 'approach'
+): Promise<number> {
   const middle = page.getByRole('region', { name: '词条内容' })
   const box = await middle.boundingBox()
   expect(box, `${label}: 中栏没有渲染`).not.toBeNull()
   expect(box!.width, `${label}: 中栏宽 ${box!.width.toFixed(1)} 小于 420`).toBeGreaterThanOrEqual(419)
 
-  const title = middle.getByRole('heading', { name: 'approach', level: 2 })
+  const title = middle.getByRole('heading', { name: headingName, level: 2 })
   const titleBox = await title.boundingBox()
   expect(titleBox!.width, `${label}: 标题宽`).toBeGreaterThan(100)
   expect(titleBox!.height, `${label}: 标题折成多行/竖排`).toBeLessThanOrEqual(40)
@@ -143,7 +155,7 @@ async function containerState(
 }
 
 async function openRail(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /^展开学习内容/ }).click()
+  await page.getByRole('button', { name: /^词典与学习内容/ }).click()
   await expect(page.locator('.entries-rail-open')).toBeVisible()
 }
 
@@ -160,11 +172,11 @@ for (const width of [1101, 1200, 1280]) {
     const closed = await containerState(page)
     expect(closed.layout, `${width}px 容器宽 ${closed.width} 不应内联`).toBe('drawer')
     expect(closed.width).toBeLessThan(1028)
-    expect(closed.openTrackCount).toBe(3)
+    expect(closed.openTrackCount).toBe(2)
     const closedMiddle = await expectReadableMiddle(page, `${width}px 关闭右栏`)
 
     await openRail(page)
-    const dialog = page.getByRole('dialog', { name: '学习内容' })
+    const dialog = page.getByRole('dialog', { name: '词典与学习内容' })
     await expect(dialog).toBeVisible()
 
     // 覆盖层不挤压中栏：和收起时一样宽，且固定在窗口右侧之内。
@@ -182,33 +194,47 @@ for (const width of [1101, 1200, 1280]) {
     // 打开后焦点在明确标了名的关闭按钮上；Esc 能关，焦点回到打开它的按钮。
     await expect
       .poll(() => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? ''))
-      .toBe('收起学习内容')
+      .toBe('收起词典与学习内容')
     await page.keyboard.press('Escape')
     await expect(page.locator('.entries-rail-open')).toHaveCount(0)
     await expect
       .poll(() => page.evaluate(() => document.activeElement?.textContent?.trim() ?? ''))
-      .toContain('学习内容')
+      .toContain('词典与学习内容')
     await expectReadableMiddle(page, `${width}px Esc 关闭后`)
 
     // 再打开，用可见的关闭按钮收起。
     await openRail(page)
-    const close = page.getByRole('button', { name: '收起学习内容' })
+    const close = page.getByRole('button', { name: '收起词典与学习内容' })
     await expect(close).toBeVisible()
     await close.click()
     await expect(page.locator('.entries-rail-open')).toHaveCount(0)
     await expectReadableMiddle(page, `${width}px 按钮关闭后`)
+
+    // 窄屏打开抽屉时如果地址切到另一个词条，抽屉顺手收起。
+    await openRail(page)
+    await page.evaluate(() => {
+      const next = document.querySelectorAll<HTMLElement>('.entries-row')[1]
+      const nextId = next?.dataset.entryRowId
+      if (nextId) window.location.hash = `#/entries/${nextId}`
+    })
+    await expect(page.locator('.entries-rail-open')).toHaveCount(0)
   })
 }
 
-test('1440px 真实窗口：容器够宽才内联，右栏不挤中栏', async ({ launch, userDataDirectory }) => {
+test('1440px 真实窗口：容器够宽才内联，切换词条保持展开且右栏不挤中栏', async ({
+  launch,
+  userDataDirectory
+}) => {
   seedWordEntries(userDataDirectory, corpusDirectory, { picks })
   const { page, electronApp } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
-  await resizeTo(page, electronApp, 1440)
+  await resizeTo(page, electronApp, 1101)
   await openApproach(page)
+  await resizeTo(page, electronApp, 1440)
 
   const closed = await containerState(page)
   expect(closed.layout).toBe('inline')
   expect(closed.width).toBeGreaterThanOrEqual(1028)
+  expect(closed.openTrackCount).toBe(2)
   await expectReadableMiddle(page, '1440px 关闭右栏')
 
   await openRail(page)
@@ -220,8 +246,14 @@ test('1440px 真实窗口：容器够宽才内联，右栏不挤中栏', async (
   expect(await page.locator('.entries-rail-backdrop').count()).toBe(0)
   expect((await containerState(page)).openTrackCount).toBe(3)
   await expectReadableMiddle(page, '1440px 打开右栏')
-  await expect(page.getByRole('button', { name: '收起学习内容' })).toBeVisible()
-  await page.getByRole('button', { name: '收起学习内容' }).click()
+
+  // 宽屏从 drawer 拉宽后用 ArrowDown 切换词条，右栏仍保持展开。
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('heading', { name: 'Readers', level: 2 })).toBeVisible()
+  await expect(rail).toBeVisible()
+
+  await expect(page.getByRole('button', { name: '收起词典与学习内容' })).toBeVisible()
+  await page.getByRole('button', { name: '收起词典与学习内容' }).click()
   await expect(page.locator('.entries-rail-open')).toHaveCount(0)
-  await expectReadableMiddle(page, '1440px 收起右栏')
+  await expectReadableMiddle(page, '1440px 收起右栏', 'Readers')
 })

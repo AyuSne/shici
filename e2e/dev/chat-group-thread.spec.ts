@@ -159,7 +159,7 @@ test('多选两个词开一条新线程：带词与各自原句，可增删，�
     .filter({ hasText: 'Employers approach hiring differently.' })
     .click()
   await expect(contextSummary(page)).toHaveText(/^3 条原句 · 2 个词 · 约 \d+ 字$/)
-  await page.getByRole('button', { name: '添加上下文' }).click()
+  await page.getByRole('button', { name: '收起上下文' }).click()
 
   // 移除与恢复：词移除后可从候选加回来，原句还在。
   await page.getByRole('button', { name: '移除上下文：approach', exact: true }).click()
@@ -170,7 +170,7 @@ test('多选两个词开一条新线程：带词与各自原句，可增删，�
     .filter({ hasText: 'approach' })
     .click()
   await expect(contextSummary(page)).toHaveText(/^3 条原句 · 2 个词 · 约 \d+ 字$/)
-  await page.getByRole('button', { name: '添加上下文' }).click()
+  await page.getByRole('button', { name: '收起上下文' }).click()
 
   // 提问时把组词与各自原句作为 system 前言带给模型。
   await page.getByRole('textbox', { name: '输入问题' }).fill('这两个词怎么一起用？')

@@ -1242,11 +1242,13 @@ export function ChatPage({
           <div className="composer-inner">
             {
               <ContextPanel
+                threadKey={current?.id ?? null}
                 items={current?.context ?? []}
                 summary={current?.contextSummary ?? { articleCount: 0, paragraphCount: 0, wordCount: 0, sentenceCount: 0, excerptCount: 0, charCount: 0 }}
                 candidates={candidates}
                 pickerOpen={pickerOpen}
                 onTogglePicker={togglePicker}
+                onClosePicker={() => setPickerOpen(false)}
                 onAdd={addItem}
                 onAddMany={addContextItems}
                 loadArticle={loadArticleContextMaterials}

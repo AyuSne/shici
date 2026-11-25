@@ -9,8 +9,9 @@ import {
 } from '../api'
 import { pinSourceIssueText } from '../chat/pin-text'
 import { focusablesIn, trapTabTarget } from '../components/focus-trap'
+import { Icon } from '../components/icons'
 import { DictionaryView } from '../dictionary/dictionary-view'
-import { useDictionaryLookup } from '../dictionary/lookup'
+import type { DictionaryLookupState } from '../dictionary/lookup'
 import { draftFromSense } from '../dictionary/presentation'
 import { failureText } from '../errors'
 import { navigate } from '../navigate'
@@ -20,9 +21,8 @@ import { LearningBody } from './learning-body'
 import { MoreActions, type MoreForm } from './more-actions'
 
 /**
- * 词条页右栏。收窄时只留一条竖着的「学习内容」入口；点开才是主词形、词典、
- * 学习内容与「更多」。学习内容只保留最终稿：编辑直接覆盖，不存历史版本；
- * 置顶一条，其余按写下的时间排。
+ * 词条页右栏：点开「词典与学习内容」后展开主词形、词典、学习内容与「更多」。
+ * 学习内容只保留最终稿：编辑直接覆盖，不存历史版本；置顶一条，其余按写下的时间排。
  */
 export function NoteRail({
   id,
@@ -30,9 +30,9 @@ export function NoteRail({
   entries,
   open,
   overlay,
+  dictionaryState,
   focusedNoteId = null,
   focusRevision = 0,
-  onToggle,
   onClose,
   onChanged,
   onEntryGone
@@ -44,11 +44,12 @@ export function NoteRail({
   open: boolean
   /** 覆盖抽屉模式：有遮罩、焦点进入并限制在抽屉里、Esc 关闭。 */
   overlay: boolean
+  /** 由词条页复用同一份查词状态。 */
+  dictionaryState: DictionaryLookupState
   /** 从全局搜索点进来的学习内容：滚到那一条并标出来。 */
   focusedNoteId?: string | null
   /** 点同一条搜索结果时递增：即使已经开着也重新滚到那一条。 */
   focusRevision?: number
-  onToggle: () => void
   onClose: () => void
   onChanged: (message: string) => void
   /** 词条在异步操作后消失；带上发起操作的那一条，页面据此判断是否仍停在那里。 */
@@ -67,6 +68,18 @@ export function NoteRail({
   const draftRef = useRef<HTMLTextAreaElement>(null)
   const railRef = useRef<HTMLElement>(null)
   const restoreFocusRef = useRef<HTMLElement | null>(null)
+
+  // 宽屏保持右栏展开切换词条时，不重挂载外层 aside（避免重复播放入场动效），
+  // 只在切换词条时清理草稿与临时表单状态，防止旧词条编辑态串到新词条上。
+  useEffect(() => {
+    setDraft('')
+    setEditingId(null)
+    setEditDraft('')
+    setError(null)
+    setEditError(null)
+    setMoreOpen(false)
+    setMoreForm(null)
+  }, [page.entry.id])
 
   // 覆盖抽屉：打开时把焦点放到明确标了名的关闭按钮上，Tab 只在抽屉里循环，
   // Esc 关闭并把焦点还给打开它的按钮。焦点行为只属于窄屏抽屉，内联栏不抢焦点。
@@ -118,10 +131,8 @@ export function NoteRail({
     return () => window.cancelAnimationFrame(frame)
   }, [open, focusedNoteId, page.entry.id, focusRevision])
 
-  // 右栏的词典只读：按主词形查一次；查不到就明说，不影响下面写学习内容。
-  const { lookup: dictionaryLookup, loading: dictionaryLoading } = useDictionaryLookup(
-    page.entry.mainForm
-  )
+  // 右栏的词典只读：直接复用词条页已查出的结果；查不到就明说，不影响下面写学习内容。
+  const { lookup: dictionaryLookup, loading: dictionaryLoading } = dictionaryState
 
   /** 「用这条起草」只把词形、音标与那条释义填进编辑框，保存仍由学习者点。 */
   function draftFromDictionary(sense: DictionarySense): void {
@@ -138,24 +149,7 @@ export function NoteRail({
   }
 
   if (!open) {
-    return (
-      <aside id={id} className="entries-rail entries-rail-closed" aria-label="学习内容">
-        <button
-          type="button"
-          className="entries-rail-tab"
-          aria-label="展开学习内容"
-          aria-expanded={false}
-          aria-controls={id}
-          onClick={onToggle}
-        >
-          <span className="entries-rail-tab-label">学习内容</span>
-          <span className="entries-rail-count">{page.entry.noteCount}</span>
-          {page.entry.noteCount > 0 ? (
-            <span className="entries-rail-dot" aria-hidden="true" />
-          ) : null}
-        </button>
-      </aside>
-    )
+    return null
   }
 
   async function saveDraft(): Promise<void> {
@@ -251,10 +245,10 @@ export function NoteRail({
       className="entries-rail entries-rail-open"
       role={overlay ? 'dialog' : 'complementary'}
       aria-modal={overlay ? true : undefined}
-      aria-label="学习内容"
+      aria-label="词典与学习内容"
     >
       <header className="entries-rail-head">
-        <p className="section-label">学习内容</p>
+        <p className="section-label">词典与学习内容</p>
         <div className="entries-rail-head-actions">
           <button
             type="button"
@@ -276,16 +270,17 @@ export function NoteRail({
           <button
             type="button"
             className="entries-rail-close"
-            aria-label="收起学习内容"
+            aria-label="收起词典与学习内容"
             onClick={onClose}
           >
-            ×
+            <Icon name="close" size={14} />
           </button>
         </div>
       </header>
 
       {moreOpen ? (
         <MoreActions
+          key={`${page.entry.id}-menu`}
           page={page}
           entries={entries}
           form={null}
@@ -303,7 +298,7 @@ export function NoteRail({
       ) : null}
       {moreForm === null ? null : (
         <MoreActions
-          key={moreForm}
+          key={`${page.entry.id}-${moreForm}`}
           page={page}
           entries={entries}
           form={moreForm}

@@ -236,9 +236,9 @@ test.describe('钉住与钉板', () => {
     await expect(page.getByRole('status')).toContainText('已放进未归档')
     await expect(page.getByRole('complementary', { name: '钉板' }).getByRole('button', { name: /未归档 1/ })).toBeVisible()
 
-    // 未归档不算收集：词条里还没有学习内容。
+    // 未归档不算收集：词条里还没有学习内容，按钮不显示 0。
     await openEntry(page, 'approach')
-    await expect(page.getByRole('button', { name: /^展开学习内容/ })).toContainText('0')
+    await expect(page.getByRole('button', { name: /^词典与学习内容/ })).toHaveText('词典与学习内容')
     await page
       .getByRole('navigation', { name: '全局导航' })
       .getByRole('button', { name: '对话' })
@@ -264,7 +264,7 @@ test.describe('钉住与钉板', () => {
 
     // 词条学习内容里出现来源行，点回对话后高亮那段回答。
     await openEntry(page, 'approach')
-    await page.getByRole('button', { name: /^展开学习内容/ }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     await expect(page.locator('.entry-note-body')).toContainText('approach 是接近')
     await expect(page.locator('.entry-note-source')).toContainText('来自 这句怎么理解？')
     await page.getByRole('button', { name: '看原对话' }).click()
@@ -316,7 +316,7 @@ test.describe('钉住与钉板', () => {
     await expect(page.locator('.pin-card')).toHaveCount(0)
 
     await openEntry(page, 'approach')
-    await expect(page.getByRole('button', { name: /^展开学习内容/ })).toContainText('0')
+    await expect(page.getByRole('button', { name: /^词典与学习内容/ })).toHaveText('词典与学习内容')
   })
 
   test('未归档可全部归位并撤销，丢弃也能撤销', async ({ launch, userDataDirectory }) => {
@@ -348,7 +348,7 @@ test.describe('钉住与钉板', () => {
     await expect(page.locator('.pin-card')).toHaveCount(2)
 
     await openEntry(page, 'approach')
-    await expect(page.getByRole('button', { name: /^展开学习内容/ })).toContainText('0')
+    await expect(page.getByRole('button', { name: /^词典与学习内容/ })).toHaveText('词典与学习内容')
 
     // 回到对话，丢弃一条再撤销。
     await page
@@ -375,7 +375,7 @@ test.describe('钉住与钉板', () => {
     const page = await launchApp(launch, { env: environment(stub.baseUrl) })
 
     await openEntry(page, 'approach')
-    await page.getByRole('button', { name: /^展开学习内容/ }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     await expect(page.locator('.entry-note-body')).toContainText('approach 是接近')
     await expect(page.locator('.entry-note-source')).toContainText('来自 approach · 第 1 轮')
     const source = page.getByRole('button', { name: '看原对话' })

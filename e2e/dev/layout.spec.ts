@@ -187,17 +187,17 @@ async function walkPages(handle: AppHandle, breakpoint: number): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.getByRole('heading', { name: '文章库', level: 1 })).toBeVisible()
 
-  // 词条：1100 以下右栏变抽屉；900 动作常驻、文字换成图标。
+  // 词条：收起时两栏，1100 以下点开右栏变抽屉；900 动作常驻、文字换成图标。
   await nav(page, '词条')
   await expect(page.getByRole('heading', { name: '词条', level: 1 })).toBeVisible()
   await page.locator('.entries-row').first().click()
   await expect(page.getByRole('heading', { name: 'approach', level: 2 })).toBeVisible()
   await expectNoHorizontalOverflow(page)
-  await expect(page.locator('.entries-rail-tab')).toBeVisible()
-  expect(await gridTracks(page, '.entries-page')).toHaveLength(3)
+  await expect(page.locator('.entries-rail-closed')).toHaveCount(0)
+  expect(await gridTracks(page, '.entries-page')).toHaveLength(2)
   await expectInsideViewport(page, '.entries-main-head .entries-main-actions')
 
-  await page.getByRole('button', { name: /^展开学习内容/ }).click()
+  await page.getByRole('button', { name: /^词典与学习内容/ }).click()
   await expect(page.locator('.entries-rail-open')).toBeVisible()
   expect(
     await page.locator('.entries-rail-open').evaluate((element) => getComputedStyle(element).position)
@@ -206,7 +206,7 @@ async function walkPages(handle: AppHandle, breakpoint: number): Promise<void> {
   expect(Math.round(rail?.width ?? 0)).toBe(320)
   const inner = await page.evaluate(() => window.innerWidth)
   expect(Math.round((rail?.x ?? 0) + (rail?.width ?? 0))).toBeLessThanOrEqual(inner + 1)
-  await page.getByRole('button', { name: '收起学习内容' }).click()
+  await page.getByRole('button', { name: '收起词典与学习内容' }).click()
 
   if (actualWidth <= 900) {
     const opacity = await page
@@ -311,10 +311,10 @@ test.describe('收官验收 · 断点', () => {
 
     await nav(page, '词条')
     await page.locator('.entries-row').first().click()
-    // 1101 的容器只有约 799：三栏预算不够，右栏收起仍留 44 入口，打开是覆盖抽屉。
-    expect(await gridTracks(page, '.entries-page')).toHaveLength(3)
+    // 1101 的容器只有约 799：三栏预算不够，收起时两栏，打开是覆盖抽屉。
+    expect(await gridTracks(page, '.entries-page')).toHaveLength(2)
     await expect(page.locator('.entries-page')).toHaveAttribute('data-layout', 'drawer')
-    await page.getByRole('button', { name: /^展开学习内容/ }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     const rail = await page.locator('.entries-rail-open').boundingBox()
     expect(Math.round(rail?.width ?? 0)).toBe(320)
     expect(
@@ -322,7 +322,7 @@ test.describe('收官验收 · 断点', () => {
     ).toBe('fixed')
     const middle = await page.getByRole('region', { name: '词条内容' }).boundingBox()
     expect(middle?.width ?? 0).toBeGreaterThanOrEqual(419)
-    await page.getByRole('button', { name: '收起学习内容' }).click()
+    await page.getByRole('button', { name: '收起词典与学习内容' }).click()
     await expectNoHorizontalOverflow(page)
 
     await nav(page, '对话')

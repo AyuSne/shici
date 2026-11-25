@@ -12,6 +12,20 @@ export type DictionaryLookupState = {
   loading: boolean
 }
 
+export type TrackedDictionaryLookupState = DictionaryLookupState & {
+  /** 本次状态对应的原始查询词，用于确认当前词条是否已查完。 */
+  word: string | null
+}
+
+/** 当前词条的词典查询是否已稳定落定（加载完成且对应当前主词形）。 */
+export function isDictionarySettled(
+  state: TrackedDictionaryLookupState,
+  targetWord: string | null
+): boolean {
+  if (targetWord === null) return true
+  return !state.loading && state.lookup !== null && state.word === targetWord
+}
+
 export function unavailableLookup(query: string): DictionaryLookup {
   return { status: 'unavailable', query }
 }
@@ -22,19 +36,23 @@ export function lookupDictionaryOrUnavailable(word: string): Promise<DictionaryL
 }
 
 /** 按词查词典；word 为 null 时表示这次不需要查。 */
-export function useDictionaryLookup(word: string | null): DictionaryLookupState {
-  const [state, setState] = useState<DictionaryLookupState>({ lookup: null, loading: false })
+export function useDictionaryLookup(word: string | null): TrackedDictionaryLookupState {
+  const [state, setState] = useState<TrackedDictionaryLookupState>({
+    lookup: null,
+    loading: false,
+    word: null
+  })
 
   useEffect(() => {
     if (word === null) {
-      setState({ lookup: null, loading: false })
+      setState({ lookup: null, loading: false, word: null })
       return
     }
     let active = true
-    setState({ lookup: null, loading: true })
+    setState({ lookup: null, loading: true, word })
     lookupDictionaryOrUnavailable(word).then((lookup) => {
       if (active) {
-        setState({ lookup, loading: false })
+        setState({ lookup, loading: false, word })
       }
     })
     return () => {

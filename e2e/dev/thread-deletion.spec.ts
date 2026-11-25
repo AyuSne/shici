@@ -74,7 +74,7 @@ async function expectDeletedSnapshots(page: Page) {
 
   await nav(page, '词条').click()
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
-  await page.getByRole('button', { name: /^展开学习内容/ }).click()
+  await page.getByRole('button', { name: /^词典与学习内容/ }).click()
   const note = page.getByRole('article').filter({ hasText: answer })
   await expect(note).toContainText('源对话已删除')
   await expect(note.getByRole('button', { name: /看原对话/ })).toBeDisabled()
@@ -145,7 +145,7 @@ test('旧快照的线程仍在但原回答缺失，来源禁跳且丢弃前保�
 
   await nav(page, '词条').click()
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
-  await page.getByRole('button', { name: /^展开学习内容/ }).click()
+  await page.getByRole('button', { name: /^词典与学习内容/ }).click()
   const note = page.getByRole('article').filter({ hasText: answer })
   await expect(note).toContainText('原回答找不到')
   await expect(note.getByRole('button', { name: /看原对话/ })).toBeDisabled()

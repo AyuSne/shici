@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DictionaryEntry, DictionaryLookup, DictionarySense } from '../../../shared/dictionary'
 import {
+  dictionaryGlanceOf,
   draftFromSense,
   formText,
   lemmaText,
@@ -10,6 +11,7 @@ import {
   statusText,
   visibleSenses
 } from './presentation'
+import { isDictionarySettled } from './lookup'
 
 const senses: DictionarySense[] = [
   { pos: 'n.', text: '方法, 途径' },
@@ -112,5 +114,49 @@ describe('lemmaText', () => {
     ).toBe('由 approaching 归到原形')
     expect(lemmaText({ status: 'found', query: 'approach', via: 'exact', entry })).toBe('')
     expect(lemmaText({ status: 'missing', query: 'zyzzyva' })).toBe('')
+  })
+})
+
+describe('dictionaryGlanceOf', () => {
+  it('命中词典时返回音标与第一条释义，供词条抬头轻量透出', () => {
+    expect(
+      dictionaryGlanceOf({ status: 'found', query: 'approach', via: 'exact', entry })
+    ).toEqual({
+      phonetic: '/əˈprəʊtʃ/',
+      firstSense: 'n. 方法, 途径'
+    })
+  })
+
+  it('缺少音标或词性时按已有字段兜底，未命中或未加载返回 null', () => {
+    expect(
+      dictionaryGlanceOf({
+        status: 'found',
+        query: 'flask',
+        via: 'exact',
+        entry: { word: 'flask', phonetic: '', senses: [{ pos: 'a.', text: '亮' }], forms: [] }
+      })
+    ).toEqual({
+      phonetic: '',
+      firstSense: 'adj. 亮'
+    })
+    expect(dictionaryGlanceOf(null)).toBeNull()
+    expect(dictionaryGlanceOf({ status: 'missing', query: 'zyzzyva' })).toBeNull()
+    expect(dictionaryGlanceOf({ status: 'unavailable', query: 'approach' })).toBeNull()
+  })
+})
+
+describe('isDictionarySettled', () => {
+  it('只有加载结束、结果非空且对应当前查询词时才算落定', () => {
+    const found: DictionaryLookup = { status: 'found', query: 'approach', via: 'exact', entry }
+    expect(isDictionarySettled({ lookup: null, loading: false, word: null }, null)).toBe(true)
+    expect(isDictionarySettled({ lookup: null, loading: true, word: 'approach' }, 'approach')).toBe(
+      false
+    )
+    expect(isDictionarySettled({ lookup: found, loading: false, word: 'approach' }, 'Context')).toBe(
+      false
+    )
+    expect(isDictionarySettled({ lookup: found, loading: false, word: 'approach' }, 'approach')).toBe(
+      true
+    )
   })
 })

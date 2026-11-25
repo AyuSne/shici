@@ -357,7 +357,7 @@ test.describe('线程主对象与上下文', () => {
       .filter({ hasText: 'Employers approach hiring differently.' })
       .click()
     await expect(page.getByTestId('context-summary')).toHaveText(/^1 条原句 · 1 个词 · 约 \d+ 字$/)
-    await page.getByRole('button', { name: '添加上下文' }).click()
+    await page.getByRole('button', { name: '收起上下文' }).click()
 
     await ask(page, '这句里 approach 是什么用法？')
     await expect(page.getByText('答案来了。')).toBeVisible()
@@ -559,7 +559,7 @@ test('空白对话自由加入多段和另一篇全文并发送给模型', async
   const second = picker.locator('.context-article').filter({ hasText: '第2套' })
   await second.getByRole('button', { name: /第2套/ }).click()
   await second.getByRole('button', { name: '加入全文' }).click()
-  await page.getByRole('button', { name: '添加上下文' }).click()
+  await page.getByRole('button', { name: '收起上下文' }).click()
   await ask(page, '对比这些材料')
   await expect.poll(() => stub.requests.length).toBe(1)
   const prompt = requestMessages(stub, 0)[0]?.content ?? ''

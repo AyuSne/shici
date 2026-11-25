@@ -160,7 +160,9 @@ test.describe('内置词典', () => {
       .getByRole('button', { name: '词条' })
       .click()
     await page.locator('.entries-row').first().click()
-    await page.getByRole('button', { name: '展开学习内容' }).click()
+    await expect(page.locator('.entries-dict-glance')).toContainText('/əˈprəutʃ/')
+    await expect(page.locator('.entries-dict-glance')).toContainText('方法, 途径')
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
 
     const rail = page.locator('.entries-rail-open')
     const block = rail.getByRole('group', { name: '词典' })

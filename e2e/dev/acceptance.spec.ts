@@ -191,7 +191,7 @@ test.describe('收官验收 · 整条学习链路', () => {
         })
       })
       .click()
-    await page.getByRole('button', { name: /^展开学习内容/ }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     await expect(page.locator('.entry-note-body')).toContainText(PINNED)
     await expect(page.locator('.entry-note-source')).toContainText(
       `来自 ${entryName} · 第 1 轮`

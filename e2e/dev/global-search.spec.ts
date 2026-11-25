@@ -338,7 +338,7 @@ test('已挂载词条页内搜另一个词条：主词形/原句/学习内容都
   expect(await hash()).toBe(repeatedHash)
 
   // 正常左栏 A→B 仍然工作，而且只替换地址、不新增历史。
-  const collapseRail = page.getByRole('button', { name: '收起学习内容' })
+  const collapseRail = page.getByRole('button', { name: '收起词典与学习内容' })
   if ((await collapseRail.count()) > 0) await collapseRail.click()
   await page.getByRole('button', { name: '清空搜索' }).click()
   await page.getByRole('combobox', { name: '按学习内容筛选' }).selectOption('all')
@@ -366,7 +366,7 @@ test('同一条学习内容结果：手动收起右栏后再次点同一结果�
   const targetHash = await page.evaluate(() => window.location.hash)
 
   // 用户自己收起右栏：URL 仍停在这条学习内容上。
-  await page.getByRole('button', { name: '收起学习内容' }).click()
+  await page.getByRole('button', { name: '收起词典与学习内容' }).click()
   await expect(rail).toHaveCount(0)
 
   // 再点同一条结果：地址不变，但目标定位必须重新活一次。
@@ -580,7 +580,7 @@ test('Esc 与点外部关闭：词条的选中、草稿、搜索与排序、滚�
   await expect(
     page.getByRole('region', { name: '词条内容' }).getByRole('heading', { name: 'approach', level: 2 })
   ).toBeVisible()
-  await page.getByRole('button', { name: '展开学习内容' }).click()
+  await page.getByRole('button', { name: /^词典与学习内容/ }).click()
   const rail = page.locator('.entries-rail-open')
   await expect(rail).toBeVisible()
   await rail.getByRole('textbox', { name: '写学习内容' }).fill('草稿：还没保存的笔记')
@@ -701,7 +701,7 @@ test('对话页从来源回跳后打开搜索：来源横条与被高亮段落�
 
   await openEntries(page)
   await page.locator('.entries-row').filter({ hasText: 'approach' }).click()
-  await page.getByRole('button', { name: /^展开学习内容/ }).click()
+  await page.getByRole('button', { name: /^词典与学习内容/ }).click()
   await page
     .locator('.entry-note')
     .filter({ hasText: 'approach 是接近' })

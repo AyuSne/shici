@@ -257,7 +257,7 @@ test('阅读眉批标签 / 词条菜单 / 首页 chip 的字号与圆角落在 t
     .getByRole('button', { name: '词条', exact: true })
     .click()
   await page.locator('.entries-row').first().click()
-  await page.getByRole('button', { name: '展开学习内容' }).click()
+  await page.getByRole('button', { name: /^词典与学习内容/ }).click()
   const rail = page.locator('.entries-rail-open')
   await rail.getByRole('button', { name: '词条维护' }).click()
   const menuItem = rail.getByRole('menuitem').first()

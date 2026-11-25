@@ -1,32 +1,26 @@
 /* ---------- 词条页 ---------- */
 
 /*
- * 三栏：左词条列表 240、中原句、右学习内容 320；右栏默认收成 44 的窄条。
- * 右栏内联还是覆盖抽屉只看真实容器宽度（见 data-layout，由 ResizeObserver 写入），
- * 容器够 240 + 420 + 320 + 两处 24 才内联；窄了就退回两栏加 44 入口，抽屉盖在上面。
+ * 词条页默认两栏（左列表 240、中原句），点「词典与学习内容」后按容器宽度铺开右栏 320：
+ * 容器够 240 + 420 + 320 + 两处 24 才三栏内联；窄了仍留两栏，右栏改覆盖抽屉。
  */
 
 .entries-page {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 320px;
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 24px;
   align-items: start;
   max-width: 1240px;
   margin: 0 auto;
 }
 
-.entries-page[data-rail="closed"] {
-  grid-template-columns: 240px minmax(0, 1fr) 44px;
+.entries-page[data-layout="inline"][data-rail="open"] {
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
 }
 
-.entries-page[data-layout="drawer"],
-.entries-page[data-layout="drawer"][data-rail="closed"] {
-  grid-template-columns: 240px minmax(0, 1fr) 44px;
-  gap: 16px;
-}
-
-.entries-page[data-layout="drawer"][data-rail="open"] {
+.entries-page[data-layout="drawer"] {
   grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
 }
 
 /* ---------- 左栏：词条列表 ---------- */
@@ -398,6 +392,24 @@
   line-height: 18px;
 }
 
+.entries-dict-glance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.entries-dict-phonetic {
+  color: var(--ink-2);
+}
+
+.entries-dict-sense {
+  color: var(--ink);
+}
+
 .entries-main-empty {
   display: flex;
   flex-direction: column;
@@ -659,58 +671,57 @@
   color: var(--blue);
 }
 
+.entries-rail-toggle[aria-expanded="true"] {
+  border-color: var(--line-pin);
+  background: var(--bed-pin);
+  color: var(--amber);
+}
+
+.entries-rail-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--line-pin);
+  border-radius: 999px;
+  background: var(--bed-pin);
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.entries-rail-toggle[aria-expanded="true"] .entries-rail-badge {
+  background: var(--panel);
+}
+
 .entry-confirm p {
   font-size: 14px;
   line-height: 20px;
 }
 
-/* ---------- 右栏：学习内容 ---------- */
+/* ---------- 右栏：词典与学习内容 ---------- */
 
-.entries-rail-closed {
-  display: flex;
-  justify-content: flex-end;
+@keyframes entries-rail-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.entries-rail-tab {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 44px;
-  padding: 12px 0;
-  border: 1px solid var(--rule);
-  border-radius: 10px;
-  background: var(--panel);
-  color: var(--ink-2);
-  transition:
-    background 150ms ease-out,
-    border-color 150ms ease-out,
-    color 150ms ease-out;
-}
-
-.entries-rail-tab:hover {
-  border-color: var(--rule-hover);
-  background: var(--hover);
-  color: var(--ink);
-}
-
-.entries-rail-tab-label {
-  writing-mode: vertical-rl;
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  line-height: 16px;
-}
-
-.entries-rail-count {
-  display: grid;
-  place-items: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--sunken);
-  font-size: 12px;
-  line-height: 16px;
+@keyframes entries-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .entries-rail-open {
@@ -722,6 +733,7 @@
   border: 1px solid var(--rule);
   border-radius: 10px;
   background: var(--panel);
+  animation: entries-rail-in var(--motion-float) var(--ease-paper) both;
 }
 
 .entries-rail-head {
@@ -758,14 +770,6 @@
   color: var(--ink);
 }
 
-/* 有学习内容时在磁吸拉手上给一颗克制的琥珀微点，不额外用一个开关。 */
-.entries-rail-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--amber);
-}
-
 .entries-rail-close {
   display: grid;
   place-items: center;
@@ -773,8 +777,9 @@
   height: 24px;
   border-radius: 8px;
   color: var(--ink-2);
-  font-size: 16px;
-  line-height: 1;
+  transition:
+    background 150ms ease-out,
+    color 150ms ease-out;
 }
 
 .entries-rail-close:hover {
@@ -1057,6 +1062,7 @@
   left: 238px;
   z-index: 59;
   background: rgba(26, 26, 23, 0.28);
+  animation: entries-backdrop-in var(--motion-float) ease-out both;
 }
 
 [data-theme="dark"] .entries-rail-backdrop {
@@ -1101,9 +1107,14 @@
   .entries-segment,
   .entries-row,
   .entry-action,
-  .entries-rail-tab,
+  .entries-rail-close,
   .entry-form,
   .entry-sentence-actions {
     transition: none;
+  }
+
+  .entries-rail-open,
+  .entries-rail-backdrop {
+    animation: none;
   }
 }

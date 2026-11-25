@@ -186,7 +186,7 @@ test('就正文里点中的词提问时带上该词与那条原句', async ({ la
     await page.getByRole('group', { name: '可加入的上下文' })
       .locator('.context-candidate[data-context-kind="sentence"]')
       .filter({ hasText: 'Approaching a new desk takes patience.' }).click()
-    await page.getByRole('button', { name: '添加上下文' }).click()
+    await page.getByRole('button', { name: '收起上下文' }).click()
     await page.getByRole('button', { name: '移除上下文：approach', exact: true }).click()
     await page.getByRole('button', { name: '移除上下文：Employers approach hiring differently.', exact: true }).click()
     await expect(page.locator('.context-chip-label')).toHaveText(['Approaching a new desk takes patience.'])

@@ -231,8 +231,8 @@ test.describe('收官验收 · 强杀重启', () => {
     await expect(
       reopened.locator('.entry-sentence-text').filter({ hasText: 'Readers approach' })
     ).toBeVisible()
-    await expect(reopened.getByRole('button', { name: /^展开学习内容/ })).toContainText('1')
-    await reopened.getByRole('button', { name: /^展开学习内容/ }).click()
+    await expect(reopened.getByRole('button', { name: /^词典与学习内容/ })).toContainText('1')
+    await reopened.getByRole('button', { name: /^词典与学习内容/ }).click()
     await expect(reopened.locator('.entry-note-body')).toContainText(ANSWER)
     await expect(reopened.locator('.entry-note-source')).toContainText('来自 approach · 第 1 轮')
 

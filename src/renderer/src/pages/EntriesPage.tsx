@@ -10,10 +10,16 @@ import { getChatStore, openGroupThread, openThreadForMain } from '../chat/store'
 import { ErrorBlock } from '../components/error-block'
 import { Icon } from '../components/icons'
 import { showToast } from '../components/toast-store'
+import { isDictionarySettled, useDictionaryLookup } from '../dictionary/lookup'
+import { dictionaryGlanceOf } from '../dictionary/presentation'
 import { EntryList, type EntryFilter, type EntrySort } from '../entries/entry-list'
 import { deleteLastSentenceText, entryHeadlineText } from '../entries/format'
 import { nextEntryId } from '../entries/keyboard'
-import { entryLayoutForWidth, type EntryLayout } from '../entries/layout'
+import {
+  entryLayoutForWidth,
+  nextRailOpenOnEntrySelect,
+  type EntryLayout
+} from '../entries/layout'
 import { NoteRail } from '../entries/note-rail'
 import {
   selectionBlockedText,
@@ -88,7 +94,16 @@ export function EntriesPage({
   const lastNoteFocus = useRef<{ noteId: string; revision: number } | null>(null)
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
+  const layoutRef = useRef(layout)
+  layoutRef.current = layout
+  const previousEntryIdRef = useRef(entryId)
   const mountedRef = useRef(true)
+  const dictionaryState = useDictionaryLookup(page?.entry.mainForm ?? null)
+  const dictionaryGlance = dictionaryGlanceOf(dictionaryState.lookup)
+  const dictionarySettled = isDictionarySettled(
+    dictionaryState,
+    page?.entry.mainForm ?? null
+  )
 
   /** 迟到的异步回复只有在页面还挂着、且用户仍停在发起操作的词条上才改界面。 */
   function isCurrentEntry(id: string): boolean {
@@ -136,7 +151,7 @@ export function EntriesPage({
 
   useLayoutEffect(() => {
     if (restoredScroll.current) return
-    if (selectedId !== null && page?.entry.id !== selectedId) return
+    if (selectedId !== null && (page?.entry.id !== selectedId || !dictionarySettled)) return
     // 带原句的跳转应定位该句，不能让稍后返回的列表再覆盖这个位置。
     if (selectedId === entryId && entrySentenceId !== null) {
       restoredScroll.current = true
@@ -147,7 +162,7 @@ export function EntriesPage({
     if (!node) return
     node.scrollTop = entryScrollTop(selectedId)
     restoredScroll.current = true
-  }, [entryId, entrySentenceId, listing, page, selectedId])
+  }, [dictionarySettled, entryId, entrySentenceId, listing, page, selectedId])
 
   // 从全局搜索点学习内容命中：右栏（窄屏是覆盖抽屉）自动打开并定位到那一条。
   // 同一条结果再点一次也带新的 focusRevision：收起后要重新打开，不能因为 hash 没变就失效。
@@ -227,14 +242,29 @@ export function EntriesPage({
   }, [selectedId, reloadToken])
 
   useEffect(() => {
-    if (page === null || page.entry.id !== entryId || entrySentenceId === null) return
+    if (previousEntryIdRef.current === entryId) return
+    previousEntryIdRef.current = entryId
+    if (noteId === null) {
+      setRailOpen((open) => nextRailOpenOnEntrySelect(open, layoutRef.current))
+    }
+  }, [entryId, noteId])
+
+  useEffect(() => {
+    if (
+      page === null ||
+      page.entry.id !== entryId ||
+      entrySentenceId === null ||
+      !dictionarySettled
+    ) {
+      return
+    }
     const frame = window.requestAnimationFrame(() => {
       const row = Array.from(document.querySelectorAll<HTMLElement>('.entry-sentence'))
         .find((item) => item.dataset.entrySentenceId === entrySentenceId)
       row?.scrollIntoView({ block: 'center' })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [page, entryId, entrySentenceId, focusRevision])
+  }, [dictionarySettled, entryId, entrySentenceId, focusRevision, page])
 
   useEffect(() => {
     if (hint === null) return
@@ -296,9 +326,10 @@ export function EntriesPage({
   }
 
   function selectEntry(id: string): void {
-    // 左栏选择是页面内换对象：替换地址，不新增历史。
+    // 左栏选择是页面内换对象：替换地址，不新增历史；
+    // 宽屏三栏保持右栏展开态方便连续看词典，窄屏抽屉则顺手收起。
     replaceRoute('entries', { entryId: id })
-    setRailOpen(false)
+    setRailOpen((open) => nextRailOpenOnEntrySelect(open, layoutRef.current))
     setActionError(null)
     setConfirmDelete(null)
   }
@@ -538,6 +569,16 @@ export function EntriesPage({
                 <p className="eyebrow">词条</p>
                 <h2 className="entries-title">{page.entry.mainForm}</h2>
                 <p className="entries-meta">{entryHeadlineText(page.entry)}</p>
+                {dictionaryGlance === null ? null : (
+                  <p className="entries-dict-glance" aria-label="词典速览">
+                    {dictionaryGlance.phonetic === '' ? null : (
+                      <span className="entries-dict-phonetic">{dictionaryGlance.phonetic}</span>
+                    )}
+                    {dictionaryGlance.firstSense === '' ? null : (
+                      <span className="entries-dict-sense">{dictionaryGlance.firstSense}</span>
+                    )}
+                  </p>
+                )}
               </div>
               <div className="entries-main-actions">
                 <button
@@ -557,6 +598,24 @@ export function EntriesPage({
                 >
                   <Icon name="eye" size={14} />
                   {laterToggleLabel(page.entry.laterMarkedAt !== null)}
+                </button>
+                <button
+                  type="button"
+                  className="button entries-rail-toggle"
+                  aria-expanded={railOpen}
+                  aria-controls={LEARNING_RAIL_ID}
+                  onClick={toggleRail}
+                >
+                  <Icon name="book" size={14} />
+                  <span>词典与学习内容</span>
+                  {page.entry.noteCount > 0 ? (
+                    <span
+                      className="entries-rail-badge"
+                      aria-label={`${page.entry.noteCount} 条学习内容`}
+                    >
+                      {page.entry.noteCount}
+                    </span>
+                  ) : null}
                 </button>
               </div>
             </header>
@@ -654,15 +713,14 @@ export function EntriesPage({
 
       {page === null ? null : (
         <NoteRail
-          key={page.entry.id}
           id={LEARNING_RAIL_ID}
           page={page}
           entries={allEntries?.entries ?? []}
           open={railOpen}
           overlay={overlay}
+          dictionaryState={dictionaryState}
           focusedNoteId={page.entry.id === entryId ? noteId : null}
           focusRevision={focusRevision}
-          onToggle={toggleRail}
           onClose={closeRail}
           onChanged={(message) => refresh(message)}
           onEntryGone={entryGone}

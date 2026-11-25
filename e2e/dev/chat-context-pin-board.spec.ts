@@ -162,3 +162,64 @@ test('窄窗钉板覆盖而不挤压正文，空态一行并可用关闭按钮�
   await expect(handle).toBeVisible()
   await expect(composer).toHaveValue('暂不发送的提问')
 })
+
+test('上下文选择器向上浮出不挤压输入区，支持快速加全文及收起/完成/点外部/Esc关闭', async ({
+  launch,
+  userDataDirectory
+}) => {
+  seedWordEntries(userDataDirectory, corpusDirectory, { picks: [] })
+  const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
+  await page.getByRole('navigation', { name: '全局导航' }).getByRole('button', { name: '对话' }).click()
+
+  const composer = page.locator('.chat-composer')
+  const beforeBox = await composer.boundingBox()
+  if (beforeBox === null) throw new Error('找不到底部输入区')
+
+  const openButton = page.getByRole('button', { name: '添加上下文' })
+  await openButton.click()
+
+  const picker = page.getByRole('group', { name: '可加入的上下文' })
+  await expect(picker).toBeVisible()
+  await expect(picker).toHaveCSS('position', 'absolute')
+
+  // 向上浮出，不撑高底部输入区。
+  const afterBox = await composer.boundingBox()
+  expect(Math.round(afterBox?.height ?? 0)).toBe(Math.round(beforeBox.height))
+
+  // 开关按钮切换成「收起」，搜索框获得焦点且套用了暖纸输入框样式。
+  const collapseButton = page.getByRole('button', { name: '收起上下文' })
+  await expect(collapseButton).toHaveText('收起')
+  await expect(collapseButton).toHaveAttribute('aria-expanded', 'true')
+  const search = picker.getByRole('textbox', { name: '搜索上下文' })
+  await expect(search).toBeFocused()
+  expect(await search.evaluate((el) => getComputedStyle(el).borderRadius)).toBe('8px')
+  expect(await search.evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(300)
+
+  // 文章与段落支持直接点「+ 全文」，不必先展开段落。
+  await picker.getByRole('tab', { name: '文章与段落' }).click()
+  const quickAdd = picker.locator('.context-article-quick').first()
+  await quickAdd.click()
+  await expect(quickAdd).toHaveText('已加全文')
+  await expect(page.getByTestId('context-summary')).toHaveText(/^1 篇全文 · 约 \d+ 字$/)
+
+  // 点外部输入框自动收起，且焦点留在输入框里供继续打字。
+  const input = page.getByRole('textbox', { name: '输入问题' })
+  await input.click()
+  await expect(picker).toHaveCount(0)
+  await expect(input).toBeFocused()
+
+  // 再打开后点「完成」或按 Esc 都能关闭并把焦点还给开关按钮。
+  await page.getByRole('button', { name: '添加上下文' }).click()
+  await expect(picker).toBeVisible()
+  await picker.getByRole('button', { name: '完成' }).click()
+  await expect(picker).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '添加上下文' })).toBeFocused()
+
+  await page.getByRole('button', { name: '添加上下文' }).click()
+  await expect(picker).toBeVisible()
+  // Tab 移出浮层但仍在控件内或外部时按 Esc，照样关闭并把焦点还给开关按钮。
+  await picker.getByRole('tab', { name: '当前相关' }).focus()
+  await page.keyboard.press('Escape')
+  await expect(picker).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '添加上下文' })).toBeFocused()
+})

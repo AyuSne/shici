@@ -92,12 +92,12 @@ test.describe('词条搜索', () => {
 
     // 学习内容从真实编辑入口写进去，不走 fixture 桥接。
     await entryRow(page, 'approach').click()
-    await page.getByRole('button', { name: '展开学习内容' }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     const rail = page.locator('.entries-rail-open')
     await rail.getByRole('textbox', { name: '写学习内容' }).fill('记：approach 是「做法、途径」。')
     await rail.getByRole('button', { name: '保存学习内容' }).click()
     await expect(rail.locator('.entry-note-body')).toHaveText(['记：approach 是「做法、途径」。'])
-    await page.getByRole('button', { name: '收起学习内容' }).click()
+    await page.getByRole('button', { name: '收起词典与学习内容' }).click()
 
     // 主词形命中。
     await searchBox(page).fill('Context')

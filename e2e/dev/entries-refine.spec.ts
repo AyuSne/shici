@@ -66,7 +66,7 @@ async function openEntry(page: Page, name: string): Promise<void> {
   ).toBeVisible()
 }
 
-test('顶栏不再重复学习内容开关：只由右边缘拉手展开，有内容时带琥珀微点', async ({
+test('词条页抬头展示词典速览，右栏入口直观标明「词典与学习内容」且 0 条时不显示 0', async ({
   launch,
   userDataDirectory
 }) => {
@@ -76,21 +76,32 @@ test('顶栏不再重复学习内容开关：只由右边缘拉手展开，有�
   await openEntry(page, 'approach')
 
   const main = page.getByRole('region', { name: '词条内容' })
-  await expect(main.getByRole('button', { name: /^学习内容/ })).toHaveCount(0)
+  await expect(main.locator('.entries-dict-glance')).toContainText('/əˈprəutʃ/')
+  await expect(main.locator('.entries-dict-glance')).toContainText('n. 接近, 入门')
+  await expect(page.locator('.entries-rail-closed')).toHaveCount(0)
   await expect(
     main.locator('.entries-main-actions').getByRole('button', { name: '问模型', exact: true })
   ).toBeVisible()
 
-  // 收起态拉手上的微点来自已有学习内容，不额外多一个顶栏按钮。
-  const handle = page.getByRole('button', { name: '展开学习内容' })
-  await expect(handle.locator('.entries-rail-dot')).toBeVisible()
+  const toggle = main
+    .locator('.entries-main-actions')
+    .getByRole('button', { name: /^词典与学习内容/ })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(toggle.locator('.entries-rail-badge')).toHaveText('1')
 
-  await handle.click()
+  await toggle.click()
   const rail = page.locator('.entries-rail-open')
   await expect(rail).toBeVisible()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   // 右栏不再抄写中栏的大标题与原句统计。
   await expect(rail.getByRole('heading', { name: 'approach', level: 2 })).toHaveCount(0)
   await expect(rail.getByText('已收集 2 条原句')).toHaveCount(0)
+
+  // 无学习内容的词条不显示刺眼的 0。
+  await page.getByRole('button', { name: '收起词典与学习内容' }).click()
+  await openEntry(page, 'solitary')
+  await expect(toggle).toHaveText('词典与学习内容')
+  await expect(toggle.locator('.entries-rail-badge')).toHaveCount(0)
 })
 
 test('左栏 ↑/↓ 翻阅词条，输入框里的方向键不拦截', async ({ launch, userDataDirectory }) => {
@@ -248,7 +259,7 @@ test('右栏四项维护动作收进顶部 ···，选后原地展开表单；�
   const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
   await openEntries(page)
   await openEntry(page, 'approach')
-  await page.getByRole('button', { name: '展开学习内容' }).click()
+  await page.getByRole('button', { name: /^词典与学习内容/ }).click()
   const rail = page.locator('.entries-rail-open')
   const more = rail.getByRole('button', { name: '词条维护' })
 

@@ -167,7 +167,7 @@ test.describe('词条页', () => {
     await expect(page.getByText('在左边选一个词条。')).toBeVisible()
 
     await entryRow(page, 'approach').click()
-    await expect(page.getByRole('button', { name: '展开学习内容' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^词典与学习内容/ })).toBeVisible()
     await expect(page.locator('.entries-rail-open')).toHaveCount(0)
 
     const main = page.getByRole('region', { name: '词条内容' })
@@ -216,7 +216,7 @@ test.describe('词条页', () => {
     const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openEntries(page)
     await entryRow(page, 'approach').click()
-    await page.getByRole('button', { name: '展开学习内容' }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
 
     const rail = page.locator('.entries-rail-open')
     await expect(rail.getByText('可以手写，也可以从对话里钉一段进来')).toBeVisible()
@@ -263,9 +263,9 @@ test.describe('词条页', () => {
     ])
 
     // 覆盖抽屉挡住后面的列表，先收起再换词条。
-    await page.getByRole('button', { name: '收起学习内容' }).click()
+    await page.getByRole('button', { name: '收起词典与学习内容' }).click()
     await entryRow(page, 'Context').click()
-    await page.getByRole('button', { name: '展开学习内容' }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     const contextRail = page.locator('.entries-rail-open')
     await expect(contextRail.locator('.entry-note-body')).toHaveText([
       '第二条：approach to training'
@@ -281,7 +281,7 @@ test.describe('词条页', () => {
     const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openEntries(page)
     await entryRow(page, 'approach').click()
-    await page.getByRole('button', { name: '展开学习内容' }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
 
     const rail = page.locator('.entries-rail-open')
     await openMore(page, '换主词形…')
@@ -314,7 +314,7 @@ test.describe('词条页', () => {
     const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openEntries(page)
     await entryRow(page, 'Context').click()
-    await page.getByRole('button', { name: '展开学习内容' }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
 
     const rail = page.locator('.entries-rail-open')
     await openMore(page, '拆分原句…')
@@ -549,11 +549,11 @@ test.describe('词条页', () => {
     const { page } = await launch({ env: { CORPUS_DIRECTORY: corpusDirectory } })
     await openEntries(page)
     await entryRow(page, 'Context').click()
-    await page.getByRole('button', { name: '展开学习内容' }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     await expect(page.locator('.entry-note-body')).toHaveText(['跟着词条一起删'])
 
     // 覆盖抽屉挡住原句列；先收起再删原句。
-    await page.getByRole('button', { name: '收起学习内容' }).click()
+    await page.getByRole('button', { name: '收起词典与学习内容' }).click()
 
     const main = page.getByRole('region', { name: '词条内容' })
     const sentence = main.locator('.entry-sentence').first()

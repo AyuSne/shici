@@ -242,19 +242,23 @@ test.describe('收官验收 · 深色对比度', () => {
       { label: '上次停下的原句', selector: '.home-sentence' }
     ])
 
-    // 词条页：原句与学习内容。
+    // 词条页：原句与词典、学习内容。
     await nav(page, '词条')
     await page.locator('.entries-row').first().click()
     await expect(page.getByRole('heading', { name: 'approach', level: 2 })).toBeVisible()
+    await expect(page.locator('.entries-dict-sense')).toBeVisible()
     await expectReadableText(page, [
       { label: '词条名', selector: '.entries-title' },
       { label: '词条计数', selector: '.entries-meta' },
+      { label: '词条音标速览', selector: '.entries-dict-phonetic' },
+      { label: '词条词典速览', selector: '.entries-dict-sense' },
+      { label: '词条学习内容徽标', selector: '.entries-rail-badge' },
       { label: '原句文字', selector: '.entry-sentence-text' },
       { label: '原句里的词形', selector: '.entry-surface' },
       { label: '原句出处', selector: '.entry-sentence-source' },
       { label: '文章分组名', selector: '.entry-group-head' }
     ])
-    await page.getByRole('button', { name: /^展开学习内容/ }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     await expect(page.locator('.entry-note-body')).toBeVisible()
     await expectReadableText(page, [
       { label: '学习内容正文', selector: '.entry-note-body' },
@@ -350,11 +354,32 @@ test.describe('收官验收 · 深色对比度', () => {
       { label: '错误下一步', selector: '.message-error-action' }
     ])
 
+    await page.getByRole('button', { name: '添加上下文' }).click()
+    await expectReadableText(page, [
+      { label: '上下文完成按钮', selector: '.context-picker-done' },
+      { label: '上下文选中分类', selector: '.context-picker-tab[aria-selected="true"]' },
+      { label: '上下文未选中分类', selector: '.context-picker-tab[aria-selected="false"]' }
+    ])
+    await page.getByRole('tab', { name: '文章与段落' }).click()
+    await expectReadableText(page, [
+      { label: '上下文文章标题', selector: '.context-article-title' },
+      { label: '上下文加全文按钮', selector: '.context-article-quick' }
+    ])
+    await page.locator('.context-article-toggle').first().click()
+    await expectReadableText(page, [
+      { label: '上下文文章段落', selector: '.context-paragraph' }
+    ])
+    await page.locator('.context-article-quick').first().click()
+    await expectReadableText(page, [
+      { label: '上下文已加全文标签', selector: '.context-article-quick.is-added' }
+    ])
+    await page.getByRole('button', { name: '收起上下文' }).click()
+
     // 来源回跳：学习内容来源行、对话顶部横条与被高亮段落。
     await nav(page, '词条')
     await page.locator('.entries-row').first().click()
     await expect(page.getByRole('heading', { name: 'approach', level: 2 })).toBeVisible()
-    await page.getByRole('button', { name: /^展开学习内容/ }).click()
+    await page.getByRole('button', { name: /^词典与学习内容/ }).click()
     await expect(
       page.locator('.entry-note-body').filter({ hasText: 'approach 指接近' })
     ).toBeVisible()

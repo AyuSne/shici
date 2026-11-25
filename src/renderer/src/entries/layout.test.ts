@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { ENTRY_INLINE_MIN_WIDTH, entryLayoutForWidth } from './layout'
+import {
+  ENTRY_INLINE_MIN_WIDTH,
+  entryLayoutForWidth,
+  nextRailOpenOnEntrySelect
+} from './layout'
 
 describe('entryLayoutForWidth', () => {
   it('三栏内联的最小容器宽度是独立的 1028px', () => {
@@ -17,5 +21,17 @@ describe('entryLayoutForWidth', () => {
     expect(entryLayoutForWidth(available(1200))).toBe('drawer')
     expect(entryLayoutForWidth(available(1280))).toBe('drawer')
     expect(entryLayoutForWidth(available(1440))).toBe('inline')
+  })
+})
+
+describe('nextRailOpenOnEntrySelect', () => {
+  it('宽屏三栏切换词条时保持右栏当前的展开或收起状态', () => {
+    expect(nextRailOpenOnEntrySelect(true, 'inline')).toBe(true)
+    expect(nextRailOpenOnEntrySelect(false, 'inline')).toBe(false)
+  })
+
+  it('窄屏抽屉切换词条时收起抽屉以免盖住列表和正文', () => {
+    expect(nextRailOpenOnEntrySelect(true, 'drawer')).toBe(false)
+    expect(nextRailOpenOnEntrySelect(false, 'drawer')).toBe(false)
   })
 })

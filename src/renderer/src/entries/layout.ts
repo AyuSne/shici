@@ -17,3 +17,15 @@ export const ENTRY_INLINE_MIN_WIDTH =
 export function entryLayoutForWidth(availableWidth: number): EntryLayout {
   return availableWidth >= ENTRY_INLINE_MIN_WIDTH ? 'inline' : 'drawer'
 }
+
+/**
+ * 切换词条时右栏是否保持展开：
+ * 宽屏三栏（inline）没有遮罩，连续查词典与学习内容时保持展开态；
+ * 窄屏抽屉（drawer）盖在正文上方，切词条时顺手收起以免挡住内容。
+ */
+export function nextRailOpenOnEntrySelect(
+  currentlyOpen: boolean,
+  layout: EntryLayout
+): boolean {
+  return layout === 'inline' ? currentlyOpen : false
+}
